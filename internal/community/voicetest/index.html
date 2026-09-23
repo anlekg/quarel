@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quarel — test vocal</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#667085; --line:#e4e7ec; --accent:#4f46e5; --ok:#16a34a; --warn:#dc2626; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14161b; --card:#1d2027; --text:#e7e9ee; --muted:#9aa3b2; --line:#2c313b; --accent:#8b85ff; --ok:#4ade80; --warn:#f87171; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .channel { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-top:1px solid var(--line); }
+  .channel:first-child { border-top:0; }
+  .people { list-style:none; margin:6px 0 0; padding:0; color:var(--muted); font-size:14px; }
+  .people li.speaking { color: var(--ok); font-weight: 600; }
+  button { font:inherit; padding:7px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--text); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.on { outline: 2px solid var(--warn); }
+  button:disabled { opacity:.5; cursor:default; }
+  #controls { display:flex; gap:8px; flex-wrap:wrap; }
+  #log { font: 13px/1.5 ui-monospace, monospace; color:var(--muted); max-height: 220px; overflow:auto; white-space: pre-wrap; }
+  .err { color: var(--warn); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Quarel — test vocal</h1>
+  <p class="sub" id="who">Connexion…</p>
+
+  <div class="card" id="missing" hidden>
+    Il manque le jeton de session. Ouvrez cette page avec la commande
+    <code>quarelctl voice-test</code>, qui affiche l'adresse complète.
+  </div>
+
+  <div class="card">
+    <strong>Salons vocaux</strong>
+    <div id="channels"></div>
+  </div>
+
+  <div class="card">
+    <strong id="status">Hors d'un salon vocal</strong>
+    <div id="controls" style="margin-top:10px">
+      <button id="mute" disabled>Couper le micro</button>
+      <button id="deaf" disabled>Sourdine</button>
+      <button id="leave" disabled>Quitter</button>
+    </div>
+  </div>
+
+  <div class="card"><strong>Journal</strong><div id="log"></div></div>
+</main>
+
+<script src="livekit-client.umd.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

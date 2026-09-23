@@ -72,7 +72,7 @@ func (c *cli) runRoles(cmd string, args []string) (bool, error) {
 	case "bans":
 		err = c.printBans()
 	default:
-		return false, nil
+		return c.runVoice(cmd, args)
 	}
 	return true, err
 }

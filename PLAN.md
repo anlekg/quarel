@@ -121,10 +121,11 @@
 - [ ] **P2** Filtres automatiques (mots interdits, anti-spam)
 
 ### B7. Voix et vidéo (salons vocaux)
-- [ ] **P0** Audio de groupe dans les salons vocaux (SFU LiveKit intégré à l'image)
-- [ ] **P0** Muet / sourdine, liste des participants
+- [x] **P0** Audio de groupe dans les salons vocaux (SFU LiveKit intégré à l'image)
+- [x] **P0** Muet / sourdine, liste des participants
 - [ ] **P1** Vidéo et partage d'écran
-- [ ] **P1** Permissions vocales (parler, streamer, déplacer / rendre muet un membre)
+- [x] **P1** Permissions vocales `connect` / `speak`, appliquées en direct *(avancé au jalon 4)*
+- [ ] **P1** Modération vocale : déplacer / rendre muet un membre, permission de streamer
 - [ ] **P2** Salons « scène » (conférence)
 
 ### B8. Bots et intégrations
@@ -153,7 +154,7 @@
 1. **Jalon 1 — Identity minimal :** A1 P0, A2 P0 → un compte et un jeton d'identité vérifiable. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-1.md`).*
 2. **Jalon 2 — Serveur communautaire texte :** B1 P0, B2 P0, B3 P0, B4 P0 → rejoindre un serveur et discuter. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-2.md`).*
 3. **Jalon 3 — Rôles et modération :** B5 P0, B6 P0. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-3.md`).*
-4. **Jalon 4 — Voix :** B7 P0.
+4. **Jalon 4 — Voix :** B7 P0. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-4.md`).*
 5. **Jalon 5 — Amis et MP chiffrés :** A3 P0, A4 P0, A5 P0.
 6. **Jalon 6 — P1** (par blocs, dans l'ordre choisi par le CP).
 7. **Jalon 7 — Client graphique.**

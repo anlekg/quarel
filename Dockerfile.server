@@ -1,4 +1,4 @@
-# Quarel community server
+# Quarel community server (+ embedded LiveKit for voice)
 # Build : docker build -f Dockerfile.server -t quarel-server .
 FROM golang:1.27-alpine AS build
 WORKDIR /src
@@ -8,10 +8,15 @@ COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/quarel-server ./cmd/quarel-server \
  && mkdir -p /out/data
 
+# Official LiveKit SFU binary (statically linked), pinned.
+FROM livekit/livekit-server:v1.13.7 AS livekit
+
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/quarel-server /quarel-server
+COPY --from=livekit /livekit-server /livekit-server
 COPY --from=build --chown=65532:65532 /out/data /data
-ENV QUAREL_ADDR=:8090 QUAREL_DATA_DIR=/data
+ENV QUAREL_ADDR=:8090 QUAREL_DATA_DIR=/data QUAREL_LIVEKIT_BIN=/livekit-server
 VOLUME /data
-EXPOSE 8090
+# 8090/tcp: API, real-time gateway, voice signalling (/lk). 7881/tcp + 7882/udp: voice media.
+EXPOSE 8090 7881 7882/udp
 ENTRYPOINT ["/quarel-server"]

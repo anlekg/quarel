@@ -334,6 +334,8 @@ func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
 	s.hub.broadcast("CHANNEL_DELETE", map[string]int64{"id": c.ID})
 	if c.Type == chanCategory {
 		s.syncPermissions(ctx) // children moved to the top level, without the category's overrides
+	} else {
+		s.reconcileVoice(ctx) // disconnects whoever was in a deleted voice channel
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -43,20 +43,24 @@ Alternative à Discord **auto-hébergeable** : chaque serveur tourne chez son pr
 cmd/quarel-identity/    binaire du service Identity
 cmd/quarel-server/      binaire du serveur communautaire
 cmd/quarelctl/          client de test en ligne de commande (sorties en français, neutres en genre, pour le CP) :
-                        main.go (Identity), community.go (serveurs communautaires), roles.go (rôles, modération)
+                        main.go (Identity), community.go (serveurs communautaires), roles.go (rôles, modération),
+                        voice.go (vocal)
 internal/identity/      service Identity : HTTP (server.go), endpoints (handlers.go), SQLite (store.go),
                         argon2id (crypto.go), TOTP (totp.go), emails (mail.go), anti-bruteforce (lockout.go)
 internal/community/     serveur communautaire : config, clés des Identity (keys.go), auth (auth.go),
                         membres, invitations, salons + droits par salon (channels.go), messages,
                         permissions (permissions.go), rôles (roles.go), expulsion/bannissement
                         (moderation.go), temps réel (gateway.go)
+                        vocal (voice.go), page de test vocal (voicetest/, embarquée)
+internal/voice/         client LiveKit maison (jetons, API salle, webhooks) + lancement de livekit-server
 internal/httpapi/       conventions JSON partagées (erreurs, décodage strict)
 internal/sqlitedb/      ouverture SQLite + migrations (PRAGMA user_version)
 internal/secret/        identifiants aléatoires, jetons porteurs, fichiers de clés Ed25519
 pkg/idtoken/            jetons d'identité portables (émission, vérification, preuve d'appareil)
 docs/tests/             guides de test par jalon, destinés au CP
+test/e2e/               tests de bout en bout avec navigateurs (Playwright)
 Dockerfile.identity     image distroless (~23 Mo), volume /data, port 8080
-Dockerfile.server       image distroless (~23 Mo), volume /data, port 8090
+Dockerfile.server       image distroless + livekit-server (~139 Mo), volume /data, ports 8090/tcp, 7881/tcp, 7882/udp
 Makefile                commandes de dev (build, test, run-identity, run-server…)
 ```
 
@@ -124,12 +128,24 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 - **Horodatages** en millisecondes Unix en base, RFC 3339 en JSON.
 - **SQLite à une seule connexion** : dans une transaction, **toujours** requêter via `tx`, jamais `s.db` (sinon interblocage).
 
+### Vocal (jalon 4)
+
+- **Architecture** : le média ne passe jamais par notre serveur. LiveKit (SFU, `livekit-server` v1.13.7) tourne à côté, lancé et relancé par `quarel-server` (`internal/voice/embedded.go`) avec une config générée (`$DATA/livekit.yaml`) et des clés propres (`$DATA/livekit.keys`). Signalisation LiveKit en boucle locale (7880), exposée aux clients via le proxy **`/lk/`** du serveur ; média : **7882/udp** (+ **7881/tcp** de secours).
+- **Pas de SDK LiveKit Go** (il embarque une pile WebRTC) : `internal/voice/livekit.go` signe les jetons (JWT HS256, claim `video`), appelle l'API Twirp JSON (`RemoveParticipant`, `UpdateParticipant`, `ListRooms`, `ListParticipants`) et vérifie les webhooks (JWT + SHA-256 du corps).
+- **Salles** : salon vocal `id` = salle LiveKit `channel-<id>`, identité LiveKit = `member_id`, nom = nom affiché.
+- **Rejoindre** : `POST /v1/channels/{id}/voice/join` (salon `voice`, `view_channel` + `connect`) → `{url, token, room, can_speak}` ; `canPublish` = `speak`. Jeton valable 1 h (connexion seulement).
+- **État vocal** en mémoire (`voiceRegistry`), alimenté par les webhooks LiveKit (`participant_joined|left`, `room_finished`) sur `POST /internal/livekit/webhook` ; reconstruit depuis LiveKit au démarrage (`SyncVoice`). Un membre n'est que dans un salon à la fois (l'arrivée ailleurs le retire du précédent). À l'arrivée, les droits sont revérifiés (jeton périmé → éjection).
+- **Respect des permissions** (`reconcileVoice`, appelé après tout changement de droits, expulsion/ban/départ, suppression de salon) : perte de `connect` → éjection ; changement de `speak` → `UpdateParticipant` (micro coupé côté serveur).
+- **Micro/sourdine** : décidés par le client (`PATCH /v1/voice/state {self_mute, self_deaf}`, sourdine ⇒ micro coupé), informatifs pour les autres. Événement `VOICE_STATE_UPDATE` (`channel_id: null` = départ), filtré par visibilité du salon ; `voice_states` dans READY et CHANNELS_SYNC.
+- **Page de test** `/voice-test/` (HTML/JS embarqués, `livekit-client` 2.22.3 vendu dans le dépôt, licence Apache-2.0) : jeton de session dans le fragment d'URL (`quarelctl voice-test`). Outil de test, pas le futur client.
+- **Micro dans un navigateur** : uniquement sur `localhost` ou en HTTPS.
+
 ### Temps réel (`GET /v1/gateway`, WebSocket)
 
 1. Client → `{"op":"auth","token":"<session>"}` (premier message, ≤ 10 s). Jamais de cookie : toutes origines acceptées.
 2. Serveur → `{"t":"READY","d":{member, server, channels, members}}`.
-3. Serveur → `{"t":"<EVENT>","d":…}` : `MESSAGE_CREATE|UPDATE|DELETE`, `CHANNEL_CREATE|UPDATE|DELETE`, `MEMBER_JOIN|UPDATE`, `MEMBER_LEAVE {id, reason: left|kicked|banned}`, `ROLES_UPDATE` (liste complète), `ROLE_DELETE`, `CHANNELS_SYNC {channels, permissions}` (après tout changement de droits : remplace la liste des salons du client), `SERVER_UPDATE`. Les événements peuvent répéter un état déjà dans READY : les appliquer de façon idempotente.
-- READY : `{member, server, roles, members, channels, permissions: {server: [...], channels: {id: [...]}}}` — seulement les salons visibles.
+3. Serveur → `{"t":"<EVENT>","d":…}` : `MESSAGE_CREATE|UPDATE|DELETE`, `CHANNEL_CREATE|UPDATE|DELETE`, `MEMBER_JOIN|UPDATE`, `MEMBER_LEAVE {id, reason: left|kicked|banned}`, `VOICE_STATE_UPDATE`, `ROLES_UPDATE` (liste complète), `ROLE_DELETE`, `CHANNELS_SYNC {channels, permissions}` (après tout changement de droits : remplace la liste des salons du client), `SERVER_UPDATE`. Les événements peuvent répéter un état déjà dans READY : les appliquer de façon idempotente.
+- READY : `{member, server, roles, members, channels, voice_states, permissions: {server: [...], channels: {id: [...]}}}` — seulement les salons visibles.
 - Les événements de messages et `CHANNEL_CREATE|UPDATE` ne sont envoyés qu'aux membres qui voient le salon (`broadcastChannel`).
 - Fermetures : `4001` session invalide/expirée ; `1008` membre parti, client trop lent (file de 256 événements pleine) ou arrêt du serveur. Ping toutes les 30 s.
 - Les écritures passent par l'API REST ; le gateway ne fait que diffuser.
@@ -163,9 +179,18 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | POST | `/v1/channels/{id}/messages` | `send_messages` | `{content}` |
 | PATCH | `/v1/channels/{id}/messages/{mid}` | auteur | `{content}` |
 | DELETE | `/v1/channels/{id}/messages/{mid}` | auteur ou `manage_messages` | |
+| POST | `/v1/channels/{id}/voice/join` | `connect` | Jeton LiveKit `{url, token, room, can_speak}` |
+| GET | `/v1/voice/states` | session | Qui est dans quel salon vocal (salons visibles) |
+| PATCH | `/v1/voice/state` | session (en vocal) | `{self_mute?, self_deaf?}` |
+| POST | `/v1/voice/leave` | session | Quitter le vocal |
+| POST | `/internal/livekit/webhook` | signature LiveKit | Événements de salle |
+| * | `/lk/…` | — | Proxy vers la signalisation LiveKit embarquée |
+| GET | `/voice-test/` | jeton dans le fragment | Page de test vocal |
 | GET | `/v1/gateway` | premier message | WebSocket |
 
 ### Configuration
+
+Vocal : `QUAREL_VOICE` (`embedded` par défaut, `external`, `off`) ; embarqué : `QUAREL_LIVEKIT_BIN` (`livekit-server`, `/livekit-server` dans l'image), `QUAREL_VOICE_SIGNAL_PORT` (7880, boucle locale), `QUAREL_VOICE_TCP_PORT` (7881), `QUAREL_VOICE_UDP_PORT` (7882), `QUAREL_VOICE_PUBLIC_IP` (vide = adresses locales, `auto` = découverte STUN, ou une IP) ; externe : `QUAREL_LIVEKIT_URL`, `QUAREL_LIVEKIT_API_URL`, `QUAREL_LIVEKIT_KEY`, `QUAREL_LIVEKIT_SECRET`. Sans binaire LiveKit, le serveur démarre avec le vocal désactivé.
 
 `QUAREL_ADDR` (`:8090`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_SERVER_NAME` (nom au 1er démarrage seulement), `QUAREL_TRUSTED_ISSUERS` (liste séparée par des virgules ; défaut `identity.quarel.app`, instance officielle — domaine `quarel.app` choisi par le CP ; **ce nom ne doit jamais changer**, il fait partie de chaque identité).
 
@@ -180,13 +205,16 @@ make run-identity     # service Identity local sur :8080, données dans ./data/i
 make run-server       # serveur communautaire local sur :8090, données dans ./data/server
 make docker-identity  # image quarel-identity
 make docker-server    # image quarel-server
+make e2e-voice        # test vocal de bout en bout avec navigateurs
 ./bin/quarelctl help  # client de test
 ```
 
-Tests : les tests d'intégration (`internal/identity/identity_test.go`, `internal/community/community_test.go`) démarrent un vrai serveur HTTP sur une base SQLite temporaire, avec une horloge contrôlable (`srv.now`). Côté Identity, argon2 est allégé ; côté communautaire, un `idtoken.Signer` en mémoire remplace le service Identity (`staticKeys`).
+Tests : les tests d'intégration (`internal/identity/identity_test.go`, `internal/community/community_test.go`) démarrent un vrai serveur HTTP sur une base SQLite temporaire, avec une horloge contrôlable (`srv.now`). Côté Identity, argon2 est allégé ; côté communautaire, un `idtoken.Signer` en mémoire remplace le service Identity (`staticKeys`) et `fakeVoice` remplace LiveKit.
+
+Test vocal de bout en bout (hors `go test`) : `make e2e-voice` — vrai Identity + serveur + LiveKit, 2 Chromium sans interface avec micro simulé (Playwright, `test/e2e/`). Installe Playwright au premier lancement ; Chromium et ses dépendances système sont déjà présents sur la machine.
 
 ## Environnement de dev
 
-- OS : Linux. Disponibles : Docker, Node.js, Python 3, make, gcc, Go 1.27.1 (installé dans `~/.local/go`, PATH ajouté dans `~/.zshrc`). Non installés : Rust, `gh`. `sudo` non interactif disponible (le CP autorise l'installation d'outils si besoin).
+- OS : Linux. Disponibles : Docker, Node.js, Python 3, make, gcc, livekit-server 1.13.7 (`~/.local/bin`, somme de contrôle vérifiée), Go 1.27.1 (installé dans `~/.local/go`, PATH ajouté dans `~/.zshrc`). Non installés : Rust, `gh`. `sudo` non interactif disponible (le CP autorise l'installation d'outils si besoin).
 - Si `go` est introuvable dans le shell courant : `export PATH="$HOME/.local/go/bin:$HOME/go/bin:$PATH"`.
 - Git : branche `main`, remote `origin` = `git@github.com:anlekg/quarel.git` (SSH). Identité locale au dépôt : `anlekg` / adresse masquée GitHub `106981899+anlekg@users.noreply.github.com` (ne jamais utiliser l'email personnel).

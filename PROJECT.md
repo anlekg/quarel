@@ -26,7 +26,7 @@ Un équivalent de Discord où **les serveurs ne sont pas hébergés par un fourn
 | 1 | Revue des solutions open source existantes + choix structurants | ✅ Terminé |
 | 2 | Liste des fonctionnalités → `PLAN.md` | ✅ Validé le 2026-09-23 |
 | 3 | Choix de stack & architecture → `CLAUDE.md` | ✅ Go validé le 2026-09-23 |
-| 4 | Développement backend (itératif, testé par le CP) | 🟡 Jalons 1 à 3 livrés, en test |
+| 4 | Développement backend (itératif, testé par le CP) | 🟡 Jalons 1 à 4 livrés, en test |
 | 5 | Front-end / client | ⚪ À faire |
 | 6 | Packaging `.exe` | ⚪ À faire |
 
@@ -142,6 +142,10 @@ Deux types de serveurs :
 | 2026-09-23 | Hiérarchie des rôles avancée de P1 à P0 | Sans elle, un modérateur pourrait s'attribuer des droits d'administrateur. |
 | 2026-09-23 | `@everyone` ne notifie qu'avec la permission `mention_everyone` (absente par défaut) | Anti-spam de notifications. |
 | 2026-09-23 | Bannissement lié à l'identité portable, bannissement préventif possible d'un membre parti | Objectif initial : bans sans retour. |
+| 2026-09-23 | Vocal : LiveKit lancé et supervisé par le serveur communautaire, dans la même image | Installation en une commande ; LiveKit existe aussi pour Windows (futur `.exe`). |
+| 2026-09-23 | Pas de SDK LiveKit Go : petit client maison (jetons, API Twirp, webhooks) | Évite d'embarquer une pile WebRTC complète dans notre binaire. |
+| 2026-09-23 | Signalisation vocale via le port HTTP du serveur (proxy `/lk`) ; ouvrir seulement 7882/udp et 7881/tcp en plus | Moins de ports à ouvrir chez l'hébergeur. |
+| 2026-09-23 | Page de test vocal minimale servie par le serveur (validée par le CP) | Tester le micro sans avancer le vrai client. |
 
 ---
 
@@ -222,3 +226,20 @@ Le client (phase finale) sera choisi plus tard ; piste : Tauri avec un cœur Rus
 **Guide de test du CP :** `docs/tests/jalon-3.md`.
 
 **Limites connues :** exclusion temporaire, journal d'audit et suppression en masse des messages restent en P1.
+
+### Jalon 4 — Salons vocaux (livré le 2026-09-23)
+
+**Livré :** audio de groupe dans les salons vocaux via LiveKit embarqué (démarrage, relance automatique, configuration et clés générées), jetons d'accès selon `connect`/`speak`, suivi des participants par webhooks, un seul salon vocal à la fois, micro coupé et sourdine, application en direct des changements de droits (retrait de la parole, éjection), déconnexion vocale lors d'une expulsion/ban/suppression de salon, page de test vocal, commandes `voice` et `voice-test`, événements vocaux dans `listen`. Image Docker avec LiveKit (139 Mo, contre 23 Mo sans : le binaire LiveKit pèse ~110 Mo).
+
+**Validation :**
+- Tests automatisés : client LiveKit (jetons, webhooks signés/falsifiés, API), 4 tests vocaux côté serveur (droits, états, déplacement, réconciliation), tous passés avec le détecteur de concurrence.
+- **Test de bout en bout réel** : vrai `livekit-server` + deux Chromium sans interface avec micro simulé (Playwright, `make e2e-voice`, fichiers dans `test/e2e/`). Vérifié : connexion via le proxy `/lk`, audio reçu dans les deux sens (~18 Ko en 2,5 s chacun), participants connus du serveur, micro coupé visible en direct, retrait de `speak` appliqué par LiveKit, retrait de `connect` → éjection, aucune erreur.
+- Image Docker démarrée : LiveKit lancé dans le conteneur, page de test et proxy fonctionnels.
+
+**Guide de test du CP :** `docs/tests/jalon-4.md`.
+
+**Limites connues :**
+- Micro dans le navigateur seulement sur `localhost` tant que le HTTPS (P1) n'existe pas : tests sur une seule machine.
+- Exposition sur Internet : ports 7881/tcp et 7882/udp à ouvrir (UPnP en P1) et `QUAREL_VOICE_PUBLIC_IP=auto`. En Docker, `--network host` recommandé.
+- L'état vocal est en mémoire : après un redémarrage du seul serveur communautaire, il est reconstruit depuis LiveKit ; si les deux redémarrent, les clients doivent se reconnecter.
+- Vidéo, partage d'écran et modération vocale (déplacer, rendre muet) : P1.

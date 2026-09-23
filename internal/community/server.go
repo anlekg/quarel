@@ -36,6 +36,9 @@ type Server struct {
 	nonces *nonceStore
 	hub    *hub
 	now    func() time.Time
+
+	voiceOpts *VoiceOptions  // nil: voice disabled
+	voice     *voiceRegistry // who is in which voice channel
 }
 
 // ServerID derives the public server identifier from its key.
@@ -225,6 +228,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/channels/{id}/messages", s.authed(s.handleCreateMessage))
 	mux.HandleFunc("PATCH /v1/channels/{id}/messages/{mid}", s.authed(s.handleEditMessage))
 	mux.HandleFunc("DELETE /v1/channels/{id}/messages/{mid}", s.authed(s.handleDeleteMessage))
+
+	mux.HandleFunc("POST /v1/channels/{id}/voice/join", s.authed(s.handleVoiceJoin))
+	mux.HandleFunc("GET /v1/voice/states", s.authed(s.handleVoiceStates))
+	mux.HandleFunc("PATCH /v1/voice/state", s.authed(s.handleVoiceSelfState))
+	mux.HandleFunc("POST /v1/voice/leave", s.authed(s.handleVoiceLeave))
+	if s.voiceOpts != nil {
+		mux.HandleFunc("POST /internal/livekit/webhook", s.handleLiveKitWebhook)
+		if s.voiceOpts.Proxy != nil {
+			mux.Handle("/lk/", s.voiceOpts.Proxy)
+		}
+	}
+	mux.Handle("GET /voice-test/", voiceTestPage)
 
 	mux.HandleFunc("GET /v1/gateway", s.handleGateway)
 	return mux

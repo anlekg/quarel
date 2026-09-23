@@ -98,6 +98,10 @@ Modération
   unban <membre>                   lever un bannissement
   bans                             membres bannis
 
+Vocal
+  voice                            qui est dans quel salon vocal
+  voice-test                       adresse de la page de test vocal (navigateur)
+
 Options
   -s URL      adresse du service Identity (défaut : celle du profil, sinon http://localhost:8080)
   -c URL      serveur communautaire à utiliser au lieu du serveur courant

@@ -953,6 +953,14 @@ func (c *cli) listen() error {
 			if len(channels) != before {
 				fmt.Printf("%s ⚙ vos droits ont changé : vous voyez maintenant %d salon(s)\n", now, len(channels))
 			}
+		case "VOICE_STATE_UPDATE":
+			var v voiceStateInfo
+			json.Unmarshal(ev.D, &v)
+			if v.ChannelID == nil {
+				fmt.Printf("%s 🔊 départ du vocal : %s\n", now, authorName(members, v.MemberID))
+			} else {
+				fmt.Printf("%s 🔊 %s dans %s%s\n", now, authorName(members, v.MemberID), chanName(*v.ChannelID), v.flags())
+			}
 		case "SERVER_UPDATE":
 			var s serverInfo
 			json.Unmarshal(ev.D, &s)

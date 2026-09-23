@@ -34,6 +34,7 @@ func (s *Server) removeMember(ctx context.Context, tx *sql.Tx, memberID string) 
 
 // afterRemoval notifies clients once removeMember's transaction is committed.
 func (s *Server) afterRemoval(memberID, reason string) {
+	s.disconnectVoice(context.Background(), memberID)
 	s.hub.disconnectMember(memberID)
 	s.hub.broadcast("MEMBER_LEAVE", map[string]string{"id": memberID, "reason": reason})
 }
