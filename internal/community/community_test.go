@@ -227,7 +227,7 @@ func TestClaimAndJoin(t *testing.T) {
 	e.expect(204, "", e.call("DELETE", "/v1/invites/"+bobInv, owner.SessionToken, nil, nil))
 
 	// Public server: no invite needed.
-	e.expect(403, "forbidden", e.call("PATCH", "/v1/server", bobSess, map[string]string{"access": "public"}, nil))
+	e.expect(403, "missing_permissions", e.call("PATCH", "/v1/server", bobSess, map[string]string{"access": "public"}, nil))
 	e.expect(200, "", e.call("PATCH", "/v1/server", owner.SessionToken, map[string]string{"access": "public", "name": "Chez Alice"}, nil))
 	e.mustLogin(carol, loginOpts{})
 	var info serverInfo
@@ -322,7 +322,7 @@ func TestChannels(t *testing.T) {
 		t.Fatalf("général = %+v", general)
 	}
 
-	e.expect(403, "forbidden", e.call("POST", "/v1/channels", bob, map[string]any{"name": "x"}, nil))
+	e.expect(403, "missing_permissions", e.call("POST", "/v1/channels", bob, map[string]any{"name": "x"}, nil))
 	var cat, dev channel
 	e.expect(201, "", e.call("POST", "/v1/channels", owner, map[string]any{"type": "category", "name": "Projets"}, &cat))
 	e.expect(201, "", e.call("POST", "/v1/channels", owner, map[string]any{"name": "dev", "topic": "code", "parent_id": cat.ID}, &dev))
@@ -412,7 +412,7 @@ func TestMessages(t *testing.T) {
 	}
 
 	// Delete: author, or the owner for anyone's message.
-	e.expect(403, "forbidden", e.call("DELETE", mpath, bob, nil, nil))
+	e.expect(403, "missing_permissions", e.call("DELETE", mpath, bob, nil, nil))
 	e.expect(204, "", e.call("DELETE", fmt.Sprint(path, "/", plain.ID), owner, nil, nil))
 	e.expect(204, "", e.call("DELETE", mpath, owner, nil, nil))
 	e.expect(404, "not_found", e.call("DELETE", mpath, owner, nil, nil))

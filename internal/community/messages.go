@@ -17,11 +17,14 @@ const (
 	maxPageSize     = 100
 )
 
-// Mention syntax in message content: <@member_id> and @everyone.
-// Role mentions (<@&role_id>) arrive with roles in milestone 3.
+// Mention syntax in message content: <@member_id>, <@&role_id> and @everyone.
+// @everyone only pings with mention_everyone; a role pings if it is
+// mentionable or the author has mention_everyone. Otherwise the text stays
+// but nobody is notified.
 var (
-	mentionRe  = regexp.MustCompile(`<@([a-z2-7]{26})>`)
-	everyoneRe = regexp.MustCompile(`(^|[^\w])@everyone\b`)
+	mentionRe     = regexp.MustCompile(`<@([a-z2-7]{26})>`)
+	roleMentionRe = regexp.MustCompile(`<@&(\d+)>`)
+	everyoneRe    = regexp.MustCompile(`(^|[^\w])@everyone\b`)
 )
 
 type message struct {
@@ -29,7 +32,8 @@ type message struct {
 	ChannelID       int64      `json:"channel_id"`
 	AuthorID        string     `json:"author_id"`
 	Content         string     `json:"content"`
-	Mentions        []string   `json:"mentions"` // member IDs
+	Mentions        []string   `json:"mentions"`      // member IDs
+	MentionRoles    []int64    `json:"mention_roles"` // role IDs
 	MentionEveryone bool       `json:"mention_everyone"`
 	CreatedAt       time.Time  `json:"created_at"`
 	EditedAt        *time.Time `json:"edited_at"`
@@ -44,20 +48,25 @@ func scanMessage(sc interface{ Scan(...any) error }) (*message, error) {
 	if err := sc.Scan(&m.ID, &m.ChannelID, &m.AuthorID, &m.Content, &m.MentionEveryone, &created, &edited); err != nil {
 		return nil, err
 	}
-	m.CreatedAt, m.EditedAt, m.Mentions = fromMs(created), nullTime(edited), []string{}
+	m.CreatedAt, m.EditedAt, m.Mentions, m.MentionRoles = fromMs(created), nullTime(edited), []string{}, []int64{}
 	return &m, nil
 }
 
-// textChannel loads the {id} channel and checks it accepts messages.
-func (s *Server) textChannel(r *http.Request) (*channel, error) {
+// textChannel loads the {id} channel, checks the member can see it with perms p,
+// and that it accepts messages.
+func (s *Server) textChannel(r *http.Request, p perm) (*channel, *permSnapshot, error) {
 	c, err := s.pathChannel(r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	ps, err := s.requireChannelPerm(r, c, p)
+	if err != nil {
+		return nil, nil, err
 	}
 	if c.Type != chanText {
-		return nil, errf(http.StatusBadRequest, "not_text_channel", "only text channels hold messages")
+		return nil, nil, errf(http.StatusBadRequest, "not_text_channel", "only text channels hold messages")
 	}
-	return c, nil
+	return c, ps, nil
 }
 
 func validContent(content string) (string, error) {
@@ -68,11 +77,13 @@ func validContent(content string) (string, error) {
 	return content, nil
 }
 
-// resolveMentions returns the distinct active members mentioned in content.
-func (s *Server) resolveMentions(ctx context.Context, q querier, content string) ([]string, bool, error) {
-	ids := []string{}
+// resolveMentions fills msg's mentions from its content, as written by an
+// author holding perms p in the channel.
+func resolveMentions(ctx context.Context, q querier, ps *permSnapshot, msg *message, p perm) error {
+	canEveryone := p&permMentionEveryone != 0
+	msg.Mentions, msg.MentionRoles = []string{}, []int64{}
 	seen := map[string]bool{}
-	for _, m := range mentionRe.FindAllStringSubmatch(content, -1) {
+	for _, m := range mentionRe.FindAllStringSubmatch(msg.Content, -1) {
 		id := m[1]
 		if seen[id] {
 			continue
@@ -80,28 +91,49 @@ func (s *Server) resolveMentions(ctx context.Context, q querier, content string)
 		seen[id] = true
 		var exists bool
 		if err := q.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM members WHERE id = ? AND left_at IS NULL)`, id).Scan(&exists); err != nil {
-			return nil, false, err
+			return err
 		}
 		if exists {
-			ids = append(ids, id)
+			msg.Mentions = append(msg.Mentions, id)
 		}
 	}
-	return ids, everyoneRe.MatchString(content), nil
+	seenRole := map[int64]bool{}
+	for _, m := range roleMentionRe.FindAllStringSubmatch(msg.Content, -1) {
+		id, _ := strconv.ParseInt(m[1], 10, 64)
+		rl := ps.roles[id]
+		if seenRole[id] || rl == nil || id == everyoneRoleID || !rl.Mentionable && !canEveryone {
+			continue
+		}
+		seenRole[id] = true
+		msg.MentionRoles = append(msg.MentionRoles, id)
+	}
+	msg.MentionEveryone = canEveryone && everyoneRe.MatchString(msg.Content)
+	return nil
 }
 
-func saveMentions(ctx context.Context, q querier, msgID int64, ids []string) error {
-	if _, err := q.ExecContext(ctx, `DELETE FROM message_mentions WHERE message_id = ?`, msgID); err != nil {
-		return err
+func saveMentions(ctx context.Context, q querier, msg *message) error {
+	for _, stmt := range []string{
+		`DELETE FROM message_mentions WHERE message_id = ?`,
+		`DELETE FROM message_role_mentions WHERE message_id = ?`,
+	} {
+		if _, err := q.ExecContext(ctx, stmt, msg.ID); err != nil {
+			return err
+		}
 	}
-	for _, id := range ids {
-		if _, err := q.ExecContext(ctx, `INSERT INTO message_mentions (message_id, member_id) VALUES (?, ?)`, msgID, id); err != nil {
+	for _, id := range msg.Mentions {
+		if _, err := q.ExecContext(ctx, `INSERT INTO message_mentions (message_id, member_id) VALUES (?, ?)`, msg.ID, id); err != nil {
+			return err
+		}
+	}
+	for _, id := range msg.MentionRoles {
+		if _, err := q.ExecContext(ctx, `INSERT INTO message_role_mentions (message_id, role_id) VALUES (?, ?)`, msg.ID, id); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// loadMentions fills Mentions for msgs.
+// loadMentions fills the mentions of msgs.
 func (s *Server) loadMentions(ctx context.Context, msgs []*message) error {
 	if len(msgs) == 0 {
 		return nil
@@ -112,19 +144,35 @@ func (s *Server) loadMentions(ctx context.Context, msgs []*message) error {
 		byID[m.ID] = m
 		args[i] = m.ID
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT message_id, member_id FROM message_mentions WHERE message_id IN (?`+
-		strings.Repeat(",?", len(msgs)-1)+`) ORDER BY rowid`, args...)
+	in := `(?` + strings.Repeat(",?", len(msgs)-1) + `)`
+	rows, err := s.db.QueryContext(ctx, `SELECT message_id, member_id FROM message_mentions WHERE message_id IN `+in+` ORDER BY rowid`, args...)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var msgID int64
+		var memberID string
+		if err := rows.Scan(&msgID, &memberID); err != nil {
+			rows.Close()
+			return err
+		}
+		byID[msgID].Mentions = append(byID[msgID].Mentions, memberID)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows, err = s.db.QueryContext(ctx, `SELECT message_id, role_id FROM message_role_mentions WHERE message_id IN `+in+` ORDER BY rowid`, args...)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var msgID int64
-		var memberID string
-		if err := rows.Scan(&msgID, &memberID); err != nil {
+		var msgID, roleID int64
+		if err := rows.Scan(&msgID, &roleID); err != nil {
 			return err
 		}
-		byID[msgID].Mentions = append(byID[msgID].Mentions, memberID)
+		byID[msgID].MentionRoles = append(byID[msgID].MentionRoles, roleID)
 	}
 	return rows.Err()
 }
@@ -132,7 +180,7 @@ func (s *Server) loadMentions(ctx context.Context, msgs []*message) error {
 // handleListMessages returns one page of history in chronological order:
 // the latest messages by default, those just before ?before=ID, or those just after ?after=ID.
 func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
-	c, err := s.textChannel(r)
+	c, _, err := s.textChannel(r, 0)
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -203,13 +251,14 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	c, err := s.textChannel(r)
+	c, ps, err := s.textChannel(r, permSendMessages)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	content, err := validContent(req.Content)
-	if err != nil {
+	author := memberFrom(r).ID
+	msg := &message{ChannelID: c.ID, AuthorID: author}
+	if msg.Content, err = validContent(req.Content); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -220,21 +269,20 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	mentions, everyone, err := s.resolveMentions(ctx, tx, content)
-	if err != nil {
+	if err := resolveMentions(ctx, tx, ps, msg, ps.inChannel(author, c.ID)); err != nil {
 		writeErr(w, r, err)
 		return
 	}
 	now := s.nowMs()
-	author := memberFrom(r).ID
 	res, err := tx.ExecContext(ctx, `INSERT INTO messages (channel_id, author_id, content, mention_everyone, created_at) VALUES (?, ?, ?, ?, ?)`,
-		c.ID, author, content, everyone, now)
+		c.ID, author, msg.Content, msg.MentionEveryone, now)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	id, _ := res.LastInsertId()
-	if err := saveMentions(ctx, tx, id, mentions); err != nil {
+	msg.ID, _ = res.LastInsertId()
+	msg.CreatedAt = fromMs(now)
+	if err := saveMentions(ctx, tx, msg); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -242,28 +290,28 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	msg := &message{ID: id, ChannelID: c.ID, AuthorID: author, Content: content, Mentions: mentions, MentionEveryone: everyone, CreatedAt: fromMs(now)}
-	s.hub.broadcast("MESSAGE_CREATE", msg)
+	s.broadcastChannel(ctx, "MESSAGE_CREATE", c.ID, msg)
 	writeJSON(w, http.StatusCreated, msg)
 }
 
-// pathMessage loads the {mid} message of the {id} channel.
-func (s *Server) pathMessage(r *http.Request) (*message, error) {
-	c, err := s.textChannel(r)
+// pathMessage loads the {mid} message of the {id} text channel the member can see.
+func (s *Server) pathMessage(r *http.Request) (*channel, *permSnapshot, *message, error) {
+	c, ps, err := s.textChannel(r, 0)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	mid, err := strconv.ParseInt(r.PathValue("mid"), 10, 64)
 	if err != nil {
-		return nil, errf(http.StatusNotFound, "not_found", "no such message")
+		return nil, nil, nil, errf(http.StatusNotFound, "not_found", "no such message")
 	}
 	m, err := scanMessage(s.db.QueryRowContext(r.Context(), `SELECT `+messageCols+` FROM messages WHERE id = ? AND channel_id = ?`, mid, c.ID))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, errf(http.StatusNotFound, "not_found", "no such message")
+		return nil, nil, nil, errf(http.StatusNotFound, "not_found", "no such message")
 	}
-	return m, err
+	return c, ps, m, err
 }
 
+// handleEditMessage lets authors edit their own messages; mentions are recomputed.
 func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Content string `json:"content"`
@@ -272,12 +320,13 @@ func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	msg, err := s.pathMessage(r)
+	c, ps, msg, err := s.pathMessage(r)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	if msg.AuthorID != memberFrom(r).ID {
+	me := memberFrom(r).ID
+	if msg.AuthorID != me {
 		writeErr(w, r, errf(http.StatusForbidden, "forbidden", "you can only edit your own messages"))
 		return
 	}
@@ -292,7 +341,7 @@ func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	if msg.Mentions, msg.MentionEveryone, err = s.resolveMentions(ctx, tx, msg.Content); err != nil {
+	if err := resolveMentions(ctx, tx, ps, msg, ps.inChannel(me, c.ID)); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -302,7 +351,7 @@ func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	if err := saveMentions(ctx, tx, msg.ID, msg.Mentions); err != nil {
+	if err := saveMentions(ctx, tx, msg); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -312,25 +361,28 @@ func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	edited := fromMs(now)
 	msg.EditedAt = &edited
-	s.hub.broadcast("MESSAGE_UPDATE", msg)
+	s.broadcastChannel(ctx, "MESSAGE_UPDATE", c.ID, msg)
 	writeJSON(w, http.StatusOK, msg)
 }
 
-// handleDeleteMessage lets authors delete their messages, and the owner delete any.
+// handleDeleteMessage lets authors delete their messages, and members with
+// manage_messages in the channel delete any.
 func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
-	msg, err := s.pathMessage(r)
+	c, ps, msg, err := s.pathMessage(r)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	if me := memberFrom(r); msg.AuthorID != me.ID && !me.IsOwner {
-		writeErr(w, r, errf(http.StatusForbidden, "forbidden", "you can only delete your own messages"))
+	me := memberFrom(r).ID
+	if msg.AuthorID != me && ps.inChannel(me, c.ID)&permManageMessages == 0 {
+		writeErr(w, r, missing(permManageMessages))
 		return
 	}
-	if _, err := s.db.ExecContext(r.Context(), `DELETE FROM messages WHERE id = ?`, msg.ID); err != nil {
+	ctx := r.Context()
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM messages WHERE id = ?`, msg.ID); err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	s.hub.broadcast("MESSAGE_DELETE", map[string]int64{"id": msg.ID, "channel_id": msg.ChannelID})
+	s.broadcastChannel(ctx, "MESSAGE_DELETE", c.ID, map[string]int64{"id": msg.ID, "channel_id": msg.ChannelID})
 	w.WriteHeader(http.StatusNoContent)
 }

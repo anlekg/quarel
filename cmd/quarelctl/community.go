@@ -28,12 +28,13 @@ type community struct {
 }
 
 type channelInfo struct {
-	ID       int64  `json:"id"`
-	Type     string `json:"type"`
-	Name     string `json:"name"`
-	Topic    string `json:"topic"`
-	ParentID *int64 `json:"parent_id"`
-	Position int64  `json:"position"`
+	ID        int64          `json:"id"`
+	Type      string         `json:"type"`
+	Name      string         `json:"name"`
+	Topic     string         `json:"topic"`
+	ParentID  *int64         `json:"parent_id"`
+	Position  int64          `json:"position"`
+	Overrides []overrideInfo `json:"overrides"`
 }
 
 type memberInfo struct {
@@ -41,6 +42,7 @@ type memberInfo struct {
 	Handle      string    `json:"handle"`
 	DisplayName string    `json:"display_name"`
 	Owner       bool      `json:"owner"`
+	Roles       []int64   `json:"roles"`
 	JoinedAt    time.Time `json:"joined_at"`
 }
 
@@ -128,7 +130,7 @@ func (c *cli) runCommunity(cmd string, args []string) (bool, error) {
 			}
 		}
 	default:
-		return false, nil
+		return c.runRoles(cmd, args)
 	}
 	return true, err
 }
@@ -233,7 +235,7 @@ func (c *cli) joinCmd(target, invite, claim string) error {
 	case res.Joined:
 		fmt.Printf("Bienvenue sur « %s » (%d membres) !\n", res.Server.Name, res.Server.MemberCount)
 	default:
-		fmt.Printf("Reconnecté à « %s ».\n", res.Server.Name)
+		fmt.Printf("Reconnexion à « %s ».\n", res.Server.Name)
 	}
 	fmt.Printf("Serveur courant : %s — session valable jusqu'au %s\n", base, res.ExpiresAt.Local().Format("2006-01-02 15:04"))
 	return c.save()
@@ -404,7 +406,11 @@ func (c *cli) printChannels() error {
 		if ch.Topic != "" {
 			topic = "  — " + ch.Topic
 		}
-		fmt.Printf("%s%s %s  (id %d)%s\n", indent, typeIcon[ch.Type], ch.Name, ch.ID, topic)
+		lock := ""
+		if len(ch.Overrides) > 0 {
+			lock = " 🔒"
+		}
+		fmt.Printf("%s%s %s%s  (id %d)%s\n", indent, typeIcon[ch.Type], ch.Name, lock, ch.ID, topic)
 	}
 	for _, ch := range top {
 		line("", ch)
@@ -529,12 +535,19 @@ func (c *cli) printMembers() error {
 	if err := c.cdo("GET", "/v1/members", nil, &list); err != nil {
 		return err
 	}
+	roles, err := c.roles()
+	if err != nil {
+		return err
+	}
 	for _, m := range list {
-		owner := ""
+		extra := ""
 		if m.Owner {
-			owner = "  👑 propriétaire"
+			extra = "  👑 propriétaire"
 		}
-		fmt.Printf("%-20s %-32s id %s%s\n", m.DisplayName, m.Handle, m.ID, owner)
+		if names := roleNames(m.Roles, roles); names != "" {
+			extra += "  [" + names + "]"
+		}
+		fmt.Printf("%-20s %-32s id %s%s\n", m.DisplayName, m.Handle, m.ID, extra)
 	}
 	return nil
 }
@@ -854,7 +867,7 @@ func (c *cli) listen() error {
 			for _, m := range d.Members {
 				members[m.ID] = m
 			}
-			fmt.Printf("Connecté à « %s » en tant que %s — %d salons, %d membres. En écoute (Ctrl+C pour quitter)…\n",
+			fmt.Printf("Connexion à « %s » en tant que %s — %d salons, %d membres. En écoute (Ctrl+C pour quitter)…\n",
 				d.Server.Name, d.Member.DisplayName, len(d.Channels), len(d.Members))
 		case "MESSAGE_CREATE", "MESSAGE_UPDATE":
 			var m messageInfo
@@ -866,7 +879,7 @@ func (c *cli) listen() error {
 			ping := ""
 			for _, id := range m.Mentions {
 				if id == me {
-					ping = "   🔔 vous êtes mentionné"
+					ping = "   🔔 mention pour vous"
 				}
 			}
 			if m.MentionEveryone && ping == "" {
@@ -899,17 +912,47 @@ func (c *cli) listen() error {
 			old, known := members[m.ID]
 			members[m.ID] = m
 			if ev.T == "MEMBER_JOIN" {
-				fmt.Printf("%s → %s (%s) a rejoint le serveur\n", now, m.DisplayName, m.Handle)
+				fmt.Printf("%s → arrivée de %s (%s)\n", now, m.DisplayName, m.Handle)
 			} else if known && old.DisplayName != m.DisplayName {
-				fmt.Printf("%s ✎ %s s'appelle maintenant %s\n", now, old.DisplayName, m.DisplayName)
+				fmt.Printf("%s ✎ %s → %s (nouveau nom affiché)\n", now, old.DisplayName, m.DisplayName)
+			} else if known && fmt.Sprint(old.Roles) != fmt.Sprint(m.Roles) {
+				fmt.Printf("%s ⚙ les rôles de %s ont changé\n", now, m.DisplayName)
 			}
 		case "MEMBER_LEAVE":
 			var d struct {
-				ID string `json:"id"`
+				ID     string `json:"id"`
+				Reason string `json:"reason"`
 			}
 			json.Unmarshal(ev.D, &d)
-			fmt.Printf("%s ← %s a quitté le serveur\n", now, authorName(members, d.ID))
+			how := map[string]string{"kicked": "expulsion", "banned": "bannissement"}[d.Reason]
+			if how == "" {
+				how = "départ"
+			}
+			fmt.Printf("%s ← %s : %s\n", now, authorName(members, d.ID), how)
 			delete(members, d.ID)
+		case "ROLES_UPDATE":
+			var list []roleInfo
+			json.Unmarshal(ev.D, &list)
+			names := []string{}
+			for _, r := range list {
+				names = append(names, r.Name)
+			}
+			fmt.Printf("%s ⚙ rôles : %s\n", now, strings.Join(names, ", "))
+		case "ROLE_DELETE":
+			fmt.Printf("%s ⚙ un rôle a été supprimé\n", now)
+		case "CHANNELS_SYNC":
+			var d struct {
+				Channels []channelInfo `json:"channels"`
+			}
+			json.Unmarshal(ev.D, &d)
+			before := len(channels)
+			channels = map[int64]channelInfo{}
+			for _, ch := range d.Channels {
+				channels[ch.ID] = ch
+			}
+			if len(channels) != before {
+				fmt.Printf("%s ⚙ vos droits ont changé : vous voyez maintenant %d salon(s)\n", now, len(channels))
+			}
 		case "SERVER_UPDATE":
 			var s serverInfo
 			json.Unmarshal(ev.D, &s)

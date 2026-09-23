@@ -96,7 +96,7 @@
 - [x] **P0** Envoi / réception en temps réel (WebSocket)
 - [x] **P0** Historique paginé
 - [x] **P0** Édition / suppression
-- [x] **P0** Mentions (@membre, @everyone) — *@rôle arrive avec les rôles (jalon 3)*
+- [x] **P0** Mentions (@membre, @rôle, @everyone)
 - [ ] **P1** Réponses (citation d'un message)
 - [ ] **P1** Réactions emoji
 - [ ] **P1** Pièces jointes (stockage disque local, limite de taille configurable)
@@ -108,12 +108,13 @@
 - [ ] **P2** Mise en forme Markdown étendue, blocs de code
 
 ### B5. Rôles et permissions
-- [ ] **P0** Rôles avec permissions (gérer le serveur, salons, rôles, membres, messages…)
-- [ ] **P0** Surcharges de permissions par salon / catégorie
-- [ ] **P1** Hiérarchie des rôles, couleur, affichage séparé dans la liste des membres
+- [x] **P0** Rôles avec permissions (gérer le serveur, salons, rôles, membres, messages…)
+- [x] **P0** Surcharges de permissions par salon / catégorie
+- [x] **P1** Hiérarchie des rôles, couleur *(avancé au jalon 3 : indispensable à la sécurité des rôles)*
+- [ ] **P1** Affichage séparé des rôles dans la liste des membres
 
 ### B6. Modération
-- [ ] **P0** Expulsion (kick) et bannissement (lié à l'identité portable)
+- [x] **P0** Expulsion (kick) et bannissement (lié à l'identité portable)
 - [ ] **P1** Exclusion temporaire (timeout)
 - [ ] **P1** Journal d'audit des actions de modération
 - [ ] **P1** Suppression en masse des messages d'un membre
@@ -151,7 +152,7 @@
 
 1. **Jalon 1 — Identity minimal :** A1 P0, A2 P0 → un compte et un jeton d'identité vérifiable. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-1.md`).*
 2. **Jalon 2 — Serveur communautaire texte :** B1 P0, B2 P0, B3 P0, B4 P0 → rejoindre un serveur et discuter. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-2.md`).*
-3. **Jalon 3 — Rôles et modération :** B5 P0, B6 P0.
+3. **Jalon 3 — Rôles et modération :** B5 P0, B6 P0. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-3.md`).*
 4. **Jalon 4 — Voix :** B7 P0.
 5. **Jalon 5 — Amis et MP chiffrés :** A3 P0, A4 P0, A5 P0.
 6. **Jalon 6 — P1** (par blocs, dans l'ordre choisi par le CP).

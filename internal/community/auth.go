@@ -107,8 +107,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, s.nowMs())
+	view, err := s.memberView(ctx, m)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	if joined {
-		s.hub.broadcast("MEMBER_JOIN", m.json())
+		s.hub.broadcast("MEMBER_JOIN", view)
 	}
 	info, err := s.info(ctx)
 	if err != nil {
@@ -118,7 +123,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session_token": token,
 		"expires_at":    expires.UTC(),
-		"member":        m.json(),
+		"member":        view,
 		"server":        info,
 		"joined":        joined,
 	})
@@ -164,6 +169,15 @@ func (s *Server) admit(ctx context.Context, claims *idtoken.Claims, invite, clai
 	m, err = memberBy(ctx, tx, `issuer = ? AND subject = ?`, claims.Issuer, claims.Subject)
 	if err != nil {
 		return nil, false, err
+	}
+	if m != nil {
+		var banned bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM bans WHERE member_id = ?)`, m.ID).Scan(&banned); err != nil {
+			return nil, false, err
+		}
+		if banned {
+			return nil, false, errf(http.StatusForbidden, "banned", "you are banned from this server")
+		}
 	}
 	now := s.nowMs()
 	active := m != nil && !m.LeftAt.Valid
@@ -282,14 +296,3 @@ func (s *Server) authed(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func memberFrom(r *http.Request) *member { return r.Context().Value(memberKey{}).(*member) }
-
-// ownerOnly restricts an endpoint to the owner until roles exist (milestone 3).
-func (s *Server) ownerOnly(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !memberFrom(r).IsOwner {
-			writeErr(w, r, errf(http.StatusForbidden, "forbidden", "only the server owner can do this"))
-			return
-		}
-		h(w, r)
-	}
-}

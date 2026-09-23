@@ -15,7 +15,7 @@ import (
 // Gateway protocol (GET /v1/gateway, WebSocket, JSON text frames):
 //
 //	client → {"op":"auth","token":"<session token>"}   first frame, within authTimeout
-//	server → {"t":"READY","d":{member, server, channels, members}}
+//	server → {"t":"READY","d":{member, server, roles, members, channels, permissions}}
 //	server → {"t":"<EVENT>","d":{...}}                 MESSAGE_CREATE, CHANNEL_UPDATE…
 //
 // Events are also delivered for changes the client made itself. After READY,
@@ -72,7 +72,11 @@ func (h *hub) dropLocked(c *wsConn, reason string) {
 	close(c.send)
 }
 
-func (h *hub) broadcast(t string, d any) {
+func (h *hub) broadcast(t string, d any) { h.broadcastTo(t, d, nil) }
+
+// broadcastTo sends an event to the connected members for whom allow returns
+// true (all of them if allow is nil). allow runs under the hub lock: keep it in memory.
+func (h *hub) broadcastTo(t string, d any, allow func(memberID string) bool) {
 	data, err := json.Marshal(event{T: t, D: d})
 	if err != nil {
 		slog.Error("encoding event", "type", t, "err", err)
@@ -81,11 +85,31 @@ func (h *hub) broadcast(t string, d any) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for c := range h.conns {
-		select {
-		case c.send <- data:
-		default:
-			h.dropLocked(c, "client too slow")
+		if allow == nil || allow(c.memberID) {
+			h.sendLocked(c, data)
 		}
+	}
+}
+
+// sendEach sends each connection its own payload for event t.
+func (h *hub) sendEach(t string, build func(memberID string) any) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for c := range h.conns {
+		data, err := json.Marshal(event{T: t, D: build(c.memberID)})
+		if err != nil {
+			slog.Error("encoding event", "type", t, "err", err)
+			return
+		}
+		h.sendLocked(c, data)
+	}
+}
+
+func (h *hub) sendLocked(c *wsConn, data []byte) {
+	select {
+	case c.send <- data:
+	default:
+		h.dropLocked(c, "client too slow")
 	}
 }
 
@@ -187,12 +211,36 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// memberState is what a member can see and do: visible channels and permissions.
+func memberState(ps *permSnapshot, memberID string) map[string]any {
+	return map[string]any{
+		"channels":    ps.visibleChannels(memberID),
+		"permissions": map[string]any{"server": ps.base(memberID).names(), "channels": ps.channelPerms(memberID)},
+	}
+}
+
+// syncPermissions sends every connected member their visible channels and
+// permissions (CHANNELS_SYNC) after a change that may affect them: role
+// permissions, member roles, channel overrides, channel moves.
+func (s *Server) syncPermissions(ctx context.Context) {
+	ps, err := s.loadPerms(ctx, s.db)
+	if err != nil {
+		s.logErr("loading permissions for CHANNELS_SYNC", err)
+		return
+	}
+	s.hub.sendEach("CHANNELS_SYNC", func(memberID string) any { return memberState(ps, memberID) })
+}
+
 func (s *Server) readyPayload(ctx context.Context, m *member) (map[string]any, error) {
 	info, err := s.info(ctx)
 	if err != nil {
 		return nil, err
 	}
-	channels, err := s.allChannels(ctx)
+	ps, err := s.loadPerms(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	me, err := s.memberView(ctx, m)
 	if err != nil {
 		return nil, err
 	}
@@ -200,5 +248,11 @@ func (s *Server) readyPayload(ctx context.Context, m *member) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"member": m.json(), "server": info, "channels": channels, "members": members}, nil
+	roles, err := allRoles(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	ready := memberState(ps, m.ID)
+	ready["member"], ready["server"], ready["members"], ready["roles"] = me, info, members, roles
+	return ready, nil
 }

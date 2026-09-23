@@ -72,6 +72,50 @@ CREATE TABLE message_mentions (
 	PRIMARY KEY (message_id, member_id)
 );
 `,
+	// Milestone 3: roles, permissions, channel overrides, bans.
+	// Role 1 is @everyone; 3091 = view_channel | send_messages | create_invite | connect | speak.
+	`
+CREATE TABLE roles (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	name        TEXT NOT NULL,
+	color       INTEGER NOT NULL DEFAULT 0,
+	position    INTEGER NOT NULL,
+	permissions INTEGER NOT NULL DEFAULT 0,
+	mentionable INTEGER NOT NULL DEFAULT 0,
+	created_at  INTEGER NOT NULL
+);
+INSERT INTO roles (id, name, position, permissions, created_at) VALUES (1, '@everyone', 0, 3091, 0);
+
+CREATE TABLE member_roles (
+	member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+	role_id   INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+	PRIMARY KEY (member_id, role_id)
+);
+
+-- target_id is a role ID (as text) or a member ID; no foreign key, cleaned up by the code.
+CREATE TABLE channel_overrides (
+	channel_id  INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+	target_type TEXT NOT NULL CHECK (target_type IN ('role', 'member')),
+	target_id   TEXT NOT NULL,
+	allow       INTEGER NOT NULL DEFAULT 0,
+	deny        INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (channel_id, target_type, target_id)
+);
+
+-- Bans target the member row, i.e. the portable identity (issuer, subject).
+CREATE TABLE bans (
+	member_id  TEXT PRIMARY KEY REFERENCES members(id),
+	reason     TEXT NOT NULL DEFAULT '',
+	banned_by  TEXT REFERENCES members(id),
+	created_at INTEGER NOT NULL
+);
+
+CREATE TABLE message_role_mentions (
+	message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+	role_id    INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+	PRIMARY KEY (message_id, role_id)
+);
+`,
 }
 
 // OpenDB opens (creating if needed) the SQLite database at path and applies migrations.

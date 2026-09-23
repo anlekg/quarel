@@ -49,11 +49,12 @@ type memberJSON struct {
 	Nickname    *string   `json:"nickname,omitempty"`
 	DisplayName string    `json:"display_name"`
 	Owner       bool      `json:"owner"`
+	Roles       []int64   `json:"roles"` // role IDs, @everyone implied
 	JoinedAt    time.Time `json:"joined_at"`
 }
 
 func (m *member) json() memberJSON {
-	j := memberJSON{ID: m.ID, Handle: m.Handle, Issuer: m.Issuer, Subject: m.Subject, Owner: m.IsOwner, JoinedAt: fromMs(m.JoinedAt)}
+	j := memberJSON{ID: m.ID, Handle: m.Handle, Issuer: m.Issuer, Subject: m.Subject, Owner: m.IsOwner, Roles: []int64{}, JoinedAt: fromMs(m.JoinedAt)}
 	j.DisplayName, _, _ = strings.Cut(m.Handle, "@")
 	if m.Nickname.Valid {
 		j.Nickname = &m.Nickname.String
@@ -62,7 +63,29 @@ func (m *member) json() memberJSON {
 	return j
 }
 
+// memberView is the member's JSON with its roles.
+func (s *Server) memberView(ctx context.Context, m *member) (memberJSON, error) {
+	j := m.json()
+	rows, err := s.db.QueryContext(ctx, `SELECT role_id FROM member_roles WHERE member_id = ? ORDER BY role_id`, m.ID)
+	if err != nil {
+		return j, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return j, err
+		}
+		j.Roles = append(j.Roles, id)
+	}
+	return j, rows.Err()
+}
+
 func (s *Server) activeMembers(ctx context.Context) ([]memberJSON, error) {
+	roles, err := allMemberRoles(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx, `SELECT `+memberCols+` FROM members WHERE left_at IS NULL ORDER BY joined_at`)
 	if err != nil {
 		return nil, err
@@ -74,7 +97,11 @@ func (s *Server) activeMembers(ctx context.Context) ([]memberJSON, error) {
 		if err != nil {
 			return nil, err
 		}
-		list = append(list, m.json())
+		j := m.json()
+		if r := roles[m.ID]; r != nil {
+			j.Roles = r
+		}
+		list = append(list, j)
 	}
 	return list, rows.Err()
 }
@@ -89,7 +116,12 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, memberFrom(r).json())
+	view, err := s.memberView(r.Context(), memberFrom(r))
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
@@ -115,8 +147,13 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	s.hub.broadcast("MEMBER_UPDATE", m.json())
-	writeJSON(w, http.StatusOK, m.json())
+	view, err := s.memberView(r.Context(), m)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	s.hub.broadcast("MEMBER_UPDATE", view)
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Server) handleLeave(w http.ResponseWriter, r *http.Request) {
@@ -132,11 +169,7 @@ func (s *Server) handleLeave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `UPDATE members SET left_at = ? WHERE id = ?`, s.nowMs(), m.ID); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE member_id = ?`, m.ID); err != nil {
+	if err := s.removeMember(ctx, tx, m.ID); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -144,7 +177,6 @@ func (s *Server) handleLeave(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	s.hub.disconnectMember(m.ID)
-	s.hub.broadcast("MEMBER_LEAVE", map[string]string{"id": m.ID})
+	s.afterRemoval(m.ID, leftVoluntarily)
 	w.WriteHeader(http.StatusNoContent)
 }

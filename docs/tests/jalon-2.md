@@ -35,7 +35,7 @@ Créer deux comptes Identity (voir `docs/tests/jalon-1.md`), par exemple :
 3. `./bin/quarelctl -p bob join '<lien>'` → « Bienvenue ».
 4. Un 3ᵉ compte essaie le même lien → `invalid_invite` (déjà utilisé).
 5. `./bin/quarelctl -p alice invites` → liste avec compteur d'utilisations ; `invite-revoke <code>`.
-6. Bob peut aussi créer des invitations, mais ne voit et ne révoque que les siennes.
+6. Bob peut aussi créer des invitations, mais ne voit et ne révoque que les siennes (sauf permission `manage_server`, jalon 3).
 7. `./bin/quarelctl -p alice srv-set access=public` → n'importe quel compte peut rejoindre sans invitation.
 
 ### 3. Salons (propriétaire)
@@ -43,15 +43,15 @@ Créer deux comptes Identity (voir `docs/tests/jalon-1.md`), par exemple :
 2. `channel-create Projets category`, puis `channel-create dev text Projets`.
 3. `channel-edit dev topic="Discussions techniques" name=développement`.
 4. `channel-delete Projets` → la catégorie disparaît, `développement` remonte à la racine.
-5. Bob essaie `channel-create pirate` → `forbidden` (réservé au propriétaire jusqu'aux rôles du jalon 3).
+5. Bob essaie `channel-create pirate` → `missing_permissions` (permission `manage_channels` requise, voir jalon 3).
 
 ### 4. Messages en temps réel
-1. Dans un terminal dédié : `./bin/quarelctl -p bob listen` → « Connecté … En écoute ».
-2. `./bin/quarelctl -p alice send général Salut @bob !` → le message apparaît **instantanément** chez bob, avec « 🔔 vous êtes mentionné ».
-3. `@everyone` dans un message → notification pour tous.
+1. Dans un terminal dédié : `./bin/quarelctl -p bob listen` → « Connexion à … En écoute ».
+2. `./bin/quarelctl -p alice send général Salut @bob !` → le message apparaît **instantanément** chez bob, avec « 🔔 mention pour vous ».
+3. `@everyone` dans un message → notification pour tous (seulement avec la permission `mention_everyone` depuis le jalon 3 : le propriétaire l'a).
 4. `./bin/quarelctl -p bob history général` → historique ; avec beaucoup de messages : `history général 10` puis la commande suggérée pour les plus anciens.
 5. `edit général <id> nouveau texte` → « (modifié) » ; bob ne peut pas modifier un message d'alice (`forbidden`).
-6. `delete général <id>` → l'auteur peut supprimer le sien ; le propriétaire peut supprimer n'importe lequel.
+6. `delete général <id>` → l'auteur peut supprimer le sien ; le propriétaire (ou la permission `manage_messages`) peut supprimer n'importe lequel.
 7. Envoyer un message dans le salon vocal → refusé (`not_text_channel` ou salon introuvable).
 8. Chaque action (salon créé, surnom, suppression…) s'affiche en direct dans le terminal `listen`.
 

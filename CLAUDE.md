@@ -42,12 +42,14 @@ Alternative à Discord **auto-hébergeable** : chaque serveur tourne chez son pr
 ```
 cmd/quarel-identity/    binaire du service Identity
 cmd/quarel-server/      binaire du serveur communautaire
-cmd/quarelctl/          client de test en ligne de commande (sorties en français, pour le CP) :
-                        main.go (Identity), community.go (serveurs communautaires)
+cmd/quarelctl/          client de test en ligne de commande (sorties en français, neutres en genre, pour le CP) :
+                        main.go (Identity), community.go (serveurs communautaires), roles.go (rôles, modération)
 internal/identity/      service Identity : HTTP (server.go), endpoints (handlers.go), SQLite (store.go),
                         argon2id (crypto.go), TOTP (totp.go), emails (mail.go), anti-bruteforce (lockout.go)
 internal/community/     serveur communautaire : config, clés des Identity (keys.go), auth (auth.go),
-                        membres, invitations, salons, messages, temps réel (gateway.go)
+                        membres, invitations, salons + droits par salon (channels.go), messages,
+                        permissions (permissions.go), rôles (roles.go), expulsion/bannissement
+                        (moderation.go), temps réel (gateway.go)
 internal/httpapi/       conventions JSON partagées (erreurs, décodage strict)
 internal/sqlitedb/      ouverture SQLite + migrations (PRAGMA user_version)
 internal/secret/        identifiants aléatoires, jetons porteurs, fichiers de clés Ed25519
@@ -104,10 +106,19 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 - **Identité du serveur** : clé Ed25519 `$QUAREL_DATA_DIR/server.key` (1er démarrage). `server_id` = base32(SHA-256(clé publique)[:16]). Les liens d'invitation portent le `sid` ; le client (quarelctl) épingle le `server_id` au 1er contact et refuse s'il change. Prévu (P1) : certificat TLS lié à cette clé, pour empêcher un intermédiaire.
 - **Connexion** : `POST /v1/auth/challenge` → `{server_id, nonce}` (usage unique, 2 min, en mémoire) ; `POST /v1/auth/login {identity_token, nonce, proof, invite?, claim?}`. Le serveur vérifie le jeton hors ligne avec les clés de l'émetteur (`QUAREL_TRUSTED_ISSUERS`), puis la preuve `SignProof(device, server_id, nonce)`. Session = jeton porteur (SHA-256 stocké) qui **expire avec le jeton d'identité** ; le client se reconnecte alors avec un nouveau jeton.
 - **Clés des services Identity** (`keys.go`) : récupérées sur `https://<issuer>/.well-known/quarel-identity` (`http://` pour localhost/127.x), cache 1 h, re-téléchargement forcé si `kid` inconnu (1/min max), anciennes clés conservées si l'Identity est injoignable.
-- **Membres** : identifiés par `(issuer, subject)`. Départ = `left_at` (la ligne reste : les messages gardent leur auteur ; même `id` au retour). Le propriétaire (`is_owner`) ne peut pas partir.
+- **Membres** : identifiés par `(issuer, subject)`. Départ, expulsion ou bannissement = `left_at` + suppression des sessions et des rôles (`removeMember`) ; la ligne reste : les messages gardent leur auteur, les bans leur cible, même `id` au retour. Le propriétaire (`is_owner`) ne peut pas partir.
 - **Propriétaire** : tant qu'il n'y en a pas, un code de revendication est généré (et affiché) à chaque démarrage ; `login` avec `claim` le consomme.
-- **Accès** : `private` (défaut, invitation requise pour rejoindre) ou `public`. Invitations : code 10 caractères, `max_uses` (0 = illimité), `expires_in` en secondes (absent = 7 jours, 0 = jamais) ; tout membre peut inviter, voit/révoque les siennes ; le propriétaire voit/révoque tout.
-- **Permissions provisoires** (en attendant les rôles, jalon 3) : `ownerOnly` pour salons et réglages ; auteur seul pour modifier un message ; auteur ou propriétaire pour supprimer.
+- **Accès** : `private` (défaut, invitation requise pour rejoindre) ou `public`. Invitations : code 10 caractères, `max_uses` (0 = illimité), `expires_in` en secondes (absent = 7 jours, 0 = jamais) ; `create_invite` pour inviter ; chacun voit/révoque les siennes, `manage_server` voit/révoque tout.
+
+### Permissions et rôles (jalon 3)
+
+- **Permissions** (`permissions.go`) : bits stockés en base (**ne jamais renuméroter**), échangés par l'API sous forme de **noms** : `view_channel`, `send_messages`, `manage_messages`, `mention_everyone`, `create_invite`, `manage_channels`, `manage_roles`, `kick_members`, `ban_members`, `manage_server`, `connect`, `speak`, `administrator`. Réglables par salon : `view_channel`, `send_messages`, `manage_messages`, `mention_everyone`, `manage_channels`, `connect`, `speak`.
+- **Rôles** (`roles.go`) : le rôle `@everyone` (id 1, position 0, défaut : voir, écrire, inviter, connect, speak) s'applique à tous ; les autres ont les positions 1..n (plus haut = plus puissant), nouveaux rôles en bas. Permissions serveur = union des rôles ; `administrator` ou propriétaire = tout.
+- **Hiérarchie** : on ne gère/attribue que les rôles **strictement sous** son rôle le plus haut (`checkRoleRank`), on n'accorde ou ne retire que des permissions qu'on possède (`checkGrant`), on n'expulse/bannit/surcharge un membre que s'il est strictement en dessous (`outranks`) ; le propriétaire est au-dessus de tout et intouchable.
+- **Droits par salon** (`channel_overrides`) : par rôle ou par membre, `allow`/`deny`. Calcul (`inChannel`) : permissions serveur → surcharges de la catégorie parente → surcharges du salon ; à chaque niveau `@everyone`, puis l'union des rôles du membre, puis le membre. Sans `view_channel` : aucune permission, salon invisible (404 `not_found`, pas de fuite d'existence). Modifier une surcharge exige `manage_roles` et de posséder dans ce salon les permissions changées.
+- **Instantané** : chaque vérification charge tout l'état des permissions (`loadPerms` : propriétaires, rôles, rôles des membres, salons + surcharges). Simple et cohérent pour des serveurs domestiques ; à mettre en cache si un serveur devient gros.
+- **Modération** (`moderation.go`) : `kick_members` (retour possible avec invitation, rôles perdus) ; `ban_members` → table `bans` liée au membre, donc à l'identité `(issuer, subject)` : refus `banned` au login quelle que soit l'invitation ou le mode d'accès ; on peut bannir un membre déjà parti.
+- **Messages** : écrire = `send_messages` ; supprimer ceux des autres = `manage_messages` ; `@everyone` et rôles non mentionnables ne notifient qu'avec `mention_everyone` (le texte reste). Rôle mentionnable : `<@&role_id>` notifie pour tous.
 - **Salons** : `text`, `voice` (média au jalon 4), `category` (non imbriquables). Liste plate triée `(position, id)`, le client construit l'arbre via `parent_id`. Supprimer une catégorie remonte ses salons à la racine. Création initiale : « Salons textuels / général », « Salons vocaux / Général ».
 - **Messages** : 1–4000 caractères ; ids entiers croissants. Historique : `?limit=` (≤100, défaut 50), `?before=ID` ou `?after=ID`, toujours renvoyé en ordre chronologique. Mentions : `<@member_id>` et `@everyone` (mot isolé) ; `<@&role_id>` viendra avec les rôles. Mentions recalculées à l'édition.
 - **Horodatages** en millisecondes Unix en base, RFC 3339 en JSON.
@@ -117,27 +128,41 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 
 1. Client → `{"op":"auth","token":"<session>"}` (premier message, ≤ 10 s). Jamais de cookie : toutes origines acceptées.
 2. Serveur → `{"t":"READY","d":{member, server, channels, members}}`.
-3. Serveur → `{"t":"<EVENT>","d":…}` : `MESSAGE_CREATE|UPDATE|DELETE`, `CHANNEL_CREATE|UPDATE|DELETE`, `MEMBER_JOIN|UPDATE|LEAVE`, `SERVER_UPDATE`. Les événements peuvent répéter un état déjà dans READY : les appliquer de façon idempotente.
+3. Serveur → `{"t":"<EVENT>","d":…}` : `MESSAGE_CREATE|UPDATE|DELETE`, `CHANNEL_CREATE|UPDATE|DELETE`, `MEMBER_JOIN|UPDATE`, `MEMBER_LEAVE {id, reason: left|kicked|banned}`, `ROLES_UPDATE` (liste complète), `ROLE_DELETE`, `CHANNELS_SYNC {channels, permissions}` (après tout changement de droits : remplace la liste des salons du client), `SERVER_UPDATE`. Les événements peuvent répéter un état déjà dans READY : les appliquer de façon idempotente.
+- READY : `{member, server, roles, members, channels, permissions: {server: [...], channels: {id: [...]}}}` — seulement les salons visibles.
+- Les événements de messages et `CHANNEL_CREATE|UPDATE` ne sont envoyés qu'aux membres qui voient le salon (`broadcastChannel`).
 - Fermetures : `4001` session invalide/expirée ; `1008` membre parti, client trop lent (file de 256 événements pleine) ou arrêt du serveur. Ping toutes les 30 s.
-- Les écritures passent par l'API REST ; le gateway ne fait que diffuser (à tous les membres connectés pour l'instant — filtrage par permissions au jalon 3).
+- Les écritures passent par l'API REST ; le gateway ne fait que diffuser.
 
 ### Endpoints
 
 | Méthode | Chemin | Auth | Rôle |
 |---|---|---|---|
 | GET | `/v1/server` | — | Infos publiques `{id, name, access, member_count}` |
-| PATCH | `/v1/server` | propriétaire | `{name?, access?}` |
+| PATCH | `/v1/server` | `manage_server` | `{name?, access?}` |
 | POST | `/v1/auth/challenge` | — | Défi de connexion |
 | POST | `/v1/auth/login` | — | `{identity_token, nonce, proof, invite?, claim?}` |
 | POST | `/v1/auth/logout` | session | |
-| GET | `/v1/members` | session | Membres actifs |
+| GET | `/v1/members` | session | Membres actifs (avec `roles`) |
 | GET/PATCH/DELETE | `/v1/members/@me` | session | Profil / `{nickname}` / quitter |
-| GET/POST | `/v1/invites` | session | `{max_uses?, expires_in?}` |
-| DELETE | `/v1/invites/{code}` | créateur ou propriétaire | |
-| GET | `/v1/channels` | session | |
-| POST/PATCH/DELETE | `/v1/channels[/{id}]` | propriétaire | `{type, name, topic, parent_id, position}` |
-| GET/POST | `/v1/channels/{id}/messages` | session | Historique / `{content}` |
-| PATCH/DELETE | `/v1/channels/{id}/messages/{mid}` | auteur (/ propriétaire pour DELETE) | |
+| GET | `/v1/members/@me/permissions` | session | `{server: [...], channels: {id: [...]}}` |
+| PUT/DELETE | `/v1/members/{id}/roles/{role}` | `manage_roles` + hiérarchie | Donner / retirer un rôle |
+| POST | `/v1/members/{id}/kick` | `kick_members` + hiérarchie | `{reason?}` |
+| GET | `/v1/bans` | `ban_members` | |
+| PUT/DELETE | `/v1/bans/{member_id}` | `ban_members` (+ hiérarchie pour PUT) | `{reason?}` / lever |
+| GET | `/v1/roles` | session | Du plus haut au plus bas |
+| POST | `/v1/roles` | `manage_roles` | `{name, color?, permissions?, mentionable?}` |
+| PATCH/DELETE | `/v1/roles/{id}` | `manage_roles` + hiérarchie | `{name?, color?, permissions?, mentionable?, position?}` |
+| GET/POST | `/v1/invites` | session / `create_invite` | `{max_uses?, expires_in?}` |
+| DELETE | `/v1/invites/{code}` | créateur ou `manage_server` | |
+| GET | `/v1/channels` | session | Salons visibles, avec `overrides` |
+| POST | `/v1/channels` | `manage_channels` | `{type, name, topic, parent_id, position}` |
+| PATCH/DELETE | `/v1/channels/{id}` | `manage_channels` dans le salon | |
+| PUT/DELETE | `/v1/channels/{id}/overrides/{role\|member}/{id}` | `manage_roles` + hiérarchie | `{allow: [...], deny: [...]}` |
+| GET | `/v1/channels/{id}/messages` | `view_channel` | Historique |
+| POST | `/v1/channels/{id}/messages` | `send_messages` | `{content}` |
+| PATCH | `/v1/channels/{id}/messages/{mid}` | auteur | `{content}` |
+| DELETE | `/v1/channels/{id}/messages/{mid}` | auteur ou `manage_messages` | |
 | GET | `/v1/gateway` | premier message | WebSocket |
 
 ### Configuration

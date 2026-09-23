@@ -80,6 +80,24 @@ Membres et invitations
   invites                          lister les invitations
   invite-revoke <code>
 
+Rôles et permissions
+  permissions                      liste des permissions et leur signification
+  my-perms                         mes permissions sur le serveur et dans chaque salon
+  roles                            rôles, du plus haut au plus bas
+  role-create <nom> [perm…]        créer un rôle (ex. role-create Modo kick_members manage_messages)
+  role-edit <rôle> name=… color=#RRGGBB perms=a,b mentionable=true position=N
+  role-delete <rôle>
+  role-add <membre> <rôle>         donner un rôle
+  role-remove <membre> <rôle>      retirer un rôle
+  override <salon> <role:NOM|member:PSEUDO> allow=a,b deny=c   droits particuliers d'un salon/catégorie
+  override-clear <salon> <role:NOM|member:PSEUDO>
+
+Modération
+  kick <membre> [raison]           expulser (peut revenir avec une invitation)
+  ban <membre> [raison]            bannir l'identité (ne peut plus revenir)
+  unban <membre>                   lever un bannissement
+  bans                             membres bannis
+
 Options
   -s URL      adresse du service Identity (défaut : celle du profil, sinon http://localhost:8080)
   -c URL      serveur communautaire à utiliser au lieu du serveur courant
@@ -220,7 +238,7 @@ func (c *cli) run(cmd string, args []string) error {
 			return err
 		}
 		c.st.SessionID, c.st.SessionToken, c.st.Handle = "", "", ""
-		fmt.Println("Déconnecté.")
+		fmt.Println("Déconnexion effectuée.")
 		return c.save()
 
 	case "me":
@@ -376,7 +394,7 @@ func (c *cli) login(args []string) error {
 		return err
 	}
 	c.st.SessionID, c.st.SessionToken, c.st.Handle = out.SessionID, out.SessionToken, out.User.Handle
-	fmt.Printf("Connecté en tant que %s (appareil « %s »).\n", out.User.Handle, deviceName)
+	fmt.Printf("Connexion réussie : %s (appareil « %s »).\n", out.User.Handle, deviceName)
 	return c.save()
 }
 

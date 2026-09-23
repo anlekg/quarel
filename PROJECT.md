@@ -26,7 +26,7 @@ Un équivalent de Discord où **les serveurs ne sont pas hébergés par un fourn
 | 1 | Revue des solutions open source existantes + choix structurants | ✅ Terminé |
 | 2 | Liste des fonctionnalités → `PLAN.md` | ✅ Validé le 2026-09-23 |
 | 3 | Choix de stack & architecture → `CLAUDE.md` | ✅ Go validé le 2026-09-23 |
-| 4 | Développement backend (itératif, testé par le CP) | 🟡 Jalons 1 et 2 livrés, en test |
+| 4 | Développement backend (itératif, testé par le CP) | 🟡 Jalons 1 à 3 livrés, en test |
 | 5 | Front-end / client | ⚪ À faire |
 | 6 | Packaging `.exe` | ⚪ À faire |
 
@@ -138,6 +138,10 @@ Deux types de serveurs :
 | 2026-09-23 | Session serveur limitée à la durée du jeton d'identité (12 h) | Un compte désactivé côté Identity perd l'accès aux serveurs en 12 h max, sans que l'Identity sache où il est connecté. |
 | 2026-09-23 | Permissions provisoires : propriétaire seul pour salons/réglages, jusqu'aux rôles du jalon 3 | Livrer le texte avant les rôles. |
 | 2026-09-23 | Domaine officiel `quarel.app` ; service Identity sur `identity.quarel.app` (permanent) | Le nom du service fait partie de chaque identité : sous-domaine dédié, jamais modifié. |
+| 2026-09-23 | Modèle de permissions inspiré de Discord : rôles cumulatifs, `@everyone`, droits par catégorie puis par salon | Familier pour les communautés qui migrent. |
+| 2026-09-23 | Hiérarchie des rôles avancée de P1 à P0 | Sans elle, un modérateur pourrait s'attribuer des droits d'administrateur. |
+| 2026-09-23 | `@everyone` ne notifie qu'avec la permission `mention_everyone` (absente par défaut) | Anti-spam de notifications. |
+| 2026-09-23 | Bannissement lié à l'identité portable, bannissement préventif possible d'un membre parti | Objectif initial : bans sans retour. |
 
 ---
 
@@ -208,3 +212,13 @@ Le client (phase finale) sera choisi plus tard ; piste : Tauri avec un cœur Rus
 **Domaine officiel (tranché le 2026-09-23) :** le CP commande `quarel.app`. Le service Identity officiel sera `identity.quarel.app` (déjà la valeur par défaut des serveurs communautaires).
 - Ce nom est l'identifiant permanent des comptes (`pseudo@identity.quarel.app`, bans basés sur `(identity.quarel.app, sub)`) : **il ne doit jamais changer** et le domaine doit être renouvelé sans faute.
 - `.app` impose HTTPS partout (domaine préchargé HSTS) : compatible avec notre besoin, le service Identity devra avoir un certificat valide.
+
+### Jalon 3 — Rôles, permissions, modération (livré le 2026-09-23)
+
+**Livré :** rôles (création, couleur, mentionnable, ordre, suppression), rôle `@everyone`, 13 permissions, hiérarchie stricte, droits par catégorie et par salon (rôle ou membre, autoriser/refuser), salons invisibles sans `view_channel` (API et temps réel), expulsion, bannissement lié à l'identité (y compris préventif), levée de ban, mentions de rôles, permissions visibles par le client (`my-perms`, `CHANNELS_SYNC`). Mise à jour automatique des serveurs du jalon 2 (vérifiée sur des données réelles).
+
+**Validation :** 6 nouveaux tests (hiérarchie, droits par salon, mentions, bans, filtrage temps réel) + tests existants adaptés, tous passés aussi avec le détecteur de concurrence ; scénario complet à 3 comptes rejoué avec `quarelctl`.
+
+**Guide de test du CP :** `docs/tests/jalon-3.md`.
+
+**Limites connues :** exclusion temporaire, journal d'audit et suppression en masse des messages restent en P1.

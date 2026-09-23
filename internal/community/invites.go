@@ -59,12 +59,26 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, inv)
 }
 
-// handleListInvites shows every invite to the owner, and their own to other members.
+// canManageServer reports whether the requesting member has manage_server.
+func (s *Server) canManageServer(r *http.Request) (bool, error) {
+	ps, err := s.loadPerms(r.Context(), s.db)
+	if err != nil {
+		return false, err
+	}
+	return ps.base(memberFrom(r).ID)&permManageServer != 0, nil
+}
+
+// handleListInvites shows every invite to members with manage_server, and their own to others.
 func (s *Server) handleListInvites(w http.ResponseWriter, r *http.Request) {
 	m := memberFrom(r)
+	all, err := s.canManageServer(r)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	rows, err := s.db.QueryContext(r.Context(), `
 		SELECT code, creator_id, max_uses, uses, expires_at, created_at FROM invites
-		WHERE ? OR creator_id = ? ORDER BY created_at`, m.IsOwner, m.ID)
+		WHERE ? OR creator_id = ? ORDER BY created_at`, all, m.ID)
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -99,8 +113,13 @@ func (s *Server) handleListInvites(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRevokeInvite(w http.ResponseWriter, r *http.Request) {
 	m := memberFrom(r)
+	all, err := s.canManageServer(r)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	res, err := s.db.ExecContext(r.Context(), `DELETE FROM invites WHERE code = ? AND (? OR creator_id = ?)`,
-		r.PathValue("code"), m.IsOwner, m.ID)
+		r.PathValue("code"), all, m.ID)
 	if err != nil {
 		writeErr(w, r, err)
 		return

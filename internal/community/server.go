@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/base32"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -89,6 +90,8 @@ func (s *Server) Close() error {
 	s.hub.closeAll()
 	return s.db.Close()
 }
+
+func (s *Server) logErr(msg string, err error) { slog.Error(msg, "err", err) }
 
 func (s *Server) nowMs() int64 { return s.now().UnixMilli() }
 
@@ -183,7 +186,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /v1/server", s.handleServerInfo)
-	mux.HandleFunc("PATCH /v1/server", s.authed(s.ownerOnly(s.handleServerUpdate)))
+	mux.HandleFunc("PATCH /v1/server", s.authed(s.needPerm(permManageServer, s.handleServerUpdate)))
 
 	mux.HandleFunc("POST /v1/auth/challenge", s.handleChallenge)
 	mux.HandleFunc("POST /v1/auth/login", s.handleLogin)
@@ -193,15 +196,30 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/members/@me", s.authed(s.handleMe))
 	mux.HandleFunc("PATCH /v1/members/@me", s.authed(s.handleUpdateMe))
 	mux.HandleFunc("DELETE /v1/members/@me", s.authed(s.handleLeave))
+	mux.HandleFunc("GET /v1/members/@me/permissions", s.authed(s.handleMyPermissions))
+	mux.HandleFunc("PUT /v1/members/{id}/roles/{role}", s.authed(s.handleMemberRole))
+	mux.HandleFunc("DELETE /v1/members/{id}/roles/{role}", s.authed(s.handleMemberRole))
+	mux.HandleFunc("POST /v1/members/{id}/kick", s.authed(s.handleKick))
+
+	mux.HandleFunc("GET /v1/bans", s.authed(s.handleListBans))
+	mux.HandleFunc("PUT /v1/bans/{id}", s.authed(s.handleBan))
+	mux.HandleFunc("DELETE /v1/bans/{id}", s.authed(s.handleUnban))
+
+	mux.HandleFunc("GET /v1/roles", s.authed(s.handleListRoles))
+	mux.HandleFunc("POST /v1/roles", s.authed(s.handleCreateRole))
+	mux.HandleFunc("PATCH /v1/roles/{id}", s.authed(s.handleUpdateRole))
+	mux.HandleFunc("DELETE /v1/roles/{id}", s.authed(s.handleDeleteRole))
 
 	mux.HandleFunc("GET /v1/invites", s.authed(s.handleListInvites))
-	mux.HandleFunc("POST /v1/invites", s.authed(s.handleCreateInvite))
+	mux.HandleFunc("POST /v1/invites", s.authed(s.needPerm(permCreateInvite, s.handleCreateInvite)))
 	mux.HandleFunc("DELETE /v1/invites/{code}", s.authed(s.handleRevokeInvite))
 
 	mux.HandleFunc("GET /v1/channels", s.authed(s.handleListChannels))
-	mux.HandleFunc("POST /v1/channels", s.authed(s.ownerOnly(s.handleCreateChannel)))
-	mux.HandleFunc("PATCH /v1/channels/{id}", s.authed(s.ownerOnly(s.handleUpdateChannel)))
-	mux.HandleFunc("DELETE /v1/channels/{id}", s.authed(s.ownerOnly(s.handleDeleteChannel)))
+	mux.HandleFunc("POST /v1/channels", s.authed(s.needPerm(permManageChannels, s.handleCreateChannel)))
+	mux.HandleFunc("PATCH /v1/channels/{id}", s.authed(s.handleUpdateChannel))
+	mux.HandleFunc("DELETE /v1/channels/{id}", s.authed(s.handleDeleteChannel))
+	mux.HandleFunc("PUT /v1/channels/{id}/overrides/{type}/{target}", s.authed(s.handleSetOverride))
+	mux.HandleFunc("DELETE /v1/channels/{id}/overrides/{type}/{target}", s.authed(s.handleSetOverride))
 
 	mux.HandleFunc("GET /v1/channels/{id}/messages", s.authed(s.handleListMessages))
 	mux.HandleFunc("POST /v1/channels/{id}/messages", s.authed(s.handleCreateMessage))
