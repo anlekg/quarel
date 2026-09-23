@@ -25,7 +25,7 @@ Un équivalent de Discord où **les serveurs ne sont pas hébergés par un fourn
 |---|-------|--------|
 | 1 | Revue des solutions open source existantes + choix structurants | ✅ Terminé |
 | 2 | Liste des fonctionnalités → `PLAN.md` | ✅ Validé le 2026-09-23 |
-| 3 | Choix de stack & architecture → `CLAUDE.md` | 🟡 Proposition à valider |
+| 3 | Choix de stack & architecture → `CLAUDE.md` | ✅ Go validé le 2026-09-23 |
 | 4 | Développement backend (itératif, testé par le CP) | ⚪ À faire |
 | 5 | Front-end / client | ⚪ À faire |
 | 6 | Packaging `.exe` | ⚪ À faire |
@@ -127,6 +127,7 @@ Deux types de serveurs :
 | 2026-09-23 | Bans par serveur ; désactivation centrale uniquement sur réquisition judiciaire | Autonomie des serveurs. |
 | 2026-09-23 | Service central open source, adresse configurable, notre instance par défaut | Pas de dépendance forcée envers l'équipe. |
 | 2026-09-23 | Appels entre amis en P2P WebRTC | Privacy. |
+| 2026-09-23 | Go pour les deux serveurs, monorepo, SQLite pure Go | Binaire unique, `.exe` facile, faible RAM, LiveKit en Go. |
 
 ---
 
@@ -154,3 +155,5 @@ Deux types de serveurs :
 
 **Go pour les deux serveurs** (Identity et communautaire), dans un monorepo partageant le code commun (jetons, modèles, utilitaires).
 Le client (phase finale) sera choisi plus tard ; piste : Tauri avec un cœur Rust pour la crypto E2E (OpenMLS ou vodozemac).
+
+**Validé par le CP le 2026-09-23 :** Go pour les serveurs, Go installé localement (`~/.local/go`), dépôt git initialisé.

@@ -31,7 +31,11 @@ Alternative à Discord **auto-hébergeable** : chaque serveur tourne chez son pr
 
 ## Stack
 
-_À définir (phase 3)._ Pistes issues de la revue : SQLite embarqué, stockage fichiers local, LiveKit pour la voix/vidéo.
+- **Langage serveurs :** Go (1.27+), monorepo unique pour Identity et le serveur communautaire.
+- **Base de données :** SQLite embarquée via `modernc.org/sqlite` (pur Go, sans cgo → compilation croisée `.exe` triviale).
+- **Voix / vidéo :** LiveKit (SFU) intégré à l'image du serveur communautaire.
+- **UPnP :** `github.com/huin/goupnp`.
+- **Client :** décidé en phase finale (piste : Tauri + cœur Rust pour la crypto E2E).
 
 ## Architecture
 
@@ -43,4 +47,6 @@ _À définir._
 
 ## Environnement de dev
 
-- OS : Linux. Disponibles : Docker, Node.js, Python 3. Non installés : Go, Rust, Bun.
+- OS : Linux. Disponibles : Docker, Node.js, Python 3, Go 1.27.1 (installé dans `~/.local/go`, PATH ajouté dans `~/.zshrc`). Non installés : Rust, `gh`.
+- Si `go` est introuvable dans le shell courant : `export PATH="$HOME/.local/go/bin:$HOME/go/bin:$PATH"`.
+- Git : branche `main`, identité locale au dépôt (`anlekg`). Accès SSH à GitHub opérationnel (compte `anlekg`), pas encore de remote.
