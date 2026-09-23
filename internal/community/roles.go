@@ -379,7 +379,7 @@ func (s *Server) handleDeleteRole(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	s.hub.broadcast("ROLE_DELETE", map[string]int64{"id": id})
+	s.hub.Broadcast("ROLE_DELETE", map[string]int64{"id": id})
 	s.rolesChanged(ctx)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -387,7 +387,7 @@ func (s *Server) handleDeleteRole(w http.ResponseWriter, r *http.Request) {
 // rolesChanged tells clients about the new role list and their new permissions.
 func (s *Server) rolesChanged(ctx context.Context) {
 	if roles, err := allRoles(ctx, s.db); err == nil {
-		s.hub.broadcast("ROLES_UPDATE", roles)
+		s.hub.Broadcast("ROLES_UPDATE", roles)
 	}
 	s.syncPermissions(ctx)
 }
@@ -441,7 +441,7 @@ func (s *Server) handleMemberRole(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	s.hub.broadcast("MEMBER_UPDATE", view)
+	s.hub.Broadcast("MEMBER_UPDATE", view)
 	s.syncPermissions(ctx)
 	writeJSON(w, http.StatusOK, view)
 }

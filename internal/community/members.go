@@ -152,7 +152,7 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	s.hub.broadcast("MEMBER_UPDATE", view)
+	s.hub.Broadcast("MEMBER_UPDATE", view)
 	writeJSON(w, http.StatusOK, view)
 }
 

@@ -28,23 +28,23 @@
 - [ ] **P1** Profil public minimal : pseudo, avatar, bio
 
 ### A3. Appareils et clés E2E
-- [ ] **P0** Enregistrement du premier appareil (génération des clés côté client)
-- [ ] **P0** Ajout d'un appareil validé depuis un appareil existant (QR code / code court)
-- [ ] **P0** Liste et révocation des appareils
+- [x] **P0** Enregistrement du premier appareil (génération des clés côté client)
+- [x] **P0** Ajout d'un appareil validé depuis un appareil existant (code de vérification à comparer ; QR code avec le vrai client)
+- [x] **P0** Liste et révocation des appareils
 - [ ] **P1** Phrase de récupération (restaure les clés si tous les appareils sont perdus)
-- [ ] **P1** Transfert de l'historique des MP vers un nouvel appareil
+- [x] **P1** Transfert de l'historique des MP vers un nouvel appareil *(avancé au jalon 5 : au cœur de la demande du CP)*
 
 ### A4. Amis
-- [ ] **P0** Envoyer / accepter / refuser / annuler une demande d'ami
-- [ ] **P0** Liste d'amis, retrait d'un ami
+- [x] **P0** Envoyer / accepter / refuser / annuler une demande d'ami
+- [x] **P0** Liste d'amis, retrait d'un ami
 - [ ] **P1** Bloquer un utilisateur
 - [ ] **P1** Présence entre amis (en ligne / absent / ne pas déranger / invisible)
 - [ ] **P2** Réglages de confidentialité (qui peut m'envoyer une demande)
 
 ### A5. Messages privés (chiffrés E2E)
-- [ ] **P0** MP 1-à-1 chiffrés (bibliothèque éprouvée : MLS ou Olm/Megolm)
-- [ ] **P0** Boîte aux lettres : le service stocke uniquement des messages chiffrés, jusqu'à livraison sur tous les appareils
-- [ ] **P0** Temps réel (WebSocket) : réception, accusé de livraison
+- [x] **P0** MP 1-à-1 chiffrés (Olm/Megolm, choisi par le CP)
+- [x] **P0** Boîte aux lettres : le service stocke uniquement des messages chiffrés, jusqu'à livraison sur tous les appareils
+- [x] **P0** Temps réel (WebSocket) : réception, accusé de livraison
 - [ ] **P1** Groupes de MP (plusieurs participants)
 - [ ] **P1** Pièces jointes chiffrées
 - [ ] **P1** Édition / suppression de ses messages
@@ -155,6 +155,6 @@
 2. **Jalon 2 — Serveur communautaire texte :** B1 P0, B2 P0, B3 P0, B4 P0 → rejoindre un serveur et discuter. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-2.md`).*
 3. **Jalon 3 — Rôles et modération :** B5 P0, B6 P0. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-3.md`).*
 4. **Jalon 4 — Voix :** B7 P0. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-4.md`).*
-5. **Jalon 5 — Amis et MP chiffrés :** A3 P0, A4 P0, A5 P0.
+5. **Jalon 5 — Amis et MP chiffrés :** A3 P0, A4 P0, A5 P0. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-5.md`).*
 6. **Jalon 6 — P1** (par blocs, dans l'ordre choisi par le CP).
 7. **Jalon 7 — Client graphique.**

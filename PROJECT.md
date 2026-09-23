@@ -26,7 +26,7 @@ Un équivalent de Discord où **les serveurs ne sont pas hébergés par un fourn
 | 1 | Revue des solutions open source existantes + choix structurants | ✅ Terminé |
 | 2 | Liste des fonctionnalités → `PLAN.md` | ✅ Validé le 2026-09-23 |
 | 3 | Choix de stack & architecture → `CLAUDE.md` | ✅ Go validé le 2026-09-23 |
-| 4 | Développement backend (itératif, testé par le CP) | 🟡 Jalons 1 à 4 livrés, en test |
+| 4 | Développement backend (itératif, testé par le CP) | 🟡 Jalons 1 à 5 livrés, en test |
 | 5 | Front-end / client | ⚪ À faire |
 | 6 | Packaging `.exe` | ⚪ À faire |
 
@@ -146,6 +146,11 @@ Deux types de serveurs :
 | 2026-09-23 | Pas de SDK LiveKit Go : petit client maison (jetons, API Twirp, webhooks) | Évite d'embarquer une pile WebRTC complète dans notre binaire. |
 | 2026-09-23 | Signalisation vocale via le port HTTP du serveur (proxy `/lk`) ; ouvrir seulement 7882/udp et 7881/tcp en plus | Moins de ports à ouvrir chez l'hébergeur. |
 | 2026-09-23 | Page de test vocal minimale servie par le serveur (validée par le CP) | Tester le micro sans avancer le vrai client. |
+| 2026-09-23 | MP chiffrés avec **Olm/Megolm** (choix du CP, contre MLS) | Multi-appareils, validation par un appareil existant et transfert d'historique natifs ; bibliothèques auditée (vodozemac, Rust) et Go (goolm) disponibles. |
+| 2026-09-23 | **Historique des MP sur les appareils** (choix du CP) : le serveur efface chaque message dès sa distribution | Privacy : aucun historique ni métadonnée durable sur le serveur. |
+| 2026-09-23 | Clé maîtresse par compte certifiant les appareils validés, épinglée par les contacts au premier contact | Un serveur malveillant ne peut pas glisser un faux appareil pour lire les messages. |
+| 2026-09-23 | Code de vérification des appareils sur 80 bits (16 caractères) | Trop long pour qu'un serveur fabrique un faux appareil au même code. |
+| 2026-09-23 | MP et échanges de clés réservés aux amis | Anti-spam et limitation des métadonnées exposées. |
 
 ---
 
@@ -243,3 +248,23 @@ Le client (phase finale) sera choisi plus tard ; piste : Tauri avec un cœur Rus
 - Exposition sur Internet : ports 7881/tcp et 7882/udp à ouvrir (UPnP en P1) et `QUAREL_VOICE_PUBLIC_IP=auto`. En Docker, `--network host` recommandé.
 - L'état vocal est en mémoire : après un redémarrage du seul serveur communautaire, il est reconstruit depuis LiveKit ; si les deux redémarrent, les clients doivent se reconnecter.
 - Vidéo, partage d'écran et modération vocale (déplacer, rendre muet) : P1.
+
+### Jalon 5 — Amis et messages privés chiffrés (livré le 2026-09-23)
+
+**Livré :** amis (demande, acceptation automatique si croisée, refus, annulation, retrait), messages privés chiffrés de bout en bout avec Olm/Megolm, clé maîtresse de compte, premier appareil validé d'office, validation d'un nouvel appareil par code de vérification avec **transfert de la clé et de l'historique** (P1 avancé : cœur de la demande initiale), boîte aux lettres par appareil avec suppression à la distribution, accusés de distribution, temps réel côté Identity (passerelle WebSocket mutualisée avec le serveur communautaire dans `internal/realtime`), révocation d'appareil. Commandes `friends`, `friend-*`, `e2e`, `devices`, `device-approve`, `dm`, `dm-history`, `dm-sync`, `dm-listen`.
+
+**Validation :**
+- 3 nouveaux tests serveur (amis, clés et certificats, boîtes aux lettres/accusés/révocation), tous passés avec le détecteur de concurrence.
+- **Scénario réel avec la vraie cryptographie** (`make e2e-dm`, 16 vérifications) : échange chiffré, appareil non validé bloqué, mauvais code refusé, historique complet transféré (y compris un message envoyé avant la validation), nouveaux messages lisibles sur les deux appareils, révocation, et **aucun texte des messages dans les fichiers de la base du serveur**.
+- Bugs trouvés et corrigés par ces tests : interblocage SQLite (vérification faite pendant une transaction), écrasement de clés entre deux `quarelctl` sur le même profil (verrou ajouté), historique incomplet si l'appareil approbateur n'était pas synchronisé.
+
+**Guide de test du CP :** `docs/tests/jalon-5.md`.
+
+**Limites connues :**
+- Perte de tous les appareils = perte de l'historique (phrase de récupération / sauvegarde chiffrée : P1).
+- Les secrets envoyés par un appareil juste avant sa révocation sont ignorés par précaution s'ils n'ont pas encore été récupérés.
+- Le serveur voit les métadonnées nécessaires à l'acheminement (qui écrit à qui, quand, taille) le temps de la distribution.
+- Pas de rétention maximale des boîtes aux lettres d'appareils jamais reconnectés (à ajouter, P1).
+- Clés du client de test stockées en clair dans le profil (le vrai client utilisera le trousseau du système).
+
+**Question ouverte :** licence du projet (aucune n'est encore choisie ; les dépendances utilisées sont compatibles avec les licences libres courantes : Apache-2.0, MIT, MPL-2.0).

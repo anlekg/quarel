@@ -44,21 +44,24 @@ cmd/quarel-identity/    binaire du service Identity
 cmd/quarel-server/      binaire du serveur communautaire
 cmd/quarelctl/          client de test en ligne de commande (sorties en français, neutres en genre, pour le CP) :
                         main.go (Identity), community.go (serveurs communautaires), roles.go (rôles, modération),
-                        voice.go (vocal)
+                        voice.go (vocal), social.go (amis, MP), e2e.go (chiffrement Olm/Megolm côté client)
 internal/identity/      service Identity : HTTP (server.go), endpoints (handlers.go), SQLite (store.go),
-                        argon2id (crypto.go), TOTP (totp.go), emails (mail.go), anti-bruteforce (lockout.go)
+                        argon2id (crypto.go), TOTP (totp.go), emails (mail.go), anti-bruteforce (lockout.go),
+                        amis et conversations (social.go), clés E2E et boîtes aux lettres (e2e.go), temps réel (gateway.go)
 internal/community/     serveur communautaire : config, clés des Identity (keys.go), auth (auth.go),
                         membres, invitations, salons + droits par salon (channels.go), messages,
                         permissions (permissions.go), rôles (roles.go), expulsion/bannissement
                         (moderation.go), temps réel (gateway.go)
                         vocal (voice.go), page de test vocal (voicetest/, embarquée)
 internal/voice/         client LiveKit maison (jetons, API salle, webhooks) + lancement de livekit-server
+internal/realtime/      passerelle WebSocket partagée (authentification 1er message, READY, diffusion filtrée)
 internal/httpapi/       conventions JSON partagées (erreurs, décodage strict)
 internal/sqlitedb/      ouverture SQLite + migrations (PRAGMA user_version)
 internal/secret/        identifiants aléatoires, jetons porteurs, fichiers de clés Ed25519
 pkg/idtoken/            jetons d'identité portables (émission, vérification, preuve d'appareil)
+pkg/e2ekeys/            messages signés des clés E2E (partagés serveur/clients), code de vérification
 docs/tests/             guides de test par jalon, destinés au CP
-test/e2e/               tests de bout en bout avec navigateurs (Playwright)
+test/e2e/               tests de bout en bout : vocal avec navigateurs (Playwright), MP chiffrés (quarelctl)
 Dockerfile.identity     image distroless (~23 Mo), volume /data, port 8080
 Dockerfile.server       image distroless + livekit-server (~139 Mo), volume /data, ports 8090/tcp, 7881/tcp, 7882/udp
 Makefile                commandes de dev (build, test, run-identity, run-server…)
@@ -70,6 +73,37 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 - **Jeton** : JWT EdDSA (Ed25519) avec `iss`, `sub`, `handle`, `dkey` (clé publique de l'appareil), `iat`, `exp`, `jti`, en-tête `kid`. Durée : `QUAREL_TOKEN_TTL` (12 h par défaut). **Pas d'audience** : l'Identity ne sait pas à quel serveur le jeton est destiné. Aucun email dans le jeton.
 - **Clés publiques** du service : `GET /.well-known/quarel-identity` → `{issuer, keys:[{kid, alg, crv, x}]}`. Clé privée : `$QUAREL_DATA_DIR/signing.key` (générée au 1er démarrage, à sauvegarder).
 - **Anti-rejeu** : le client génère une paire Ed25519 par appareil, envoie la clé publique au login. Un serveur communautaire envoie un nonce ; le client renvoie `idtoken.SignProof(device, audience, nonce)` ; le serveur appelle `idtoken.Verify` puis `idtoken.VerifyProof`. Le serveur doit garantir l'usage unique de ses nonces.
+
+## Amis et messages privés chiffrés (jalon 5)
+
+- **Choix validés par le CP** : protocole **Olm/Megolm** (celui de Matrix) ; **historique sur les appareils** (le serveur efface chaque message dès que tous les appareils du destinataire l'ont acquitté).
+- **Le serveur ne déchiffre rien** : il stocke des clés publiques, vérifie leurs signatures (les clients les revérifient) et relaie des blobs opaques. Seul `quarelctl` importe la crypto (`maunium.net/go/mautrix/crypto/goolm`, Go pur, MPL-2.0, appel explicite à `goolm.Register()`) ; le futur client utilisera vodozemac (Rust), même protocole.
+- **Amis** (`friendships`, une ligne par paire, `user_a < user_b`) : demande par pseudo, demande croisée = acceptation, refus/annulation/retrait = `DELETE`. Événement `FRIENDS_UPDATE`. MP, annuaire de clés, clés à usage unique et messages entre appareils : **amis ou soi-même uniquement** (`requireFriendOrSelf`).
+- **Appareil = session Identity.** Chaque appareil publie ses clés Olm (curve25519, ed25519) signées par lui-même (`e2ekeys.DeviceKeys`). **Clé maîtresse** Ed25519 du compte : créée par le 1er appareil, qui se certifie (`e2ekeys.DeviceCert`) → validé d'office. Un nouvel appareil reste non validé jusqu'à ce qu'un appareil détenant la clé maîtresse le certifie (`POST /v1/keys/certify`) après comparaison du **code de vérification** (`e2ekeys.VerificationCode` : 80 bits du hachage de sa clé ed25519, `XXXX-XXXX-XXXX-XXXX`), puis lui envoie la graine maîtresse et l'historique par Olm.
+- **Confiance côté client** : un appareil est de confiance si sa signature propre et son certificat vérifient avec la clé maîtresse **épinglée au premier contact** (changement → envoi refusé, avertissement). Les clés de conversation ne sont partagées qu'avec des appareils de confiance ; les secrets reçus ne sont acceptés que d'appareils de confiance.
+- **Olm** (par paire d'appareils) transporte : `room_key` (clé Megolm d'une conversation), `device_approval` (graine maîtresse), `history` (historique + sessions Megolm exportées). Le clair lie expéditeur et destinataire (`olmPlain`), vérifié à la réception. Clés à usage unique signées (`e2ekeys.OneTimeKey`), 20 maintenues sur le serveur ; clé de secours acceptée par l'API (pas encore générée par le client).
+- **Megolm** (par conversation et appareil émetteur) chiffre les MP ; renouvelé après 100 messages, 7 jours, ou si un appareil destinataire disparaît. Le clair contient `dm_id`, expéditeur, date, vérifiés contre l'enveloppe ; protection contre le rejeu par (session, index).
+- **Boîte aux lettres** (`inbox`, une ligne par appareil destinataire) : `to_device`, `dm`, `receipt`. `GET /v1/inbox` puis `POST /v1/inbox/ack` (suppression). Accusé de distribution (`receipt`) quand tous les appareils du destinataire ont acquitté. Poussée en direct : événement `INBOX` sur la passerelle Identity (une connexion par appareil). Révocation d'une session → clés, clés à usage unique et boîte supprimées, `DEVICES_UPDATE` aux amis.
+- **Client de test** : état E2E dans `<profil>.e2e.json` (0600, non chiffré — le vrai client utilisera le trousseau du système), protégé par un **verrou de fichier** (`withE2E`) car plusieurs `quarelctl` peuvent tourner sur le même profil (`dm-listen` + `dm`).
+
+### Endpoints (Identity)
+
+| Méthode | Chemin | Rôle |
+|---|---|---|
+| GET/POST | `/v1/friends` | Listes `{friends, incoming, outgoing}` / demande `{pseudo}` |
+| POST | `/v1/friends/{id}/accept` | Accepter |
+| DELETE | `/v1/friends/{id}` | Retirer, refuser, annuler |
+| POST/GET | `/v1/keys/device` | Publier `{curve25519, ed25519, signature, master_key?, master_signature?}` / mes clés |
+| POST | `/v1/keys/certify` | `{device_id, master_signature}` |
+| POST | `/v1/keys/one-time` | `{keys: [{id, key, signature}], fallback?}` → `{one_time_keys}` |
+| POST | `/v1/keys/claim` | `{device_ids}` → une clé par appareil |
+| GET | `/v1/users/{id}/keys` | `{user, master_key, devices}` (amis/soi) |
+| GET/POST | `/v1/dms` | Conversations / ouvrir `{user_id}` (amis) |
+| POST | `/v1/dms/{id}/messages` | `{payload}` chiffré → `{event_id, recipient_devices}` |
+| POST | `/v1/to-device` | `{messages: [{device_id, payload}]}` (8 Mo max) |
+| GET | `/v1/inbox` | Éléments en attente pour cet appareil |
+| POST | `/v1/inbox/ack` | `{ids}` |
+| GET | `/v1/gateway` | WebSocket : READY, INBOX, FRIENDS_UPDATE, DEVICES_UPDATE |
 
 ## Service Identity — détails
 
@@ -126,7 +160,7 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 - **Salons** : `text`, `voice` (média au jalon 4), `category` (non imbriquables). Liste plate triée `(position, id)`, le client construit l'arbre via `parent_id`. Supprimer une catégorie remonte ses salons à la racine. Création initiale : « Salons textuels / général », « Salons vocaux / Général ».
 - **Messages** : 1–4000 caractères ; ids entiers croissants. Historique : `?limit=` (≤100, défaut 50), `?before=ID` ou `?after=ID`, toujours renvoyé en ordre chronologique. Mentions : `<@member_id>` et `@everyone` (mot isolé) ; `<@&role_id>` viendra avec les rôles. Mentions recalculées à l'édition.
 - **Horodatages** en millisecondes Unix en base, RFC 3339 en JSON.
-- **SQLite à une seule connexion** : dans une transaction, **toujours** requêter via `tx`, jamais `s.db` (sinon interblocage).
+- **SQLite à une seule connexion** (les deux services) : dans une transaction, **toujours** requêter via `tx`, jamais `s.db`, et faire les vérifications (droits, amis) **avant** d'ouvrir la transaction — sinon interblocage (vécu au jalon 5). Les cibles `make test` ont un délai maximal pour qu'un blocage échoue au lieu de geler.
 
 ### Vocal (jalon 4)
 
@@ -206,6 +240,7 @@ make run-server       # serveur communautaire local sur :8090, données dans ./d
 make docker-identity  # image quarel-identity
 make docker-server    # image quarel-server
 make e2e-voice        # test vocal de bout en bout avec navigateurs
+make e2e-dm           # scénario MP chiffrés de bout en bout (16 vérifications)
 ./bin/quarelctl help  # client de test
 ```
 

@@ -184,7 +184,7 @@ func (s *Server) broadcastChannel(ctx context.Context, t string, channelID int64
 		s.logErr("loading permissions for "+t, err)
 		return
 	}
-	s.hub.broadcastTo(t, d, func(memberID string) bool {
+	s.hub.BroadcastTo(t, d, func(memberID, _ string) bool {
 		return ps.inChannel(memberID, channelID)&permViewChannel != 0
 	})
 }
@@ -331,7 +331,7 @@ func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	s.hub.broadcast("CHANNEL_DELETE", map[string]int64{"id": c.ID})
+	s.hub.Broadcast("CHANNEL_DELETE", map[string]int64{"id": c.ID})
 	if c.Type == chanCategory {
 		s.syncPermissions(ctx) // children moved to the top level, without the category's overrides
 	} else {

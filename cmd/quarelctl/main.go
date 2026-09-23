@@ -51,6 +51,21 @@ Identité portable
   token                            obtenir un jeton d'identité et l'afficher
   simulate-join [nom-serveur]      simuler la connexion à un serveur communautaire
 
+Amis
+  friends                          amis et demandes en cours
+  friend-add <pseudo>              envoyer une demande (ou accepter la sienne)
+  friend-accept <pseudo>           accepter une demande reçue
+  friend-remove <pseudo>           retirer un ami, refuser ou annuler une demande
+
+Messages privés (chiffrés de bout en bout, entre amis)
+  e2e                              état du chiffrement de cet appareil et son code de vérification
+  devices                          mes appareils et leur statut de validation
+  device-approve <appareil> <code> valider un nouvel appareil (il reçoit la clé du compte et l'historique)
+  dm <pseudo> <texte…>             envoyer un message privé
+  dm-history <pseudo>              afficher la conversation
+  dm-sync                          récupérer les messages en attente
+  dm-listen                        messages privés en direct (Ctrl+C pour quitter)
+
 Serveurs communautaires (connexion Identity requise)
   srv-info <url>                   infos publiques d'un serveur
   join <url|lien> [invitation]     rejoindre un serveur (lien : quarel://hôte:port/CODE?sid=…)

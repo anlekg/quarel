@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/anlekg/quarel/internal/httpapi"
+	"github.com/anlekg/quarel/internal/realtime"
 	"github.com/anlekg/quarel/internal/secret"
 )
 
@@ -34,7 +35,7 @@ type Server struct {
 	id     string // derived from the server key; clients sign login proofs for it
 	keys   KeySource
 	nonces *nonceStore
-	hub    *hub
+	hub    *realtime.Hub
 	now    func() time.Time
 
 	voiceOpts *VoiceOptions  // nil: voice disabled
@@ -77,7 +78,7 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, keys KeySource) *Server
 		id:     ServerID(key.Public().(ed25519.PublicKey)),
 		keys:   keys,
 		nonces: newNonceStore(),
-		hub:    newHub(),
+		hub:    realtime.NewHub(),
 		now:    time.Now,
 	}
 }
@@ -86,11 +87,11 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, keys KeySource) *Server
 func (s *Server) ID() string { return s.id }
 
 // DisconnectAll closes every real-time connection.
-func (s *Server) DisconnectAll() { s.hub.closeAll() }
+func (s *Server) DisconnectAll() { s.hub.CloseAll() }
 
 // Close disconnects clients and releases the database.
 func (s *Server) Close() error {
-	s.hub.closeAll()
+	s.hub.CloseAll()
 	return s.db.Close()
 }
 
@@ -311,6 +312,6 @@ func (s *Server) handleServerUpdate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	s.hub.broadcast("SERVER_UPDATE", info)
+	s.hub.Broadcast("SERVER_UPDATE", info)
 	writeJSON(w, http.StatusOK, info)
 }

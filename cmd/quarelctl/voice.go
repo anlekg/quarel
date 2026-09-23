@@ -35,7 +35,7 @@ func (c *cli) runVoice(cmd string, args []string) (bool, error) {
 	case "voice-test":
 		return true, c.voiceTest()
 	}
-	return false, nil
+	return c.runSocial(cmd, args)
 }
 
 func (c *cli) printVoice() error {

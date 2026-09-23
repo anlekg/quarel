@@ -1,16 +1,16 @@
 export PATH := $(HOME)/.local/go/bin:$(HOME)/.local/bin:$(PATH)
 
-.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice clean
+.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm clean
 
 build:
 	go build -o bin/ ./cmd/...
 
 test:
-	go test ./...
+	go test -timeout 120s ./...
 
 # Race detector (needs gcc): use after touching concurrent code (gateway hub…).
 test-race:
-	CGO_ENABLED=1 go test -race ./...
+	CGO_ENABLED=1 go test -race -timeout 300s ./...
 
 vet:
 	go vet ./...
@@ -37,3 +37,7 @@ clean:
 e2e-voice: build
 	cd test/e2e && [ -d node_modules ] || (npm install --silent && npx playwright install chromium)
 	test/e2e/voice.sh
+
+# End-to-end encrypted DM scenario (Identity service + quarelctl).
+e2e-dm: build
+	test/e2e/dm.sh

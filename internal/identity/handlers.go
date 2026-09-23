@@ -361,10 +361,12 @@ func (s *Server) check2FA(ctx context.Context, u *user, code string) error {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.db.ExecContext(r.Context(), `DELETE FROM sessions WHERE id = ?`, sessionFrom(r).ID); err != nil {
+	sess := sessionFrom(r)
+	if _, err := s.db.ExecContext(r.Context(), `DELETE FROM sessions WHERE id = ?`, sess.ID); err != nil {
 		writeErr(w, r, err)
 		return
 	}
+	s.sessionEnded(r.Context(), sess.ID, sess.UserID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -432,6 +434,7 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, errf(http.StatusNotFound, "not_found", "no such session"))
 		return
 	}
+	s.sessionEnded(r.Context(), r.PathValue("id"), sessionFrom(r).UserID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

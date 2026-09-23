@@ -98,7 +98,7 @@ func (s *Server) broadcastVoice(ctx context.Context, memberID string, st *voiceS
 		return
 	}
 	left := map[string]any{"member_id": memberID, "channel_id": nil}
-	s.hub.sendEachIf("VOICE_STATE_UPDATE", func(viewer string) (any, bool) {
+	s.hub.SendEachIf("VOICE_STATE_UPDATE", func(viewer, _ string) (any, bool) {
 		if st != nil && ps.inChannel(viewer, st.ChannelID)&permViewChannel != 0 {
 			return st, true
 		}

@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"database/sql"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anlekg/quarel/internal/httpapi"
+	"github.com/anlekg/quarel/internal/realtime"
 	"github.com/anlekg/quarel/internal/secret"
 	"github.com/anlekg/quarel/pkg/idtoken"
 )
@@ -66,6 +66,7 @@ type Server struct {
 	db     *sql.DB
 	signer *idtoken.Signer
 	mailer Mailer
+	hub    *realtime.Hub
 	now    func() time.Time
 }
 
@@ -97,12 +98,19 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer) *Server 
 		db:     db,
 		signer: idtoken.NewSigner(cfg.Issuer, key),
 		mailer: mailer,
+		hub:    realtime.NewHub(),
 		now:    time.Now,
 	}
 }
 
-// Close releases the database.
-func (s *Server) Close() error { return s.db.Close() }
+// DisconnectAll closes every real-time connection.
+func (s *Server) DisconnectAll() { s.hub.CloseAll() }
+
+// Close disconnects clients and releases the database.
+func (s *Server) Close() error {
+	s.hub.CloseAll()
+	return s.db.Close()
+}
 
 // Handler returns the HTTP routes.
 func (s *Server) Handler() http.Handler {
@@ -126,6 +134,27 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/me/2fa/disable", s.authed(s.handle2FADisable))
 
 	mux.HandleFunc("POST /v1/identity/token", s.authed(s.handleIssueToken))
+
+	mux.HandleFunc("GET /v1/friends", s.authed(s.handleListFriends))
+	mux.HandleFunc("POST /v1/friends", s.authed(s.handleAddFriend))
+	mux.HandleFunc("POST /v1/friends/{id}/accept", s.authed(s.handleAcceptFriend))
+	mux.HandleFunc("DELETE /v1/friends/{id}", s.authed(s.handleRemoveFriend))
+
+	mux.HandleFunc("POST /v1/keys/device", s.authed(s.handleUploadDeviceKeys))
+	mux.HandleFunc("GET /v1/keys/device", s.authed(s.writeOwnDevice))
+	mux.HandleFunc("POST /v1/keys/certify", s.authed(s.handleCertifyDevice))
+	mux.HandleFunc("POST /v1/keys/one-time", s.authed(s.handleUploadOneTimeKeys))
+	mux.HandleFunc("POST /v1/keys/claim", s.authed(s.handleClaimKeys))
+	mux.HandleFunc("GET /v1/users/{id}/keys", s.authed(s.handleUserKeys))
+
+	mux.HandleFunc("GET /v1/dms", s.authed(s.handleListDMs))
+	mux.HandleFunc("POST /v1/dms", s.authed(s.handleOpenDM))
+	mux.HandleFunc("POST /v1/dms/{id}/messages", s.authed(s.handleSendDM))
+	mux.HandleFunc("POST /v1/to-device", s.authed(s.handleSendToDevice))
+	mux.HandleFunc("GET /v1/inbox", s.authed(s.handleInbox))
+	mux.HandleFunc("POST /v1/inbox/ack", s.authed(s.handleAckInbox))
+
+	mux.HandleFunc("GET /v1/gateway", s.handleGateway)
 	return mux
 }
 
@@ -157,26 +186,21 @@ func (s *Server) authed(h http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, r, errf(http.StatusUnauthorized, "unauthorized", "missing bearer token"))
 			return
 		}
-		var sess session
-		var disabled sql.NullInt64
-		err := s.db.QueryRowContext(r.Context(), `
-			SELECT s.id, s.user_id, s.device_key, u.disabled_at
-			FROM sessions s JOIN users u ON u.id = s.user_id
-			WHERE s.token_hash = ?`, sha256Hex(token)).Scan(&sess.ID, &sess.UserID, &sess.DeviceKey, &disabled)
-		if errors.Is(err, sql.ErrNoRows) {
-			writeErr(w, r, errf(http.StatusUnauthorized, "unauthorized", "invalid or expired session"))
-			return
-		}
+		sess, disabled, err := s.sessionForToken(r.Context(), token)
 		if err != nil {
 			writeErr(w, r, err)
 			return
 		}
-		if disabled.Valid {
+		if sess == nil {
+			writeErr(w, r, errf(http.StatusUnauthorized, "unauthorized", "invalid or expired session"))
+			return
+		}
+		if disabled {
 			writeErr(w, r, errf(http.StatusForbidden, "account_disabled", "this account has been disabled"))
 			return
 		}
 		s.db.ExecContext(r.Context(), `UPDATE sessions SET last_seen_at = ? WHERE id = ?`, s.now().Unix(), sess.ID)
-		h(w, r.WithContext(context.WithValue(r.Context(), sessionKey{}, &sess)))
+		h(w, r.WithContext(context.WithValue(r.Context(), sessionKey{}, sess)))
 	}
 }
 

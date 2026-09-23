@@ -55,9 +55,12 @@ func WriteErr(w http.ResponseWriter, r *http.Request, err error) {
 // MaxBody is the largest accepted JSON request body.
 const MaxBody = 64 << 10
 
-// Decode reads a JSON body into v, rejecting unknown fields.
-func Decode(r *http.Request, v any) error {
-	dec := json.NewDecoder(io.LimitReader(r.Body, MaxBody))
+// Decode reads a JSON body (at most MaxBody bytes) into v, rejecting unknown fields.
+func Decode(r *http.Request, v any) error { return DecodeLimit(r, v, MaxBody) }
+
+// DecodeLimit is Decode with a custom size limit.
+func DecodeLimit(r *http.Request, v any, limit int64) error {
+	dec := json.NewDecoder(io.LimitReader(r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		return Errf(http.StatusBadRequest, "bad_request", "invalid JSON body: %v", err)

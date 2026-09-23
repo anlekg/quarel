@@ -113,7 +113,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if joined {
-		s.hub.broadcast("MEMBER_JOIN", view)
+		s.hub.Broadcast("MEMBER_JOIN", view)
 	}
 	info, err := s.info(ctx)
 	if err != nil {

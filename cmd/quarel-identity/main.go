@@ -39,14 +39,14 @@ func run() error {
 		Addr:              cfg.Addr,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       2 * time.Minute,
+		// No global read/write timeouts: they would cut long-lived WebSocket connections.
+		IdleTimeout: 2 * time.Minute,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
 		<-ctx.Done()
+		srv.DisconnectAll() // Shutdown does not wait for WebSocket (hijacked) connections
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		httpSrv.Shutdown(shutdown)

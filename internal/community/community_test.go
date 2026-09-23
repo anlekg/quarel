@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anlekg/quarel/internal/httpapi"
+	"github.com/anlekg/quarel/internal/realtime"
 	"github.com/anlekg/quarel/pkg/idtoken"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -486,7 +487,7 @@ func TestGateway(t *testing.T) {
 		t.Fatal(err)
 	}
 	wsjson.Write(ctx, bad, map[string]string{"op": "auth", "token": "nope"})
-	if _, _, err := bad.Read(ctx); websocket.CloseStatus(err) != closeInvalidSession {
+	if _, _, err := bad.Read(ctx); websocket.CloseStatus(err) != realtime.CloseInvalidSession {
 		t.Fatalf("bad session: %v", err)
 	}
 
