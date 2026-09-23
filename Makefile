@@ -1,6 +1,6 @@
 export PATH := $(HOME)/.local/go/bin:$(HOME)/.local/bin:$(PATH)
 
-.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm clean
+.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme clean
 
 build:
 	go build -o bin/ ./cmd/...
@@ -19,10 +19,11 @@ vet:
 run-identity: build
 	QUAREL_ISSUER=localhost:8080 QUAREL_DATA_DIR=./data/identity ./bin/quarel-identity
 
-# Local dev community server on :8090, trusting the local Identity service, data in ./data/server.
+# Local dev community server on https://localhost:8090 (self-signed), trusting the local Identity
+# service, data in ./data/server. UPnP off (never touch the router from dev), voice on local addresses.
 # Voice uses livekit-server from PATH (~/.local/bin); ports 7880 (loopback), 7881/tcp, 7882/udp.
 run-server: build
-	QUAREL_TRUSTED_ISSUERS=localhost:8080 QUAREL_DATA_DIR=./data/server ./bin/quarel-server
+	QUAREL_TRUSTED_ISSUERS=localhost:8080 QUAREL_DATA_DIR=./data/server QUAREL_UPNP=off QUAREL_VOICE_PUBLIC_IP=local ./bin/quarel-server
 
 docker-identity:
 	docker build -f Dockerfile.identity -t quarel-identity .
@@ -41,3 +42,11 @@ e2e-voice: build
 # End-to-end encrypted DM scenario (Identity service + quarelctl).
 e2e-dm: build
 	test/e2e/dm.sh
+
+# Milestone 6 scenario: recovery phrase, TLS identity pinning, rate limiting.
+e2e-security: build
+	test/e2e/security.sh
+
+# HTTPS through ACME (Let's Encrypt protocol) against Pebble in Docker.
+e2e-acme: build
+	test/e2e/acme.sh

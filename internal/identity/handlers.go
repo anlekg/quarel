@@ -282,7 +282,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := lockoutKey(u, login)
-	err = s.guarded(ctx, key, func() error {
+	err = s.guarded(r, key, func() error {
 		badCreds := errf(http.StatusUnauthorized, "invalid_credentials", "invalid login or password")
 		if u == nil {
 			verifyPassword(req.Password, dummyHash())
@@ -311,7 +311,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	s.clearFailures(ctx, key)
+	s.clearFailures(r, key)
 
 	token := newSecret()
 	sessID := newID()
@@ -442,8 +442,8 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 
 // requirePassword re-checks the password of a logged-in user; failures count
 // towards the account lockout like login failures.
-func (s *Server) requirePassword(ctx context.Context, u *user, password string) error {
-	return s.guarded(ctx, lockoutKey(u, ""), func() error {
+func (s *Server) requirePassword(r *http.Request, u *user, password string) error {
+	return s.guarded(r, lockoutKey(u, ""), func() error {
 		ok, err := verifyPassword(password, u.PasswordHash)
 		if err != nil {
 			return err
@@ -466,7 +466,7 @@ func (s *Server) handle2FASetup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	if err := s.requirePassword(r.Context(), u, req.Password); err != nil {
+	if err := s.requirePassword(r, u, req.Password); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -554,11 +554,11 @@ func (s *Server) handle2FADisable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, errf(http.StatusBadRequest, "2fa_not_enabled", "2FA is not enabled"))
 		return
 	}
-	if err := s.requirePassword(r.Context(), u, req.Password); err != nil {
+	if err := s.requirePassword(r, u, req.Password); err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	if err := s.guarded(r.Context(), lockoutKey(u, ""), func() error { return s.check2FA(r.Context(), u, req.Code) }); err != nil {
+	if err := s.guarded(r, lockoutKey(u, ""), func() error { return s.check2FA(r.Context(), u, req.Code) }); err != nil {
 		writeErr(w, r, err)
 		return
 	}

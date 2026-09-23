@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/anlekg/quarel/pkg/idtoken"
+	"github.com/anlekg/quarel/pkg/tlsbind"
 	"github.com/mdp/qrterminal/v3"
 	"golang.org/x/term"
 )
@@ -66,6 +67,11 @@ Messages privés (chiffrés de bout en bout, entre amis)
   dm-sync                          récupérer les messages en attente
   dm-listen                        messages privés en direct (Ctrl+C pour quitter)
 
+Phrase de récupération (si tous vos appareils sont perdus)
+  recovery-setup [--replace]       créer la phrase de 12 mots et la sauvegarde chiffrée (appareil validé)
+  recovery-status                  état de la sauvegarde
+  recovery-restore <12 mots>       restaurer clé du compte et historique sur cet appareil
+
 Serveurs communautaires (connexion Identity requise)
   srv-info <url>                   infos publiques d'un serveur
   join <url|lien> [invitation]     rejoindre un serveur (lien : quarel://hôte:port/CODE?sid=…)
@@ -74,6 +80,7 @@ Serveurs communautaires (connexion Identity requise)
   use <url>                        changer de serveur courant
   srv-set name=… access=public|private   réglages du serveur (propriétaire)
   leave                            quitter le serveur courant
+  network                          diagnostic réseau : le serveur est-il joignable depuis Internet ? (gestion du serveur)
 
 Salons (sur le serveur courant ; un salon se désigne par son nom ou son id)
   channels                         arborescence des salons
@@ -141,6 +148,32 @@ type cli struct {
 	st        state
 	stdin     *bufio.Reader
 	community string // -c flag: community server URL overriding the current one
+
+	// Community servers over HTTPS: one client per server, verifying the
+	// certificate's binding to the server ID (see pkg/tlsbind).
+	clients   map[string]*http.Client
+	expectSID map[string]string // server ID required by an invite link
+	tlsSeen   map[string]string // server ID proven by the certificate ("" if CA-issued)
+}
+
+// httpClient returns the client for base: the default one for the Identity
+// service and plain HTTP, a pinned one for community servers over HTTPS.
+func (c *cli) httpClient(base string) *http.Client {
+	if base == c.st.Server || !strings.HasPrefix(base, "https://") {
+		return client
+	}
+	if cl := c.clients[base]; cl != nil {
+		return cl
+	}
+	expect := c.expectSID[base]
+	if com := c.st.Communities[base]; com != nil && com.ServerID != "" {
+		expect = com.ServerID
+	}
+	cl := &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{
+		TLSClientConfig: tlsbind.ClientConfig(expect, func(sid string) { c.tlsSeen[base] = sid }),
+	}}
+	c.clients[base] = cl
+	return cl
 }
 
 func main() {
@@ -174,7 +207,8 @@ func load(profile string) (*cli, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &cli{path: filepath.Join(dir, "quarelctl", profile+".json"), stdin: bufio.NewReader(os.Stdin)}
+	c := &cli{path: filepath.Join(dir, "quarelctl", profile+".json"), stdin: bufio.NewReader(os.Stdin),
+		clients: map[string]*http.Client{}, expectSID: map[string]string{}, tlsSeen: map[string]string{}}
 	data, err := os.ReadFile(c.path)
 	if err == nil {
 		err = json.Unmarshal(data, &c.st)
@@ -539,7 +573,7 @@ func (c *cli) request(base, token, method, path string, body, out any) error {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := client.Do(req)
+	resp, err := c.httpClient(base).Do(req)
 	if err != nil {
 		return fmt.Errorf("service injoignable (%s) : %w", base, err)
 	}

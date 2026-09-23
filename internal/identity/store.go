@@ -131,6 +131,15 @@ CREATE TABLE inbox (
 CREATE INDEX inbox_session ON inbox(session_id, id);
 CREATE INDEX inbox_event ON inbox(event_id);
 `,
+	// Milestone 6: encrypted account backups (opened only with the recovery phrase).
+	`
+CREATE TABLE backups (
+	user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	version    INTEGER NOT NULL,
+	data       TEXT NOT NULL, -- base64 ciphertext, opaque to the server
+	updated_at INTEGER NOT NULL
+);
+`,
 }
 
 // OpenDB opens (creating if needed) the SQLite database at path and applies migrations.

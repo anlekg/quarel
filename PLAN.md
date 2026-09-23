@@ -16,7 +16,7 @@
 - [ ] **P1** Changement d'email, de pseudo, de mot de passe
 - [ ] **P1** Suppression de compte par l'utilisateur (effacement réel des données)
 - [x] **P1** Anti-bruteforce : blocage du compte après 15 échecs de connexion par heure *(avancé au jalon 1 à la demande du CP)*
-- [ ] **P1** Limitation de débit par IP (anti-spam d'inscriptions, anti-blocage malveillant de comptes)
+- [x] **P1** Limitation de débit par IP (anti-spam d'inscriptions, anti-blocage malveillant de comptes)
 - [ ] **P2** 2FA par clé matérielle / passkey (WebAuthn)
 
 ### A2. Identité portable
@@ -31,7 +31,7 @@
 - [x] **P0** Enregistrement du premier appareil (génération des clés côté client)
 - [x] **P0** Ajout d'un appareil validé depuis un appareil existant (code de vérification à comparer ; QR code avec le vrai client)
 - [x] **P0** Liste et révocation des appareils
-- [ ] **P1** Phrase de récupération (restaure les clés si tous les appareils sont perdus)
+- [x] **P1** Phrase de récupération (restaure les clés si tous les appareils sont perdus) *+ sauvegarde chiffrée de l'historique*
 - [x] **P1** Transfert de l'historique des MP vers un nouvel appareil *(avancé au jalon 5 : au cœur de la demande du CP)*
 
 ### A4. Amis
@@ -71,8 +71,8 @@
 - [x] **P0** Base SQLite embarquée, migrations automatiques
 - [x] **P0** Configuration minimale : nom du serveur, services d'identité acceptés
 - [x] **P0** Création du propriétaire au premier démarrage (lien ou code de revendication)
-- [ ] **P1** UPnP : ouverture automatique des ports + diagnostic de joignabilité
-- [ ] **P1** HTTPS : certificat automatique (Let's Encrypt) ou auto-signé épinglé
+- [x] **P1** UPnP : ouverture automatique des ports + diagnostic de joignabilité
+- [x] **P1** HTTPS : certificat automatique (Let's Encrypt) ou auto-signé épinglé
 - [ ] **P1** Sauvegarde / restauration (export des données)
 - [ ] **P1** Mise à jour sans perte de données
 - [ ] **P2** Exécutable Windows (`.exe`)
@@ -156,5 +156,6 @@
 3. **Jalon 3 — Rôles et modération :** B5 P0, B6 P0. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-3.md`).*
 4. **Jalon 4 — Voix :** B7 P0. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-4.md`).*
 5. **Jalon 5 — Amis et MP chiffrés :** A3 P0, A4 P0, A5 P0. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-5.md`).*
-6. **Jalon 6 — P1** (par blocs, dans l'ordre choisi par le CP).
+6. **Jalon 6 — P1, premier bloc (mise en ligne) :** HTTPS, UPnP, limitation par IP, phrase de récupération. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-6.md`).*
+6 bis. **Jalons suivants — autres blocs P1**, dans l'ordre choisi par le CP.
 7. **Jalon 7 — Client graphique.**

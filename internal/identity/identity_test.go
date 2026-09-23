@@ -62,7 +62,8 @@ func newEnv(t *testing.T) *testEnv {
 	_, key, _ := ed25519.GenerateKey(nil)
 	mail := &captureMailer{last: map[string]string{}}
 	e := &testEnv{t: t, mail: mail, clock: time.Now()}
-	e.srv = New(Config{Issuer: "id.test", TokenTTL: time.Hour}, db, key, mail)
+	cfg := Config{Issuer: "id.test", TokenTTL: time.Hour, Limits: Limits{AuthFailuresPerIP: maxAuthFailures, AuthFailuresTotal: maxAuthFailuresAll}}
+	e.srv = New(cfg, db, key, mail)
 	e.srv.now = func() time.Time { return e.clock }
 	e.http = httptest.NewServer(e.srv.Handler())
 	t.Cleanup(func() { e.http.Close(); db.Close() })

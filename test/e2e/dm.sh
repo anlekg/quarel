@@ -8,7 +8,7 @@ REPO=$(cd "$(dirname "$0")/../.." && pwd); B=$REPO/bin
 D=$(mktemp -d); IDP=
 trap 'kill $IDP 2>/dev/null; rm -rf "$D"' EXIT
 export XDG_CONFIG_HOME=$D/cfg QUAREL_PASSWORD=motdepasse-solide
-QUAREL_ADDR=127.0.0.1:18080 QUAREL_ISSUER=localhost:18080 QUAREL_DATA_DIR=$D/id $B/quarel-identity > $D/id.log 2>&1 & IDP=$!
+QUAREL_RATE_LIMITS=off QUAREL_ADDR=127.0.0.1:18080 QUAREL_ISSUER=localhost:18080 QUAREL_DATA_DIR=$D/id $B/quarel-identity > $D/id.log 2>&1 & IDP=$!
 sleep 0.5
 Q() { local p=$1; shift; $B/quarelctl -s http://127.0.0.1:18080 -p "$p" "$@" 2>&1; }
 FAIL=0

@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/anlekg/quarel/internal/httpapi"
+	"github.com/anlekg/quarel/internal/ratelimit"
 	"github.com/anlekg/quarel/internal/realtime"
 	"github.com/anlekg/quarel/internal/secret"
+	"github.com/anlekg/quarel/internal/tlsconf"
 	"github.com/anlekg/quarel/pkg/idtoken"
 )
 
@@ -26,6 +28,27 @@ type Config struct {
 	Issuer   string // public name of this service, used in handles (pseudo@Issuer)
 	TokenTTL time.Duration
 	SMTP     SMTPMailer // SMTP.Host empty → emails are logged instead of sent
+	Limits   Limits
+	// TrustedProxies are reverse proxies whose X-Forwarded-For is believed.
+	TrustedProxies ratelimit.Proxies
+	TLS            tlsconf.Config
+}
+
+// Limits caps request rates (0 disables a limit).
+type Limits struct {
+	Global            int // requests per client IP per minute, all endpoints
+	Register          int // registrations per client IP per hour
+	Login             int // login attempts per client IP per 10 minutes
+	Email             int // email verification requests per client IP per hour
+	FriendRequests    int // friend requests per user per hour
+	AuthFailuresPerIP int // failed passwords/2FA codes per account and IP per hour → lockout
+	AuthFailuresTotal int // failed passwords/2FA codes per account per hour, all IPs → lockout
+}
+
+// DefaultLimits are the production limits.
+func DefaultLimits() Limits {
+	return Limits{Global: 300, Register: 5, Login: 20, Email: 20, FriendRequests: 30,
+		AuthFailuresPerIP: maxAuthFailures, AuthFailuresTotal: maxAuthFailuresAll}
 }
 
 // ConfigFromEnv reads the configuration from QUAREL_* environment variables.
@@ -41,6 +64,18 @@ func ConfigFromEnv() (Config, error) {
 			Password: os.Getenv("QUAREL_SMTP_PASSWORD"),
 			From:     os.Getenv("QUAREL_SMTP_FROM"),
 		},
+	}
+	c.Limits = DefaultLimits()
+	if os.Getenv("QUAREL_RATE_LIMITS") == "off" {
+		c.Limits = Limits{AuthFailuresPerIP: maxAuthFailures, AuthFailuresTotal: maxAuthFailuresAll}
+	}
+	proxies, err := ratelimit.ParseProxies(os.Getenv("QUAREL_TRUSTED_PROXIES"))
+	if err != nil {
+		return c, fmt.Errorf("QUAREL_TRUSTED_PROXIES: %w", err)
+	}
+	c.TrustedProxies = proxies
+	if c.TLS, err = tlsconf.FromEnv("off"); err != nil {
+		return c, err
 	}
 	ttl, err := time.ParseDuration(env("QUAREL_TOKEN_TTL", "12h"))
 	if err != nil || ttl < time.Minute {
@@ -68,6 +103,9 @@ type Server struct {
 	mailer Mailer
 	hub    *realtime.Hub
 	now    func() time.Time
+
+	proxies ratelimit.Proxies
+	limit   struct{ global, register, login, email, friends *ratelimit.Limiter }
 }
 
 // Open prepares the data directory, database and signing key.
@@ -93,7 +131,7 @@ func Open(cfg Config) (*Server, error) {
 
 // New builds a Server from already-opened dependencies.
 func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer) *Server {
-	return &Server{
+	s := &Server{
 		cfg:    cfg,
 		db:     db,
 		signer: idtoken.NewSigner(cfg.Issuer, key),
@@ -101,6 +139,20 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer) *Server 
 		hub:    realtime.NewHub(),
 		now:    time.Now,
 	}
+	s.proxies = cfg.TrustedProxies
+	s.limit.global = ratelimit.New(cfg.Limits.Global, time.Minute)
+	s.limit.register = ratelimit.New(cfg.Limits.Register, time.Hour)
+	s.limit.login = ratelimit.New(cfg.Limits.Login, 10*time.Minute)
+	s.limit.email = ratelimit.New(cfg.Limits.Email, time.Hour)
+	s.limit.friends = ratelimit.New(cfg.Limits.FriendRequests, time.Hour)
+	return s
+}
+
+func (s *Server) byIP(r *http.Request) string { return s.proxies.ClientIP(r) }
+
+// limited applies a per-IP limiter to a handler.
+func (s *Server) limited(l *ratelimit.Limiter, h http.HandlerFunc) http.HandlerFunc {
+	return l.Wrap(s.byIP, h).ServeHTTP
 }
 
 // DisconnectAll closes every real-time connection.
@@ -120,10 +172,10 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
-	mux.HandleFunc("POST /v1/auth/register", s.handleRegister)
-	mux.HandleFunc("POST /v1/auth/verify-email", s.handleVerifyEmail)
-	mux.HandleFunc("POST /v1/auth/resend-verification", s.handleResendVerification)
-	mux.HandleFunc("POST /v1/auth/login", s.handleLogin)
+	mux.HandleFunc("POST /v1/auth/register", s.limited(s.limit.register, s.handleRegister))
+	mux.HandleFunc("POST /v1/auth/verify-email", s.limited(s.limit.email, s.handleVerifyEmail))
+	mux.HandleFunc("POST /v1/auth/resend-verification", s.limited(s.limit.email, s.handleResendVerification))
+	mux.HandleFunc("POST /v1/auth/login", s.limited(s.limit.login, s.handleLogin))
 	mux.HandleFunc("POST /v1/auth/logout", s.authed(s.handleLogout))
 
 	mux.HandleFunc("GET /v1/me", s.authed(s.handleMe))
@@ -154,8 +206,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/inbox", s.authed(s.handleInbox))
 	mux.HandleFunc("POST /v1/inbox/ack", s.authed(s.handleAckInbox))
 
+	mux.HandleFunc("GET /v1/backup", s.authed(s.handleGetBackup))
+	mux.HandleFunc("PUT /v1/backup", s.authed(s.handlePutBackup))
+	mux.HandleFunc("DELETE /v1/backup", s.authed(s.handleDeleteBackup))
+
 	mux.HandleFunc("GET /v1/gateway", s.handleGateway)
-	return mux
+	return s.limit.global.Wrap(s.byIP, mux)
 }
 
 // --- request/response helpers (shared conventions, see internal/httpapi) ---

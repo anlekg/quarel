@@ -95,6 +95,8 @@ func (c *cli) runCommunity(cmd string, args []string) (bool, error) {
 		}
 	case "srv-set":
 		err = c.srvSet(args)
+	case "network":
+		err = c.printNetwork()
 	case "leave":
 		err = c.leave()
 	case "channels":
@@ -135,18 +137,18 @@ func (c *cli) runCommunity(cmd string, args []string) (bool, error) {
 	return true, err
 }
 
-// parseTarget accepts a server URL or an invite link quarel://host:port/CODE?sid=ID.
+// parseTarget accepts a server URL (HTTPS by default) or an invite link
+// quarel://host:port/CODE?sid=ID.
 func parseTarget(arg string) (base, code, sid string, err error) {
 	if strings.HasPrefix(arg, "quarel://") {
 		u, err := url.Parse(arg)
 		if err != nil {
 			return "", "", "", fmt.Errorf("lien d'invitation invalide : %w", err)
 		}
-		// No TLS yet (planned in P1): invite links map to plain HTTP.
-		return "http://" + u.Host, strings.Trim(u.Path, "/"), u.Query().Get("sid"), nil
+		return "https://" + u.Host, strings.Trim(u.Path, "/"), u.Query().Get("sid"), nil
 	}
 	if !strings.Contains(arg, "://") {
-		arg = "http://" + arg
+		arg = "https://" + arg
 	}
 	return strings.TrimRight(arg, "/"), "", "", nil
 }
@@ -198,6 +200,10 @@ func (c *cli) communityLogin(base, invite, claim, expectSID string) (*loginResul
 	if expectSID != "" && expectSID != ch.ServerID {
 		return nil, fmt.Errorf("le lien d'invitation désigne le serveur %s mais %s répond avec l'identifiant %s ; connexion refusée", expectSID, base, ch.ServerID)
 	}
+	// The identity proven by the TLS certificate must be the one the server claims.
+	if seen := c.tlsSeen[base]; seen != "" && seen != ch.ServerID {
+		return nil, fmt.Errorf("ATTENTION : le certificat de %s prouve l'identité %s mais le serveur annonce %s ; connexion refusée (possible interception)", base, seen, ch.ServerID)
+	}
 	var res loginResult
 	err = c.request(base, "", "POST", "/v1/auth/login", map[string]string{
 		"identity_token": tok,
@@ -223,6 +229,9 @@ func (c *cli) joinCmd(target, invite, claim string) error {
 	}
 	if invite == "" {
 		invite = code
+	}
+	if sid != "" {
+		c.expectSID[base] = sid // checked during the TLS handshake already
 	}
 	res, err := c.communityLogin(base, invite, claim, sid)
 	if err != nil {
@@ -816,7 +825,7 @@ func (c *cli) listen() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(base, "http")+"/v1/gateway", nil)
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(base, "http")+"/v1/gateway", &websocket.DialOptions{HTTPClient: c.httpClient(base)})
 	if err != nil {
 		return fmt.Errorf("connexion temps réel impossible : %w", err)
 	}

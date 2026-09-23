@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/anlekg/quarel/internal/identity"
+	"github.com/anlekg/quarel/internal/tlsconf"
 )
 
 func main() {
@@ -35,9 +37,17 @@ func run() error {
 		slog.Warn("QUAREL_SMTP_HOST not set: verification codes will be printed in this log (development mode)")
 	}
 
+	if cfg.TLS.Mode == tlsconf.SelfSigned {
+		return errors.New("QUAREL_TLS=self-signed is not supported for the Identity service: community servers check its certificate against public authorities (use acme, files, or off behind a reverse proxy)")
+	}
+	tlsCfg, err := cfg.TLS.Build(cfg.DataDir, nil)
+	if err != nil {
+		return fmt.Errorf("TLS: %w", err)
+	}
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           srv.Handler(),
+		TLSConfig:         tlsCfg,
 		ReadHeaderTimeout: 10 * time.Second,
 		// No global read/write timeouts: they would cut long-lived WebSocket connections.
 		IdleTimeout: 2 * time.Minute,
@@ -52,8 +62,13 @@ func run() error {
 		httpSrv.Shutdown(shutdown)
 	}()
 
-	slog.Info("quarel-identity listening", "addr", cfg.Addr, "issuer", cfg.Issuer, "data", cfg.DataDir)
-	if err := httpSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+	slog.Info("quarel-identity listening", "addr", cfg.Addr, "tls", cfg.TLS.Mode, "issuer", cfg.Issuer, "data", cfg.DataDir)
+	if tlsCfg != nil {
+		err = httpSrv.ListenAndServeTLS("", "")
+	} else {
+		err = httpSrv.ListenAndServe()
+	}
+	if !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

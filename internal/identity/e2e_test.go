@@ -320,3 +320,34 @@ func TestDirectMessages(t *testing.T) {
 		t.Fatalf("revoked device kept %d mailbox items", n)
 	}
 }
+
+func TestBackup(t *testing.T) {
+	e := newEnv(t)
+	const pw = "correct horse battery"
+	alice, _ := e.registerVerified("a@example.com", "alice", pw)
+	phone := e.login2("a@example.com", pw, "phone")
+	bob, _ := e.registerVerified("b@example.com", "bob", pw)
+
+	e.expect(404, "no_backup", e.call("GET", "/v1/backup", alice.SessionToken, nil, nil))
+	var v struct{ Version int64 }
+	e.expect(200, "", e.call("PUT", "/v1/backup", alice.SessionToken, map[string]any{"version": 0, "data": "chiffré-1"}, &v))
+	if v.Version != 1 {
+		t.Fatalf("version = %d", v.Version)
+	}
+	// Two devices racing: the second write must be based on the latest version.
+	e.expect(200, "", e.call("PUT", "/v1/backup", phone.SessionToken, map[string]any{"version": 1, "data": "chiffré-2"}, &v))
+	e.expect(409, "version_conflict", e.call("PUT", "/v1/backup", alice.SessionToken, map[string]any{"version": 1, "data": "chiffré-périmé"}, nil))
+	e.expect(409, "version_conflict", e.call("PUT", "/v1/backup", alice.SessionToken, map[string]any{"version": 0, "data": "écrase"}, nil))
+	var got struct {
+		Version int64
+		Data    string
+	}
+	e.expect(200, "", e.call("GET", "/v1/backup", alice.SessionToken, nil, &got))
+	if got.Version != 2 || got.Data != "chiffré-2" {
+		t.Fatalf("backup = %+v", got)
+	}
+	// Backups are private to their account.
+	e.expect(404, "no_backup", e.call("GET", "/v1/backup", bob.SessionToken, nil, nil))
+	e.expect(204, "", e.call("DELETE", "/v1/backup", alice.SessionToken, nil, nil))
+	e.expect(404, "no_backup", e.call("GET", "/v1/backup", phone.SessionToken, nil, nil))
+}

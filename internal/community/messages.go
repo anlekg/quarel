@@ -257,6 +257,10 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	author := memberFrom(r).ID
+	if err := s.limit.messages.Check(author); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	msg := &message{ChannelID: c.ID, AuthorID: author}
 	if msg.Content, err = validContent(req.Content); err != nil {
 		writeErr(w, r, err)

@@ -1,10 +1,14 @@
 package community
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/anlekg/quarel/internal/ratelimit"
+	"github.com/anlekg/quarel/internal/tlsconf"
 )
 
 // DefaultIssuer is the official Identity service trusted when none is configured.
@@ -26,15 +30,31 @@ type Config struct {
 	VoiceSignalPort int    // embedded: loopback signalling port
 	VoiceTCPPort    int    // embedded: media over TCP (fallback), to open on the router
 	VoiceUDPPort    int    // embedded: media over UDP, to open on the router
-	VoicePublicIP   string // embedded: "" local addresses, "auto" STUN discovery, or an IP
+	VoicePublicIP   string // embedded: "auto" (router's address via UPnP, else STUN), "local" (LAN only), or an IP
 	LiveKitURL      string // external: URL given to clients (wss://…)
 	LiveKitAPIURL   string // external: URL the server uses for the room API (https://…)
 	LiveKitKey      string // external: API key
 	LiveKitSecret   string // external: API secret
+
+	Limits         Limits
+	TrustedProxies ratelimit.Proxies // reverse proxies whose X-Forwarded-For is believed
+	TLS            tlsconf.Config
+	UPnP           bool // open ports on the router automatically
+	PublicPort     int  // external port of the HTTP(S) service (UPnP mapping); 0 = same as the listening port
 }
 
+// Limits caps request rates (0 disables a limit).
+type Limits struct {
+	Global   int // requests per client IP per minute, all endpoints
+	Auth     int // login challenges and logins per client IP per minute
+	Messages int // messages sent per member per 10 seconds
+}
+
+// DefaultLimits are the production limits.
+func DefaultLimits() Limits { return Limits{Global: 600, Auth: 30, Messages: 10} }
+
 // ConfigFromEnv reads the configuration from QUAREL_* environment variables.
-func ConfigFromEnv() Config {
+func ConfigFromEnv() (Config, error) {
 	c := Config{
 		Addr:    env("QUAREL_ADDR", ":8090"),
 		DataDir: env("QUAREL_DATA_DIR", "./data"),
@@ -45,7 +65,7 @@ func ConfigFromEnv() Config {
 	c.VoiceSignalPort = envInt("QUAREL_VOICE_SIGNAL_PORT", 7880)
 	c.VoiceTCPPort = envInt("QUAREL_VOICE_TCP_PORT", 7881)
 	c.VoiceUDPPort = envInt("QUAREL_VOICE_UDP_PORT", 7882)
-	c.VoicePublicIP = os.Getenv("QUAREL_VOICE_PUBLIC_IP")
+	c.VoicePublicIP = env("QUAREL_VOICE_PUBLIC_IP", "auto")
 	c.LiveKitURL = os.Getenv("QUAREL_LIVEKIT_URL")
 	c.LiveKitAPIURL = os.Getenv("QUAREL_LIVEKIT_API_URL")
 	c.LiveKitKey = os.Getenv("QUAREL_LIVEKIT_KEY")
@@ -55,7 +75,20 @@ func ConfigFromEnv() Config {
 			c.TrustedIssuers = append(c.TrustedIssuers, iss)
 		}
 	}
-	return c
+	c.Limits = DefaultLimits()
+	if os.Getenv("QUAREL_RATE_LIMITS") == "off" {
+		c.Limits = Limits{}
+	}
+	var err error
+	if c.TrustedProxies, err = ratelimit.ParseProxies(os.Getenv("QUAREL_TRUSTED_PROXIES")); err != nil {
+		return c, fmt.Errorf("QUAREL_TRUSTED_PROXIES: %w", err)
+	}
+	if c.TLS, err = tlsconf.FromEnv(tlsconf.SelfSigned); err != nil {
+		return c, err
+	}
+	c.UPnP = env("QUAREL_UPNP", "on") != "off"
+	c.PublicPort = envInt("QUAREL_PUBLIC_PORT", 0)
+	return c, nil
 }
 
 func env(key, def string) string {

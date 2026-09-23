@@ -60,7 +60,10 @@ func newVoiceCommunity(t *testing.T, pseudos ...string) (*community, *fakeVoice)
 	fv := &fakeVoice{published: map[string]bool{}}
 	c := newCommunity(t, pseudos...)
 	c.srv.EnableVoice(VoiceOptions{Backend: fv})
-	c.http.Config.Handler = c.srv.Handler() // routes depend on voice being enabled
+	mux := http.NewServeMux() // routes depend on voice being enabled; webhooks live on the internal handler
+	mux.Handle("/internal/", c.srv.InternalHandler())
+	mux.Handle("/", c.srv.Handler())
+	c.http.Config.Handler = mux
 	return c, fv
 }
 

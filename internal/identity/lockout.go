@@ -8,12 +8,19 @@ import (
 	"time"
 )
 
-// Brute-force protection: after maxAuthFailures failed attempts (wrong
-// password or wrong 2FA code) within lockoutWindow, the account is locked
-// until the oldest of those failures leaves the window.
+// Brute-force protection. Failed attempts (wrong password or wrong 2FA code)
+// are counted twice, over a sliding window:
+//   - per account and client IP: Limits.AuthFailuresPerIP locks that account
+//     for that IP only, so someone typing wrong passwords from their own
+//     address cannot lock the real owner out;
+//   - per account, all IPs together: Limits.AuthFailuresTotal stops attacks
+//     spread over many addresses.
+//
+// A lock lifts when the oldest counted failure leaves the window.
 const (
-	maxAuthFailures = 15
-	lockoutWindow   = time.Hour
+	maxAuthFailures    = 15  // default per account and IP
+	maxAuthFailuresAll = 100 // default per account, all IPs
+	lockoutWindow      = time.Hour
 )
 
 // lockoutKey identifies whose failures are counted. Existing accounts are
@@ -34,22 +41,46 @@ func isGuessFailure(err error) bool {
 	return errors.As(err, &ae) && (ae.Code == "invalid_credentials" || ae.Code == "invalid_mfa_code")
 }
 
-// guarded runs check unless key is locked out, and records a failure if
-// check rejects a guessed secret.
-func (s *Server) guarded(ctx context.Context, key string, check func() error) error {
-	if err := s.checkLockout(ctx, key); err != nil {
-		return err
+type failureCounter struct {
+	key string
+	max int
+}
+
+func (s *Server) failureCounters(r *http.Request, base string) []failureCounter {
+	return []failureCounter{
+		{base + "|ip:" + s.proxies.ClientIP(r), s.cfg.Limits.AuthFailuresPerIP},
+		{base, s.cfg.Limits.AuthFailuresTotal},
+	}
+}
+
+// guarded runs check unless the account is locked out for this client, and
+// records a failure if check rejects a guessed secret.
+func (s *Server) guarded(r *http.Request, base string, check func() error) error {
+	ctx := r.Context()
+	counters := s.failureCounters(r, base)
+	for _, c := range counters {
+		if err := s.checkLockout(ctx, c); err != nil {
+			return err
+		}
 	}
 	err := check()
 	if isGuessFailure(err) {
-		if _, dbErr := s.db.ExecContext(ctx, `INSERT INTO auth_failures (key, at) VALUES (?, ?)`, key, s.now().Unix()); dbErr != nil {
-			slog.Error("recording auth failure", "err", dbErr)
+		for _, c := range counters {
+			if c.max <= 0 {
+				continue
+			}
+			if _, dbErr := s.db.ExecContext(ctx, `INSERT INTO auth_failures (key, at) VALUES (?, ?)`, c.key, s.now().Unix()); dbErr != nil {
+				slog.Error("recording auth failure", "err", dbErr)
+			}
 		}
 	}
 	return err
 }
 
-func (s *Server) checkLockout(ctx context.Context, key string) error {
+func (s *Server) checkLockout(ctx context.Context, c failureCounter) error {
+	if c.max <= 0 {
+		return nil
+	}
 	now := s.now().Unix()
 	since := now - int64(lockoutWindow.Seconds())
 	// Opportunistic cleanup keeps the table small.
@@ -60,11 +91,11 @@ func (s *Server) checkLockout(ctx context.Context, key string) error {
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(MIN(at), 0) FROM (
 			SELECT at FROM auth_failures WHERE key = ? AND at > ? ORDER BY at DESC LIMIT ?
-		)`, key, since, maxAuthFailures).Scan(&count, &oldest)
+		)`, c.key, since, c.max).Scan(&count, &oldest)
 	if err != nil {
 		return err
 	}
-	if count < maxAuthFailures {
+	if count < c.max {
 		return nil
 	}
 	retry := oldest + int64(lockoutWindow.Seconds()) - now
@@ -77,7 +108,9 @@ func (s *Server) checkLockout(ctx context.Context, key string) error {
 	return ae
 }
 
-// clearFailures resets the counter after a fully successful login.
-func (s *Server) clearFailures(ctx context.Context, key string) {
-	s.db.ExecContext(ctx, `DELETE FROM auth_failures WHERE key = ?`, key)
+// clearFailures resets this client's counter after a fully successful login.
+// The all-IPs counter is left to expire, so an attacker cannot reset it by
+// logging into their own account.
+func (s *Server) clearFailures(r *http.Request, base string) {
+	s.db.ExecContext(r.Context(), `DELETE FROM auth_failures WHERE key = ?`, s.failureCounters(r, base)[0].key)
 }

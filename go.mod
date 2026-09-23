@@ -5,9 +5,11 @@ go 1.27.1
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/huin/goupnp v1.3.0
 	github.com/mdp/qrterminal/v3 v3.2.1
 	golang.org/x/crypto v0.57.0
 	golang.org/x/term v0.46.0
+	golang.org/x/text v0.42.0
 	maunium.net/go/mautrix v0.31.0
 	modernc.org/sqlite v1.59.0
 )
@@ -24,6 +26,8 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	go.mau.fi/util v0.10.1 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

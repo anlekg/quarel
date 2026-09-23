@@ -45,7 +45,8 @@ cmd/quarel-identity/    binaire du service Identity
 cmd/quarel-server/      binaire du serveur communautaire
 cmd/quarelctl/          client de test en ligne de commande (sorties en français, neutres en genre, pour le CP) :
                         main.go (Identity), community.go (serveurs communautaires), roles.go (rôles, modération),
-                        voice.go (vocal), social.go (amis, MP), e2e.go (chiffrement Olm/Megolm côté client)
+                        voice.go (vocal), social.go (amis, MP), e2e.go (chiffrement Olm/Megolm côté client),
+                        recovery.go (phrase de récupération, sauvegarde), network.go (diagnostic réseau)
 internal/identity/      service Identity : HTTP (server.go), endpoints (handlers.go), SQLite (store.go),
                         argon2id (crypto.go), TOTP (totp.go), emails (mail.go), anti-bruteforce (lockout.go),
                         amis et conversations (social.go), clés E2E et boîtes aux lettres (e2e.go), temps réel (gateway.go)
@@ -56,15 +57,21 @@ internal/community/     serveur communautaire : config, clés des Identity (keys
                         vocal (voice.go), page de test vocal (voicetest/, embarquée)
 internal/voice/         client LiveKit maison (jetons, API salle, webhooks) + lancement de livekit-server
 internal/realtime/      passerelle WebSocket partagée (authentification 1er message, READY, diffusion filtrée)
+internal/ratelimit/     limiteurs en mémoire (seaux de jetons), IP client derrière proxys de confiance
+internal/tlsconf/       modes HTTPS : off, self-signed, acme (Let's Encrypt), files
+internal/netdiag/       UPnP (ouverture/renouvellement des ports), STUN (IP publique), diagnostic de joignabilité
 internal/httpapi/       conventions JSON partagées (erreurs, décodage strict)
 internal/sqlitedb/      ouverture SQLite + migrations (PRAGMA user_version)
 internal/secret/        identifiants aléatoires, jetons porteurs, fichiers de clés Ed25519
 pkg/idtoken/            jetons d'identité portables (émission, vérification, preuve d'appareil)
 pkg/e2ekeys/            messages signés des clés E2E (partagés serveur/clients), code de vérification
+pkg/tlsbind/            certificat auto-signé lié à l'identité du serveur, vérification côté client
+pkg/recovery/           phrase de récupération (BIP-39 français) et chiffrement des sauvegardes
 docs/tests/             guides de test par jalon, destinés au CP
-test/e2e/               tests de bout en bout : vocal avec navigateurs (Playwright), MP chiffrés (quarelctl)
+test/e2e/               tests de bout en bout : vocal (Playwright), MP chiffrés, sécurité (récupération, HTTPS,
+                        limites), ACME contre Pebble (acmeshim : corrige une différence de Pebble avec Let's Encrypt)
 Dockerfile.identity     image distroless (~23 Mo), volume /data, port 8080
-Dockerfile.server       image distroless + livekit-server (~139 Mo), volume /data, ports 8090/tcp, 7881/tcp, 7882/udp
+Dockerfile.server       image distroless + livekit-server (~141 Mo), volume /data, ports 8090/tcp, 7881/tcp, 7882/udp
 Makefile                commandes de dev (build, test, run-identity, run-server…)
 ```
 
@@ -105,6 +112,32 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | GET | `/v1/inbox` | Éléments en attente pour cet appareil |
 | POST | `/v1/inbox/ack` | `{ids}` |
 | GET | `/v1/gateway` | WebSocket : READY, INBOX, FRIENDS_UPDATE, DEVICES_UPDATE |
+
+## Mise en ligne (jalon 6) : HTTPS, UPnP, limites, récupération
+
+### HTTPS (`internal/tlsconf`, `pkg/tlsbind`)
+- `QUAREL_TLS` : `self-signed` (**défaut du serveur communautaire**), `acme`, `files`, `off` (**défaut d'Identity**, qui refuse `self-signed` : les serveurs communautaires vérifient son certificat avec les autorités publiques).
+- **Auto-signé lié à l'identité** : certificat ECDSA P-256 (`data/tls-selfsigned.*`, 5 ans, régénéré si l'identité ou `QUAREL_TLS_HOSTS` changent) portant l'URI `quarel://binding/<clé Ed25519 du serveur>/<signature de la clé du certificat>`. `server_id` = hachage de cette clé : un client qui connaît le `sid` (lien d'invitation ou épinglé) vérifie le serveur **pendant la poignée de main TLS**, sans autorité (`tlsbind.ClientConfig`). Le client vérifie aussi que l'identité prouvée par TLS = `server_id` annoncé au défi de connexion (anti-relais). Certificat d'autorité (acme/files) : vérification classique.
+- **acme** : `QUAREL_TLS_DOMAIN`, `QUAREL_TLS_EMAIL`, `QUAREL_ACME_DIRECTORY` (défaut Let's Encrypt), `QUAREL_ACME_CA_FILE` (autorité ACME privée) ; défi TLS-ALPN-01 sur le port du service → le port public 443 doit y mener. Cache `data/acme`. **files** : `QUAREL_TLS_CERT`, `QUAREL_TLS_KEY`.
+- Les webhooks LiveKit arrivent sur un **écouteur interne HTTP en boucle locale** (port aléatoire, `InternalHandler`) : LiveKit ne peut pas vérifier un certificat auto-signé.
+- Navigateurs : avertissement à accepter pour l'auto-signé (page de test vocal) ; Playwright : `ignoreHTTPSErrors`.
+
+### UPnP et diagnostic (`internal/netdiag`)
+- `QUAREL_UPNP` (`on` par défaut, **`off` dans `make run-server` et les tests : ne jamais ouvrir de ports sur la box du CP sans son accord**). Découverte IGD (WANIPConnection2/1, WANPPPConnection1), ouverture de 8090/tcp (ou `QUAREL_PUBLIC_PORT`), 7882/udp, 7881/tcp, bail 1 h renouvelé toutes les 30 min, suppression à l'arrêt.
+- `QUAREL_VOICE_PUBLIC_IP=auto` (défaut) : adresse annoncée pour la voix = IP publique de la box (UPnP) si elle est publique, sinon découverte STUN par LiveKit ; `local` = adresses locales seulement.
+- STUN maison (RFC 5389, **IPv4 forcé**, `stun.l.google.com`, `stun.cloudflare.com`) ; verdicts : `ok`, `manual_ports`, `partial`, `double_nat` (adresse de la box privée/CGNAT ou ≠ STUN), `unknown`. `GET /v1/server/network` (`manage_server`), commande `quarelctl network`.
+- En Docker, l'UPnP (multicast) exige `--network host`.
+
+### Limitation de débit (`internal/ratelimit`)
+- Seaux de jetons en mémoire (remis à zéro au redémarrage), clés par IP (IPv6 groupé en /64) ; `X-Forwarded-For` pris en compte seulement depuis `QUAREL_TRUSTED_PROXIES` (CIDR). `QUAREL_RATE_LIMITS=off` désactive (tests de bout en bout).
+- **Identity** (`DefaultLimits`) : 300 requêtes/min/IP ; 5 inscriptions/h/IP ; 20 connexions/10 min/IP ; 20 demandes d'email/h/IP ; 30 demandes d'ami/h/utilisateur.
+- **Blocage anti-bruteforce** revu : 15 échecs/h par **(compte, IP)** → bloqué pour cette IP seulement ; 100 échecs/h par compte toutes IP → bloqué pour tous. Succès = remise à zéro du compteur de cette IP uniquement.
+- **Serveur communautaire** : 600 requêtes/min/IP ; 30 connexions/min/IP ; 10 messages/10 s/membre.
+
+### Phrase de récupération (`pkg/recovery`, `cmd/quarelctl/recovery.go`)
+- 12 mots de la liste **BIP-39 française** (encodage BIP-39 standard : 128 bits + somme de contrôle ; saisie insensible aux accents et à la casse). Clé de sauvegarde = HKDF-SHA256(secret, identifiant utilisateur) ; chiffrement **XChaCha20-Poly1305** lié à l'identifiant.
+- Contenu chiffré : graine de la clé maîtresse, historique des MP, sessions Megolm exportées, contacts épinglés. Stocké opaque sur Identity (`GET/PUT/DELETE /v1/backup`, 16 Mo max) avec **versions** (`PUT {version attendue, data}` → `409 version_conflict` si un autre appareil a sauvegardé : le client télécharge, fusionne, renvoie).
+- Mise à jour automatique après chaque envoi/synchronisation qui change le contenu. La clé de sauvegarde est transmise aux appareils approuvés. Restauration : vérifie que la graine correspond à la clé maîtresse publiée, puis l'appareil se certifie lui-même.
 
 ## Service Identity — détails
 
@@ -237,11 +270,13 @@ make test             # tests (go test ./...)
 make test-race        # tests avec détecteur de concurrence (gcc requis, installé)
 make vet
 make run-identity     # service Identity local sur :8080, données dans ./data/identity
-make run-server       # serveur communautaire local sur :8090, données dans ./data/server
+make run-server       # serveur communautaire local sur https://localhost:8090 (auto-signé, UPnP off), données dans ./data/server
 make docker-identity  # image quarel-identity
 make docker-server    # image quarel-server
 make e2e-voice        # test vocal de bout en bout avec navigateurs
 make e2e-dm           # scénario MP chiffrés de bout en bout (16 vérifications)
+make e2e-security     # récupération, HTTPS lié à l'identité, limites (18 vérifications)
+make e2e-acme         # HTTPS via ACME contre Pebble (Docker)
 ./bin/quarelctl help  # client de test
 ```
 

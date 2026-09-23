@@ -14,7 +14,8 @@ const browser = await chromium.launch({
   args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "--autoplay-policy=no-user-gesture-required"],
 });
 async function open(url, label) {
-  const ctx = await browser.newContext({ permissions: ["microphone"] });
+  // The community server uses a self-signed certificate (verified by quarelctl through its binding).
+  const ctx = await browser.newContext({ permissions: ["microphone"], ignoreHTTPSErrors: true });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => console.log(`[${label}] page error: ${e.message}`));
   await page.goto(url);

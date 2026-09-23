@@ -54,7 +54,7 @@ func (c *cli) runSocial(cmd string, args []string) (bool, error) {
 	case "dm-listen":
 		err = c.dmListen()
 	default:
-		return false, nil
+		return c.runRecovery(cmd, args)
 	}
 	return true, err
 }

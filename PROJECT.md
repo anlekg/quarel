@@ -26,7 +26,7 @@ Un équivalent de Discord où **les serveurs ne sont pas hébergés par un fourn
 | 1 | Revue des solutions open source existantes + choix structurants | ✅ Terminé |
 | 2 | Liste des fonctionnalités → `PLAN.md` | ✅ Validé le 2026-09-23 |
 | 3 | Choix de stack & architecture → `CLAUDE.md` | ✅ Go validé le 2026-09-23 |
-| 4 | Développement backend (itératif, testé par le CP) | 🟡 Jalons 1 à 5 livrés, en test |
+| 4 | Développement backend (itératif, testé par le CP) | 🟡 Jalons 1 à 6 livrés, en test |
 | 5 | Front-end / client | ⚪ À faire |
 | 6 | Packaging `.exe` | ⚪ À faire |
 
@@ -152,6 +152,12 @@ Deux types de serveurs :
 | 2026-09-23 | Code de vérification des appareils sur 80 bits (16 caractères) | Trop long pour qu'un serveur fabrique un faux appareil au même code. |
 | 2026-09-23 | MP et échanges de clés réservés aux amis | Anti-spam et limitation des métadonnées exposées. |
 | 2026-09-23 | Licence **Apache-2.0** (le CP voulait MIT ou Apache) | Permissive comme MIT, avec en plus une protection contre les brevets ; licence de LiveKit. Contrepartie acceptée : un fork hébergé fermé reste possible (l'AGPL l'interdirait). |
+| 2026-09-23 | Jalon 6 = bloc « mise en ligne » (HTTPS, UPnP, limites IP, phrase de récupération), dans cet ordre | Proposé et validé par le CP : ce qui empêche une mise en ligne réelle d'abord. |
+| 2026-09-23 | Serveurs sans domaine : certificat auto-signé **lié à l'identité du serveur** (URI signée dans le certificat) | Sécurité équivalente à une autorité pour nos clients, sans nom de domaine ni tiers. |
+| 2026-09-23 | Let's Encrypt (ACME TLS-ALPN-01) pour qui a un domaine ; propre certificat ou désactivation derrière proxy possibles | Couvrir tous les hébergeurs. |
+| 2026-09-23 | UPnP actif par défaut en production, **désactivé en développement et en test** | Ne jamais modifier la box du CP sans son accord. |
+| 2026-09-23 | Blocage anti-bruteforce par (compte, IP) + plafond par compte | Corrige le blocage malveillant signalé au jalon 1 sans affaiblir la protection. |
+| 2026-09-23 | Phrase de récupération : 12 mots BIP-39 **français**, sauvegarde chiffrée (XChaCha20-Poly1305) stockée sur Identity | Standard éprouvé, lisible en français ; complète le choix « historique sur les appareils ». |
 
 ---
 
@@ -269,3 +275,20 @@ Le client (phase finale) sera choisi plus tard ; piste : Tauri avec un cœur Rus
 - Clés du client de test stockées en clair dans le profil (le vrai client utilisera le trousseau du système).
 
 **Licence (tranchée le 2026-09-23) :** Apache-2.0 (voir journal des décisions).
+
+### Jalon 6 — Mise en ligne : HTTPS, UPnP, limites, récupération (livré le 2026-09-23)
+
+**Livré :**
+- **HTTPS** partout : serveur communautaire en HTTPS par défaut avec certificat auto-signé lié à son identité (vérifié par le client pendant la poignée de main TLS : lien d'invitation falsifié ou serveur remplacé → refus) ; Let's Encrypt, certificat fourni ou désactivation. Le vocal passe aussi en HTTPS (utilisable depuis une autre machine).
+- **UPnP** : ouverture, renouvellement et fermeture automatiques des ports ; IP publique de la box annoncée pour la voix ; **diagnostic réseau** (`quarelctl network`) détectant l'absence d'UPnP et le double NAT/CGNAT.
+- **Limitation de débit** sur les deux serveurs, et blocage anti-bruteforce par (compte, IP) : un attaquant ne bloque plus que lui-même.
+- **Phrase de récupération** (12 mots français) et sauvegarde chiffrée automatique : clé du compte + historique restaurés sur un nouvel appareil après perte de tous les appareils.
+
+**Validation :**
+- Tests unitaires : limiteurs, IP derrière proxy, lien TLS (interception, lien copié, certificat sans lien), UPnP/diagnostic (box et STUN simulés), BIP-39 (vecteur officiel), chiffrement des sauvegardes, versions de sauvegarde, blocage par IP — tous passés avec le détecteur de concurrence.
+- Scénarios de bout en bout : `make e2e-security` (18/18), `make e2e-acme` (certificat réellement obtenu auprès de Pebble, le serveur ACME de test de Let's Encrypt), `make e2e-dm` (16/16), `make e2e-voice` (10/10, désormais en HTTPS). Image Docker vérifiée en HTTPS.
+- Bugs trouvés et corrigés : webhooks LiveKit perdus (route interne créée avant l'activation de la voix), requête STUN partie en IPv6 (adresse ignorée) — trouvé en interrogeant les vrais serveurs STUN ; Pebble n'envoie pas un en-tête que Let's Encrypt envoie (contourné pour le test par `acmeshim`, sans toucher au code du serveur).
+
+**Non testé en conditions réelles :** UPnP sur une vraie box (logique testée avec une box simulée ; test réel proposé au CP car il ouvre des ports chez lui) ; ACME contre le vrai Let's Encrypt (nécessite un domaine public).
+
+**Guide de test du CP :** `docs/tests/jalon-6.md`.

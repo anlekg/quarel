@@ -137,6 +137,10 @@ func (s *Server) handleAddFriend(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	if err := s.limit.friends.Check(me.ID); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	other, err := s.userBy(ctx, "pseudo_norm", strings.ToLower(strings.TrimSpace(req.Pseudo)))
 	if err != nil {
 		writeErr(w, r, err)

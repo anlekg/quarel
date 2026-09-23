@@ -231,6 +231,10 @@ func (s *Server) disconnectVoice(ctx context.Context, memberID string) {
 
 // handleLiveKitWebhook receives room events from LiveKit (signed with the API secret).
 func (s *Server) handleLiveKitWebhook(w http.ResponseWriter, r *http.Request) {
+	if err := s.requireVoice(); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	ev, err := s.voiceOpts.Backend.ReceiveWebhook(r)
 	if err != nil {
 		writeErr(w, r, errf(http.StatusUnauthorized, "invalid_webhook", "%v", err))

@@ -85,6 +85,12 @@ type e2eStore struct {
 	History     map[string][]histMsg      `json:"history"`               // by dm id
 	Undecrypted []inboxItem               `json:"undecrypted"`           // waiting for their key
 	Names       map[string]string         `json:"names"`                 // user id → pseudo
+
+	// Encrypted backup (recovery.go).
+	BackupKey     string    `json:"backup_key,omitempty"` // derived from the recovery phrase
+	BackupVersion int64     `json:"backup_version,omitempty"`
+	BackupDigest  string    `json:"backup_digest,omitempty"` // what the last upload contained
+	BackupAt      time.Time `json:"backup_at,omitempty"`
 }
 
 type e2e struct {
@@ -667,6 +673,9 @@ func (e *e2e) sendDM(dmID, otherUser, text string) (*histMsg, int, error) {
 	}
 	m := histMsg{EventID: res.EventID, From: e.st.UserID, Text: text, At: now}
 	e.addHistory(dmID, m)
+	if err := e.backup(false); err != nil {
+		fmt.Println("⚠ sauvegarde non mise à jour : " + err.Error())
+	}
 	return &m, res.RecipientDevices, e.save()
 }
 
@@ -754,6 +763,9 @@ func (e *e2e) sync(out func(string)) error {
 	if err := e.replenish(); err != nil {
 		return err
 	}
+	if err := e.backup(false); err != nil {
+		out("⚠ sauvegarde non mise à jour : " + err.Error())
+	}
 	return e.save()
 }
 
@@ -813,6 +825,7 @@ func (e *e2e) handleSecret(plain *olmPlain, sender *deviceInfo, master string, o
 	case "device_approval":
 		var a struct {
 			MasterSeed string `json:"master_seed"`
+			BackupKey  string `json:"backup_key"`
 		}
 		if json.Unmarshal(plain.Content, &a) != nil || plain.SenderUser != e.st.UserID || !trusted {
 			out("⚠ approbation refusée : elle ne vient pas d'un de vos appareils validés")
@@ -825,6 +838,9 @@ func (e *e2e) handleSecret(plain *olmPlain, sender *deviceInfo, master string, o
 			return
 		}
 		e.st.MasterSeed = a.MasterSeed
+		if a.BackupKey != "" && e.st.BackupKey == "" {
+			e.st.BackupKey = a.BackupKey // version learnt on the first upload (conflict → merge)
+		}
 		out(fmt.Sprintf("✔ cet appareil a été validé par « %s » : il peut maintenant envoyer et recevoir des messages privés", sender.DeviceName))
 	case "history":
 		var h historyTransfer
@@ -922,7 +938,7 @@ func (e *e2e) approve(target, code string) (*deviceInfo, int, error) {
 	}
 	d.MasterSignature = new(string)
 	*d.MasterSignature = string(sig)
-	if err := e.sendSecret([]deviceInfo{*d}, "device_approval", map[string]string{"master_seed": e.st.MasterSeed}); err != nil {
+	if err := e.sendSecret([]deviceInfo{*d}, "device_approval", map[string]string{"master_seed": e.st.MasterSeed, "backup_key": e.st.BackupKey}); err != nil {
 		return nil, 0, err
 	}
 	h := historyTransfer{History: e.st.History, Inbound: map[string]*inboundState{}, Keys: map[string]string{}}

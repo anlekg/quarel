@@ -5,9 +5,8 @@ package community
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/sha256"
+	"crypto/tls"
 	"database/sql"
-	"encoding/base32"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -17,8 +16,11 @@ import (
 	"time"
 
 	"github.com/anlekg/quarel/internal/httpapi"
+	"github.com/anlekg/quarel/internal/netdiag"
+	"github.com/anlekg/quarel/internal/ratelimit"
 	"github.com/anlekg/quarel/internal/realtime"
 	"github.com/anlekg/quarel/internal/secret"
+	"github.com/anlekg/quarel/pkg/tlsbind"
 )
 
 var (
@@ -40,13 +42,15 @@ type Server struct {
 
 	voiceOpts *VoiceOptions  // nil: voice disabled
 	voice     *voiceRegistry // who is in which voice channel
+
+	key     ed25519.PrivateKey
+	network func(ctx context.Context) netdiag.Diagnosis // nil: no diagnosis available
+	proxies ratelimit.Proxies
+	limit   struct{ global, auth, messages *ratelimit.Limiter }
 }
 
 // ServerID derives the public server identifier from its key.
-func ServerID(pub ed25519.PublicKey) string {
-	h := sha256.Sum256(pub)
-	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(h[:16]))
-}
+func ServerID(pub ed25519.PublicKey) string { return tlsbind.ServerID(pub) }
 
 // Open prepares the data directory, database, server key and first-start content.
 func Open(cfg Config) (*Server, error) {
@@ -72,16 +76,38 @@ func Open(cfg Config) (*Server, error) {
 
 // New builds a Server from already-opened dependencies. Call seed before use.
 func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, keys KeySource) *Server {
-	return &Server{
-		cfg:    cfg,
-		db:     db,
-		id:     ServerID(key.Public().(ed25519.PublicKey)),
-		keys:   keys,
-		nonces: newNonceStore(),
-		hub:    realtime.NewHub(),
-		now:    time.Now,
+	s := &Server{
+		cfg:     cfg,
+		db:      db,
+		id:      ServerID(key.Public().(ed25519.PublicKey)),
+		keys:    keys,
+		nonces:  newNonceStore(),
+		hub:     realtime.NewHub(),
+		now:     time.Now,
+		key:     key,
+		proxies: cfg.TrustedProxies,
 	}
+	s.limit.global = ratelimit.New(cfg.Limits.Global, time.Minute)
+	s.limit.auth = ratelimit.New(cfg.Limits.Auth, time.Minute)
+	s.limit.messages = ratelimit.New(cfg.Limits.Messages, 10*time.Second)
+	return s
 }
+
+// SetNetworkDiagnosis provides the reachability diagnosis shown to server managers.
+func (s *Server) SetNetworkDiagnosis(f func(ctx context.Context) netdiag.Diagnosis) { s.network = f }
+
+func (s *Server) handleNetwork(w http.ResponseWriter, r *http.Request) {
+	if s.network == nil {
+		writeErr(w, r, errf(http.StatusServiceUnavailable, "unavailable", "network diagnosis is not available"))
+		return
+	}
+	writeJSON(w, http.StatusOK, s.network(r.Context()))
+}
+
+// TLSConfig returns the HTTPS configuration (nil when TLS is off).
+func (s *Server) TLSConfig() (*tls.Config, error) { return s.cfg.TLS.Build(s.cfg.DataDir, s.key) }
+
+func (s *Server) byIP(r *http.Request) string { return s.proxies.ClientIP(r) }
 
 // ID returns the server identifier.
 func (s *Server) ID() string { return s.id }
@@ -190,10 +216,11 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /v1/server", s.handleServerInfo)
+	mux.HandleFunc("GET /v1/server/network", s.authed(s.needPerm(permManageServer, s.handleNetwork)))
 	mux.HandleFunc("PATCH /v1/server", s.authed(s.needPerm(permManageServer, s.handleServerUpdate)))
 
-	mux.HandleFunc("POST /v1/auth/challenge", s.handleChallenge)
-	mux.HandleFunc("POST /v1/auth/login", s.handleLogin)
+	mux.Handle("POST /v1/auth/challenge", s.limit.auth.Wrap(s.byIP, http.HandlerFunc(s.handleChallenge)))
+	mux.Handle("POST /v1/auth/login", s.limit.auth.Wrap(s.byIP, http.HandlerFunc(s.handleLogin)))
 	mux.HandleFunc("POST /v1/auth/logout", s.authed(s.handleLogout))
 
 	mux.HandleFunc("GET /v1/members", s.authed(s.handleListMembers))
@@ -234,15 +261,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/voice/states", s.authed(s.handleVoiceStates))
 	mux.HandleFunc("PATCH /v1/voice/state", s.authed(s.handleVoiceSelfState))
 	mux.HandleFunc("POST /v1/voice/leave", s.authed(s.handleVoiceLeave))
-	if s.voiceOpts != nil {
-		mux.HandleFunc("POST /internal/livekit/webhook", s.handleLiveKitWebhook)
-		if s.voiceOpts.Proxy != nil {
-			mux.Handle("/lk/", s.voiceOpts.Proxy)
-		}
+	if s.voiceOpts != nil && s.voiceOpts.Proxy != nil {
+		mux.Handle("/lk/", s.voiceOpts.Proxy)
 	}
 	mux.Handle("GET /voice-test/", voiceTestPage)
 
 	mux.HandleFunc("GET /v1/gateway", s.handleGateway)
+	return s.limit.global.Wrap(s.byIP, mux)
+}
+
+// InternalHandler serves the loopback-only endpoints: LiveKit webhooks,
+// sent over plain HTTP since LiveKit cannot verify a self-signed certificate.
+func (s *Server) InternalHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /internal/livekit/webhook", s.handleLiveKitWebhook)
 	return mux
 }
 
