@@ -67,10 +67,10 @@
 ## B. Serveur communautaire (Docker)
 
 ### B1. Installation et exploitation
-- [ ] **P0** Image Docker unique, lancement en une commande, données dans un volume
-- [ ] **P0** Base SQLite embarquée, migrations automatiques
-- [ ] **P0** Configuration minimale : nom du serveur, services d'identité acceptés
-- [ ] **P0** Création du propriétaire au premier démarrage (lien ou code de revendication)
+- [x] **P0** Image Docker unique, lancement en une commande, données dans un volume
+- [x] **P0** Base SQLite embarquée, migrations automatiques
+- [x] **P0** Configuration minimale : nom du serveur, services d'identité acceptés
+- [x] **P0** Création du propriétaire au premier démarrage (lien ou code de revendication)
 - [ ] **P1** UPnP : ouverture automatique des ports + diagnostic de joignabilité
 - [ ] **P1** HTTPS : certificat automatique (Let's Encrypt) ou auto-signé épinglé
 - [ ] **P1** Sauvegarde / restauration (export des données)
@@ -78,25 +78,25 @@
 - [ ] **P2** Exécutable Windows (`.exe`)
 
 ### B2. Accès et membres
-- [ ] **P0** Connexion avec un jeton d'identité (vérifié hors ligne)
-- [ ] **P0** Mode d'accès : public ou privé (sur invitation)
-- [ ] **P0** Liens d'invitation (expiration, nombre d'utilisations)
-- [ ] **P0** Liste des membres, pseudo local (surnom sur le serveur)
+- [x] **P0** Connexion avec un jeton d'identité (vérifié hors ligne)
+- [x] **P0** Mode d'accès : public ou privé (sur invitation)
+- [x] **P0** Liens d'invitation (expiration, nombre d'utilisations)
+- [x] **P0** Liste des membres, pseudo local (surnom sur le serveur)
 - [ ] **P1** Vérification supplémentaire configurable (ex. téléphone via le fournisseur choisi par le serveur)
 - [ ] **P1** Écran de règles à accepter avant d'entrer
 
 ### B3. Salons
-- [ ] **P0** Salons texte, salons vocaux
-- [ ] **P0** Catégories, ordre des salons
+- [x] **P0** Salons texte, salons vocaux *(le vocal lui-même arrive au jalon 4)*
+- [x] **P0** Catégories, ordre des salons
 - [ ] **P1** Fils de discussion (threads)
 - [ ] **P1** Salons d'annonces (lecture seule)
 - [ ] **P2** Salons forum
 
 ### B4. Messages (non chiffrés E2E)
-- [ ] **P0** Envoi / réception en temps réel (WebSocket)
-- [ ] **P0** Historique paginé
-- [ ] **P0** Édition / suppression
-- [ ] **P0** Mentions (@membre, @rôle, @everyone)
+- [x] **P0** Envoi / réception en temps réel (WebSocket)
+- [x] **P0** Historique paginé
+- [x] **P0** Édition / suppression
+- [x] **P0** Mentions (@membre, @everyone) — *@rôle arrive avec les rôles (jalon 3)*
 - [ ] **P1** Réponses (citation d'un message)
 - [ ] **P1** Réactions emoji
 - [ ] **P1** Pièces jointes (stockage disque local, limite de taille configurable)
@@ -150,7 +150,7 @@
 ## Ordre de développement proposé
 
 1. **Jalon 1 — Identity minimal :** A1 P0, A2 P0 → un compte et un jeton d'identité vérifiable. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-1.md`).*
-2. **Jalon 2 — Serveur communautaire texte :** B1 P0, B2 P0, B3 P0, B4 P0 → rejoindre un serveur et discuter.
+2. **Jalon 2 — Serveur communautaire texte :** B1 P0, B2 P0, B3 P0, B4 P0 → rejoindre un serveur et discuter. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-2.md`).*
 3. **Jalon 3 — Rôles et modération :** B5 P0, B6 P0.
 4. **Jalon 4 — Voix :** B7 P0.
 5. **Jalon 5 — Amis et MP chiffrés :** A3 P0, A4 P0, A5 P0.

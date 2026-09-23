@@ -1,20 +1,15 @@
 package identity
 
 import (
-	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base32"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/anlekg/quarel/internal/secret"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -78,48 +73,8 @@ var dummyHash = sync.OnceValue(func() string {
 	return h
 })
 
-var idEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
-
-// newID returns a random 128-bit identifier as lowercase base32 (26 chars).
-func newID() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	return strings.ToLower(idEncoding.EncodeToString(b))
-}
-
-// newSecret returns a random 256-bit bearer secret, base64url encoded.
-func newSecret() string {
-	b := make([]byte, 32)
-	rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
-}
-
-func sha256Hex(s string) string {
-	h := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(h[:])
-}
-
-// loadOrCreateSigningKey reads the service's Ed25519 key from dir, generating it on first run.
-func loadOrCreateSigningKey(dir string) (ed25519.PrivateKey, error) {
-	path := filepath.Join(dir, "signing.key")
-	data, err := os.ReadFile(path)
-	if err == nil {
-		seed, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(data)))
-		if err != nil || len(seed) != ed25519.SeedSize {
-			return nil, fmt.Errorf("%s: invalid signing key", path)
-		}
-		return ed25519.NewKeyFromSeed(seed), nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	_, priv, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		return nil, err
-	}
-	enc := base64.StdEncoding.EncodeToString(priv.Seed()) + "\n"
-	if err := os.WriteFile(path, []byte(enc), 0o600); err != nil {
-		return nil, err
-	}
-	return priv, nil
-}
+var (
+	newID     = secret.NewID
+	newSecret = secret.NewToken
+	sha256Hex = secret.SHA256Hex
+)

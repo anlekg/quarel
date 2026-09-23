@@ -166,6 +166,19 @@ func Verify(token string, ks KeySet, now time.Time) (*Claims, error) {
 	return &claims, nil
 }
 
+// PeekIssuer returns the token's claimed issuer WITHOUT verifying it, so a
+// server can pick which KeySet to verify against. Never trust it otherwise.
+func PeekIssuer(token string) (string, error) {
+	var claims Claims
+	if _, _, err := jwt.NewParser().ParseUnverified(token, &claims); err != nil {
+		return "", fmt.Errorf("idtoken: %w", err)
+	}
+	if claims.Issuer == "" {
+		return "", errors.New("idtoken: missing issuer")
+	}
+	return claims.Issuer, nil
+}
+
 func proofMessage(audience, nonce string) []byte {
 	return []byte(proofContext + "\x00" + audience + "\x00" + nonce)
 }

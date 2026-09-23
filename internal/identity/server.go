@@ -6,18 +6,16 @@ import (
 	"context"
 	"crypto/ed25519"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/anlekg/quarel/internal/httpapi"
+	"github.com/anlekg/quarel/internal/secret"
 	"github.com/anlekg/quarel/pkg/idtoken"
 )
 
@@ -80,7 +78,7 @@ func Open(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	key, err := loadOrCreateSigningKey(cfg.DataDir)
+	key, err := secret.LoadOrCreateKey(filepath.Join(cfg.DataDir, "signing.key"))
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -131,50 +129,16 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-// --- request/response helpers ---
+// --- request/response helpers (shared conventions, see internal/httpapi) ---
 
-type apiError struct {
-	status     int
-	Code       string `json:"code"`
-	Message    string `json:"message"`
-	RetryAfter int64  `json:"retry_after,omitempty"` // seconds, for 429 responses
-}
+type apiError = httpapi.Error
 
-func (e *apiError) Error() string { return e.Code + ": " + e.Message }
-
-func errf(status int, code, format string, args ...any) *apiError {
-	return &apiError{status: status, Code: code, Message: fmt.Sprintf(format, args...)}
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-
-// writeErr sends err as a JSON error; unexpected errors are logged and hidden.
-func writeErr(w http.ResponseWriter, r *http.Request, err error) {
-	var ae *apiError
-	if !errors.As(err, &ae) {
-		slog.Error("internal error", "method", r.Method, "path", r.URL.Path, "err", err)
-		ae = errf(http.StatusInternalServerError, "internal", "internal server error")
-	}
-	if ae.RetryAfter > 0 {
-		w.Header().Set("Retry-After", strconv.FormatInt(ae.RetryAfter, 10))
-	}
-	writeJSON(w, ae.status, map[string]*apiError{"error": ae})
-}
-
-const maxBody = 64 << 10
-
-func decode(r *http.Request, v any) error {
-	dec := json.NewDecoder(io.LimitReader(r.Body, maxBody))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		return errf(http.StatusBadRequest, "bad_request", "invalid JSON body: %v", err)
-	}
-	return nil
-}
+var (
+	errf      = httpapi.Errf
+	writeJSON = httpapi.WriteJSON
+	writeErr  = httpapi.WriteErr
+	decode    = httpapi.Decode
+)
 
 // --- authentication ---
 

@@ -2,9 +2,8 @@ package identity
 
 import (
 	"database/sql"
-	"fmt"
 
-	_ "modernc.org/sqlite"
+	"github.com/anlekg/quarel/internal/sqlitedb"
 )
 
 // migrations are applied in order; the index+1 is stored in PRAGMA user_version.
@@ -61,42 +60,4 @@ CREATE INDEX auth_failures_key_at ON auth_failures(key, at);
 }
 
 // OpenDB opens (creating if needed) the SQLite database at path and applies migrations.
-func OpenDB(path string) (*sql.DB, error) {
-	dsn := "file:" + path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return nil, err
-	}
-	// A single connection serialises writes and avoids SQLITE_BUSY; plenty for this workload.
-	db.SetMaxOpenConns(1)
-	if err := migrate(db); err != nil {
-		db.Close()
-		return nil, err
-	}
-	return db, nil
-}
-
-func migrate(db *sql.DB) error {
-	var version int
-	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
-		return err
-	}
-	for i := version; i < len(migrations); i++ {
-		tx, err := db.Begin()
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(migrations[i]); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("migration %d: %w", i+1, err)
-		}
-		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, i+1)); err != nil {
-			tx.Rollback()
-			return err
-		}
-		if err := tx.Commit(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+func OpenDB(path string) (*sql.DB, error) { return sqlitedb.Open(path, migrations) }

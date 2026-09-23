@@ -26,7 +26,7 @@ Un équivalent de Discord où **les serveurs ne sont pas hébergés par un fourn
 | 1 | Revue des solutions open source existantes + choix structurants | ✅ Terminé |
 | 2 | Liste des fonctionnalités → `PLAN.md` | ✅ Validé le 2026-09-23 |
 | 3 | Choix de stack & architecture → `CLAUDE.md` | ✅ Go validé le 2026-09-23 |
-| 4 | Développement backend (itératif, testé par le CP) | 🟡 Jalon 1 livré, en test |
+| 4 | Développement backend (itératif, testé par le CP) | 🟡 Jalons 1 et 2 livrés, en test |
 | 5 | Front-end / client | ⚪ À faire |
 | 6 | Packaging `.exe` | ⚪ À faire |
 
@@ -132,6 +132,11 @@ Deux types de serveurs :
 | 2026-09-23 | Jeton sans audience + preuve de possession par clé d'appareil (Ed25519) | Privacy (l'Identity ignore les serveurs visités) sans permettre à un serveur de rejouer le jeton ailleurs. |
 | 2026-09-23 | Email vérifié obligatoire pour se connecter ; 2FA facultative | Validé par le CP. |
 | 2026-09-23 | Blocage du compte après 15 échecs de connexion en 1 h (mot de passe ou 2FA) | Anti-bruteforce, demandé par le CP. |
+| 2026-09-23 | Chaque serveur communautaire a sa propre clé ; son identifiant figure dans les invitations et dans la preuve de connexion | Empêche un serveur malveillant de relayer une connexion vers un autre serveur. |
+| 2026-09-23 | Propriétaire désigné par un code de revendication affiché au 1er démarrage | Installation en une commande, sans compte admin à préconfigurer. |
+| 2026-09-23 | Serveur privé (sur invitation) par défaut | Privacy. |
+| 2026-09-23 | Session serveur limitée à la durée du jeton d'identité (12 h) | Un compte désactivé côté Identity perd l'accès aux serveurs en 12 h max, sans que l'Identity sache où il est connecté. |
+| 2026-09-23 | Permissions provisoires : propriétaire seul pour salons/réglages, jusqu'aux rôles du jalon 3 | Livrer le texte avant les rôles. |
 
 ---
 
@@ -184,3 +189,19 @@ Le client (phase finale) sera choisi plus tard ; piste : Tauri avec un cœur Rus
 *Limite connue :* n'importe qui connaissant un pseudo peut bloquer ce compte pendant 1 h en tapant de faux mots de passe. Parade prévue avec la limitation par IP (P1).
 
 **Reporté (déjà au plan en P1) :** limitation par IP, mot de passe oublié, outil admin de désactivation, chiffrement du secret TOTP au repos.
+
+### Jalon 2 — Serveur communautaire texte (livré le 2026-09-23)
+
+**Livré :** serveur auto-hébergé (binaire + image Docker ~23 Mo), revendication du propriétaire par code, serveur privé ou public, invitations (nombre d'utilisations, expiration, révocation), membres et surnoms, départ/retour, salons texte/vocaux/catégories avec ordre, messages avec historique paginé, édition, suppression, mentions `@membre` et `@everyone`, temps réel par WebSocket. Le client de test `quarelctl` couvre tout, dont `listen` pour voir les événements en direct.
+
+**Validation :** 6 nouveaux tests d'intégration (revendication, invitations, sécurité de connexion : rejeu de défi, preuve pour un autre serveur, jeton volé sans la clé d'appareil, émetteur non reconnu, jeton falsifié, expiration ; salons ; messages et pagination ; membres ; temps réel), passés aussi avec le détecteur de concurrence. Scénario complet à deux utilisateurs rejoué avec `quarelctl` ; image Docker démarrée.
+
+**Guide de test du CP :** `docs/tests/jalon-2.md`.
+
+**Limites connues (prévues au plan) :**
+- Pas de TLS : tout circule en clair (HTTPS prévu en P1 dans B1). À ne pas exposer sur Internet en l'état.
+- Pas encore d'UPnP (P1).
+- Les salons vocaux existent mais sans audio (jalon 4).
+- Pas de bans ni de rôles (jalon 3).
+
+**Question ouverte :** domaine officiel du service Identity (valeur par défaut des serveurs, actuellement `identity.quarel.app`, à confirmer).

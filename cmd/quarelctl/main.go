@@ -51,24 +51,59 @@ Identité portable
   token                            obtenir un jeton d'identité et l'afficher
   simulate-join [nom-serveur]      simuler la connexion à un serveur communautaire
 
+Serveurs communautaires (connexion Identity requise)
+  srv-info <url>                   infos publiques d'un serveur
+  join <url|lien> [invitation]     rejoindre un serveur (lien : quarel://hôte:port/CODE?sid=…)
+  claim <url> <code>               devenir propriétaire (code affiché au 1er démarrage du serveur)
+  servers                          serveurs rejoints (* = courant)
+  use <url>                        changer de serveur courant
+  srv-set name=… access=public|private   réglages du serveur (propriétaire)
+  leave                            quitter le serveur courant
+
+Salons (sur le serveur courant ; un salon se désigne par son nom ou son id)
+  channels                         arborescence des salons
+  channel-create <nom> [text|voice|category] [catégorie]
+  channel-edit <salon> name=… topic=… parent=<catégorie|0> position=N
+  channel-delete <salon>
+
+Messages
+  send <salon> <texte…>            « @pseudo » est converti en mention, « @everyone » aussi
+  history <salon> [nombre] [avant-id]
+  edit <salon> <id> <texte…>
+  delete <salon> <id>
+  listen                           afficher les événements en direct (Ctrl+C pour quitter)
+
+Membres et invitations
+  members                          liste des membres
+  nick [surnom]                    changer (ou effacer) son surnom sur le serveur
+  invite [utilisations] [durée]    créer une invitation (ex. : invite 5 24h ; durée 0 = illimitée)
+  invites                          lister les invitations
+  invite-revoke <code>
+
 Options
   -s URL      adresse du service Identity (défaut : celle du profil, sinon http://localhost:8080)
+  -c URL      serveur communautaire à utiliser au lieu du serveur courant
   -p PROFIL   profil local (défaut : "default") ; un profil = un compte de test
 Variable QUAREL_PASSWORD : fournit le mot de passe sans le demander (scripts).
 `
 
 type state struct {
-	Server       string `json:"server"`
+	Server       string `json:"server"` // Identity service
 	DeviceSeed   string `json:"device_seed"`
 	SessionID    string `json:"session_id,omitempty"`
 	SessionToken string `json:"session_token,omitempty"`
 	Handle       string `json:"handle,omitempty"`
+
+	// Community servers joined, keyed by base URL.
+	Communities map[string]*community `json:"communities,omitempty"`
+	Current     string                `json:"current_community,omitempty"`
 }
 
 type cli struct {
-	path  string
-	st    state
-	stdin *bufio.Reader
+	path      string
+	st        state
+	stdin     *bufio.Reader
+	community string // -c flag: community server URL overriding the current one
 }
 
 func main() {
@@ -76,6 +111,7 @@ func main() {
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	server := fs.String("s", "", "")
 	profile := fs.String("p", "default", "")
+	communityURL := fs.String("c", "", "")
 	fs.Parse(os.Args[1:])
 	args := fs.Args()
 	if len(args) == 0 {
@@ -87,6 +123,7 @@ func main() {
 		if *server != "" {
 			c.st.Server = strings.TrimRight(*server, "/")
 		}
+		c.community = strings.TrimRight(*communityURL, "/")
 		err = c.run(args[0], args[1:])
 	}
 	if err != nil {
@@ -293,6 +330,9 @@ func (c *cli) run(cmd string, args []string) error {
 		fmt.Print(usage)
 		return nil
 	}
+	if handled, err := c.runCommunity(cmd, args); handled {
+		return err
+	}
 	return fmt.Errorf("commande inconnue %q (voir quarelctl help)", cmd)
 }
 
@@ -441,25 +481,30 @@ func (e *apiErr) Error() string { return fmt.Sprintf("%s (%d) — %s", e.Code, e
 
 var client = &http.Client{Timeout: 15 * time.Second}
 
+// do calls the Identity service with the identity session.
 func (c *cli) do(method, path string, body, out any) error {
+	return c.request(c.st.Server, c.st.SessionToken, method, path, body, out)
+}
+
+func (c *cli) request(base, token, method, path string, body, out any) error {
 	var rd io.Reader
 	if body != nil {
 		data, _ := json.Marshal(body)
 		rd = bytes.NewReader(data)
 	}
-	req, err := http.NewRequest(method, c.st.Server+path, rd)
+	req, err := http.NewRequest(method, base+path, rd)
 	if err != nil {
 		return err
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if c.st.SessionToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.st.SessionToken)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("service injoignable (%s) : %w", c.st.Server, err)
+		return fmt.Errorf("service injoignable (%s) : %w", base, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
@@ -472,7 +517,7 @@ func (c *cli) do(method, path string, body, out any) error {
 		if er.Error.Code == "account_locked" {
 			er.Error.Message += " — compte bloqué après trop d'échecs de connexion"
 		}
-		if resp.StatusCode == http.StatusUnauthorized && er.Error.Code == "unauthorized" {
+		if resp.StatusCode == http.StatusUnauthorized && er.Error.Code == "unauthorized" && base == c.st.Server {
 			er.Error.Message += " — connectez-vous avec : quarelctl login <email|pseudo>"
 		}
 		return &er.Error

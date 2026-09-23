@@ -7,7 +7,7 @@ Objectif : vérifier l'inscription, la vérification d'email, la connexion, les 
 Dans un premier terminal, à la racine du projet :
 
 ```sh
-make run-identity
+make run-identity   # données dans data/identity/
 ```
 
 Le serveur écoute sur `http://localhost:8080`. Aucun email n'est réellement envoyé en mode dev : **les codes de vérification s'affichent dans ce terminal** (ligne `email not sent ... code de vérification Quarel : 123456`).
