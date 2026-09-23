@@ -316,3 +316,62 @@ func TestTOTPVectors(t *testing.T) {
 		}
 	}
 }
+
+func TestLockout(t *testing.T) {
+	e := newEnv(t)
+	const pw = "correct horse battery"
+	lr, _ := e.registerVerified("a@example.com", "alice", pw)
+	_, pub := deviceKey(t)
+	good := map[string]string{"login": "alice", "password": pw, "device_key": pub}
+
+	// Failures by pseudo and by email share one counter.
+	for i := range maxAuthFailures {
+		login := "alice"
+		if i%2 == 1 {
+			login = "a@example.com"
+		}
+		e.expect(401, "invalid_credentials", e.call("POST", "/v1/auth/login", "", map[string]string{"login": login, "password": "wrong password", "device_key": pub}, nil))
+	}
+	// Locked: even the right password is refused, and the re-check endpoints are locked too.
+	e.expect(429, "account_locked", e.call("POST", "/v1/auth/login", "", good, nil))
+	e.expect(429, "account_locked", e.call("POST", "/v1/me/2fa/setup", lr.SessionToken, map[string]string{"password": pw}, nil))
+
+	// The lock lifts once the oldest failure is an hour old.
+	e.clock = e.clock.Add(lockoutWindow)
+	e.expect(200, "", e.call("POST", "/v1/auth/login", "", good, nil))
+
+	// A successful login resets the counter.
+	for range maxAuthFailures - 1 {
+		e.expect(401, "invalid_credentials", e.call("POST", "/v1/auth/login", "", map[string]string{"login": "alice", "password": "wrong password", "device_key": pub}, nil))
+	}
+	e.expect(200, "", e.call("POST", "/v1/auth/login", "", good, nil))
+	e.expect(401, "invalid_credentials", e.call("POST", "/v1/auth/login", "", map[string]string{"login": "alice", "password": "wrong password", "device_key": pub}, nil))
+	e.expect(200, "", e.call("POST", "/v1/auth/login", "", good, nil))
+
+	// Unknown logins lock the same way, so lockout does not reveal which accounts exist.
+	ghost := map[string]string{"login": "ghost", "password": "wrong password", "device_key": pub}
+	for range maxAuthFailures {
+		e.expect(401, "invalid_credentials", e.call("POST", "/v1/auth/login", "", ghost, nil))
+	}
+	e.expect(429, "account_locked", e.call("POST", "/v1/auth/login", "", ghost, nil))
+}
+
+func TestLockout2FA(t *testing.T) {
+	e := newEnv(t)
+	const pw = "correct horse battery"
+	lr, _ := e.registerVerified("a@example.com", "alice", pw)
+	var setup struct{ Secret string }
+	e.expect(200, "", e.call("POST", "/v1/me/2fa/setup", lr.SessionToken, map[string]string{"password": pw}, &setup))
+	code, _ := totpCode(setup.Secret, totpStep(e.clock))
+	e.expect(200, "", e.call("POST", "/v1/me/2fa/enable", lr.SessionToken, map[string]string{"code": code}, nil))
+
+	// Someone who knows the password cannot brute-force the 2FA code.
+	_, pub := deviceKey(t)
+	login := map[string]string{"login": "alice", "password": pw, "device_key": pub, "totp_code": "000000"}
+	for range maxAuthFailures {
+		e.expect(401, "invalid_mfa_code", e.call("POST", "/v1/auth/login", "", login, nil))
+	}
+	e.clock = e.clock.Add(totpPeriod * time.Second)
+	login["totp_code"], _ = totpCode(setup.Secret, totpStep(e.clock))
+	e.expect(429, "account_locked", e.call("POST", "/v1/auth/login", "", login, nil))
+}

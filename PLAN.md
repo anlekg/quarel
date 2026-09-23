@@ -15,7 +15,8 @@
 - [ ] **P1** Mot de passe oublié (via email)
 - [ ] **P1** Changement d'email, de pseudo, de mot de passe
 - [ ] **P1** Suppression de compte par l'utilisateur (effacement réel des données)
-- [ ] **P1** Limitation de débit (anti-bruteforce, anti-spam d'inscriptions)
+- [x] **P1** Anti-bruteforce : blocage du compte après 15 échecs de connexion par heure *(avancé au jalon 1 à la demande du CP)*
+- [ ] **P1** Limitation de débit par IP (anti-spam d'inscriptions, anti-blocage malveillant de comptes)
 - [ ] **P2** 2FA par clé matérielle / passkey (WebAuthn)
 
 ### A2. Identité portable

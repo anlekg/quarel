@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -133,9 +134,10 @@ func (s *Server) Handler() http.Handler {
 // --- request/response helpers ---
 
 type apiError struct {
-	status  int
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	status     int
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	RetryAfter int64  `json:"retry_after,omitempty"` // seconds, for 429 responses
 }
 
 func (e *apiError) Error() string { return e.Code + ": " + e.Message }
@@ -156,6 +158,9 @@ func writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	if !errors.As(err, &ae) {
 		slog.Error("internal error", "method", r.Method, "path", r.URL.Path, "err", err)
 		ae = errf(http.StatusInternalServerError, "internal", "internal server error")
+	}
+	if ae.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.FormatInt(ae.RetryAfter, 10))
 	}
 	writeJSON(w, ae.status, map[string]*apiError{"error": ae})
 }

@@ -51,6 +51,13 @@ CREATE TABLE backup_codes (
 	PRIMARY KEY (user_id, code_hash)
 );
 `,
+	`
+CREATE TABLE auth_failures (
+	key TEXT NOT NULL,
+	at  INTEGER NOT NULL
+);
+CREATE INDEX auth_failures_key_at ON auth_failures(key, at);
+`,
 }
 
 // OpenDB opens (creating if needed) the SQLite database at path and applies migrations.

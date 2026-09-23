@@ -281,37 +281,37 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	badCreds := errf(http.StatusUnauthorized, "invalid_credentials", "invalid login or password")
-	if u == nil {
-		verifyPassword(req.Password, dummyHash())
-		writeErr(w, r, badCreds)
-		return
-	}
-	if ok, err := verifyPassword(req.Password, u.PasswordHash); err != nil {
+	key := lockoutKey(u, login)
+	err = s.guarded(ctx, key, func() error {
+		badCreds := errf(http.StatusUnauthorized, "invalid_credentials", "invalid login or password")
+		if u == nil {
+			verifyPassword(req.Password, dummyHash())
+			return badCreds
+		}
+		if ok, err := verifyPassword(req.Password, u.PasswordHash); err != nil {
+			return err
+		} else if !ok {
+			return badCreds
+		}
+		if u.DisabledAt.Valid {
+			return errf(http.StatusForbidden, "account_disabled", "this account has been disabled")
+		}
+		if !u.EmailVerifiedAt.Valid {
+			return errf(http.StatusForbidden, "email_not_verified", "verify your email address before logging in")
+		}
+		if u.TOTPEnabledAt.Valid {
+			if req.TOTPCode == "" {
+				return errf(http.StatusUnauthorized, "mfa_required", "a 2FA code (or backup code) is required")
+			}
+			return s.check2FA(ctx, u, req.TOTPCode)
+		}
+		return nil
+	})
+	if err != nil {
 		writeErr(w, r, err)
 		return
-	} else if !ok {
-		writeErr(w, r, badCreds)
-		return
 	}
-	if u.DisabledAt.Valid {
-		writeErr(w, r, errf(http.StatusForbidden, "account_disabled", "this account has been disabled"))
-		return
-	}
-	if !u.EmailVerifiedAt.Valid {
-		writeErr(w, r, errf(http.StatusForbidden, "email_not_verified", "verify your email address before logging in"))
-		return
-	}
-	if u.TOTPEnabledAt.Valid {
-		if req.TOTPCode == "" {
-			writeErr(w, r, errf(http.StatusUnauthorized, "mfa_required", "a 2FA code (or backup code) is required"))
-			return
-		}
-		if err := s.check2FA(ctx, u, req.TOTPCode); err != nil {
-			writeErr(w, r, err)
-			return
-		}
-	}
+	s.clearFailures(ctx, key)
 
 	token := newSecret()
 	sessID := newID()
@@ -437,15 +437,19 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 
 // --- 2FA ---
 
-func (s *Server) requirePassword(u *user, password string) error {
-	ok, err := verifyPassword(password, u.PasswordHash)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return errf(http.StatusUnauthorized, "invalid_credentials", "wrong password")
-	}
-	return nil
+// requirePassword re-checks the password of a logged-in user; failures count
+// towards the account lockout like login failures.
+func (s *Server) requirePassword(ctx context.Context, u *user, password string) error {
+	return s.guarded(ctx, lockoutKey(u, ""), func() error {
+		ok, err := verifyPassword(password, u.PasswordHash)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errf(http.StatusUnauthorized, "invalid_credentials", "wrong password")
+		}
+		return nil
+	})
 }
 
 func (s *Server) handle2FASetup(w http.ResponseWriter, r *http.Request) {
@@ -459,7 +463,7 @@ func (s *Server) handle2FASetup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	if err := s.requirePassword(u, req.Password); err != nil {
+	if err := s.requirePassword(r.Context(), u, req.Password); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -547,11 +551,11 @@ func (s *Server) handle2FADisable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, errf(http.StatusBadRequest, "2fa_not_enabled", "2FA is not enabled"))
 		return
 	}
-	if err := s.requirePassword(u, req.Password); err != nil {
+	if err := s.requirePassword(r.Context(), u, req.Password); err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	if err := s.check2FA(r.Context(), u, req.Code); err != nil {
+	if err := s.guarded(r.Context(), lockoutKey(u, ""), func() error { return s.check2FA(r.Context(), u, req.Code) }); err != nil {
 		writeErr(w, r, err)
 		return
 	}

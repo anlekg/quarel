@@ -7,7 +7,7 @@ Objectif : vérifier l'inscription, la vérification d'email, la connexion, les 
 Dans un premier terminal, à la racine du projet :
 
 ```sh
-make run-identity
+./dev.sh run-identity
 ```
 
 Le serveur écoute sur `http://localhost:8080`. Aucun email n'est réellement envoyé en mode dev : **les codes de vérification s'affichent dans ce terminal** (ligne `email not sent ... code de vérification Quarel : 123456`).
@@ -45,13 +45,21 @@ Pour repartir de zéro : arrêter le serveur et supprimer le dossier `data/`.
 5. Un code de secours fonctionne une fois, avec ou sans tirets.
 6. `./bin/quarelctl -p alice 2fa-disable <code>` → la connexion ne demande plus de code.
 
+### 3 bis. Blocage anti-bruteforce
+1. Se tromper 15 fois de mot de passe : `QUAREL_PASSWORD=mauvais ./bin/quarelctl -p alice login alice` (répéter 15 fois ; mélanger pseudo et email, le compteur est commun).
+2. 16ᵉ tentative, **avec le bon mot de passe** → `account_locked`, avec le délai restant.
+3. Avec la 2FA activée : 15 mauvais codes 2FA (bon mot de passe) → même blocage.
+4. Un compte inexistant se bloque de la même façon (on ne peut pas deviner quels comptes existent).
+5. Le blocage se lève seul 1 h après le premier des 15 échecs. Pour ne pas attendre : arrêter le serveur et supprimer `data/`.
+6. Une connexion réussie remet le compteur à zéro.
+
 ### 4. Identité portable
 1. `./bin/quarelctl -p alice token` → affiche le jeton et son contenu (identifiant stable, pseudo, clé d'appareil, expiration). **Aucun email dedans.**
 2. `./bin/quarelctl -p alice simulate-join mon-serveur` → simule ce que fera un serveur communautaire : vérification hors ligne du jeton, défi signé par l'appareil, refus de la même preuve sur un autre serveur.
 
 ### 5. Docker (optionnel)
 ```sh
-make docker-identity
+./dev.sh docker-identity
 docker run --rm -p 8080:8080 -e QUAREL_ISSUER=localhost:8080 -v quarel-identity:/data quarel-identity
 ```
 Les mêmes scénarios fonctionnent ; les codes s'affichent dans la sortie du conteneur.

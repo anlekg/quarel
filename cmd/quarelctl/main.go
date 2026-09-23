@@ -469,6 +469,9 @@ func (c *cli) do(method, path string, body, out any) error {
 		if er.Error.Code == "" {
 			er.Error.Code = http.StatusText(resp.StatusCode)
 		}
+		if er.Error.Code == "account_locked" {
+			er.Error.Message += " — compte bloqué après trop d'échecs de connexion"
+		}
 		if resp.StatusCode == http.StatusUnauthorized && er.Error.Code == "unauthorized" {
 			er.Error.Message += " — connectez-vous avec : quarelctl login <email|pseudo>"
 		}

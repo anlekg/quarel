@@ -130,7 +130,8 @@ Deux types de serveurs :
 | 2026-09-23 | Go pour les deux serveurs, monorepo, SQLite pure Go | Binaire unique, `.exe` facile, faible RAM, LiveKit en Go. |
 | 2026-09-23 | Identifiant stable aléatoire distinct du pseudo ; bans basés sur (service, ID) | Le pseudo pourra changer sans casser les bans. |
 | 2026-09-23 | Jeton sans audience + preuve de possession par clé d'appareil (Ed25519) | Privacy (l'Identity ignore les serveurs visités) sans permettre à un serveur de rejouer le jeton ailleurs. |
-| 2026-09-23 | Email vérifié obligatoire pour se connecter ; 2FA facultative | À confirmer par le CP (voir phase 4). |
+| 2026-09-23 | Email vérifié obligatoire pour se connecter ; 2FA facultative | Validé par le CP. |
+| 2026-09-23 | Blocage du compte après 15 échecs de connexion en 1 h (mot de passe ou 2FA) | Anti-bruteforce, demandé par le CP. |
 
 ---
 
@@ -173,9 +174,13 @@ Le client (phase finale) sera choisi plus tard ; piste : Tauri avec un cœur Rus
 
 **Guide de test du CP :** `docs/tests/jalon-1.md`.
 
-**Choix faits pendant le développement (à valider par le CP) :**
+**Choix faits pendant le développement (validés par le CP) :**
 - 2FA **facultative** (activable par l'utilisateur), pas obligatoire à l'inscription.
 - Connexion impossible tant que l'email n'est pas vérifié.
+- Bans basés sur l'identifiant stable, pas sur le pseudo.
 - Le pseudo est unique sur un service Identity, insensible à la casse ; 3–32 caractères : lettres, chiffres, `_ . -`.
 
-**Reporté (déjà au plan en P1) :** limitation de débit (le brute-force de la 2FA n'est freiné que par la lenteur d'argon2), mot de passe oublié, outil admin de désactivation, chiffrement du secret TOTP au repos.
+**Ajout demandé par le CP :** blocage du compte après 15 échecs de connexion par heure (mot de passe ou code 2FA), levé automatiquement quand le plus ancien échec a plus d'une heure.
+*Limite connue :* n'importe qui connaissant un pseudo peut bloquer ce compte pendant 1 h en tapant de faux mots de passe. Parade prévue avec la limitation par IP (P1).
+
+**Reporté (déjà au plan en P1) :** limitation par IP, mot de passe oublié, outil admin de désactivation, chiffrement du secret TOTP au repos.
