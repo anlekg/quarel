@@ -137,6 +137,7 @@ Deux types de serveurs :
 | 2026-09-23 | Serveur privé (sur invitation) par défaut | Privacy. |
 | 2026-09-23 | Session serveur limitée à la durée du jeton d'identité (12 h) | Un compte désactivé côté Identity perd l'accès aux serveurs en 12 h max, sans que l'Identity sache où il est connecté. |
 | 2026-09-23 | Permissions provisoires : propriétaire seul pour salons/réglages, jusqu'aux rôles du jalon 3 | Livrer le texte avant les rôles. |
+| 2026-09-23 | Domaine officiel `quarel.app` ; service Identity sur `identity.quarel.app` (permanent) | Le nom du service fait partie de chaque identité : sous-domaine dédié, jamais modifié. |
 
 ---
 
@@ -204,4 +205,6 @@ Le client (phase finale) sera choisi plus tard ; piste : Tauri avec un cœur Rus
 - Les salons vocaux existent mais sans audio (jalon 4).
 - Pas de bans ni de rôles (jalon 3).
 
-**Question ouverte :** domaine officiel du service Identity (valeur par défaut des serveurs, actuellement `identity.quarel.app`, à confirmer).
+**Domaine officiel (tranché le 2026-09-23) :** le CP commande `quarel.app`. Le service Identity officiel sera `identity.quarel.app` (déjà la valeur par défaut des serveurs communautaires).
+- Ce nom est l'identifiant permanent des comptes (`pseudo@identity.quarel.app`, bans basés sur `(identity.quarel.app, sub)`) : **il ne doit jamais changer** et le domaine doit être renouvelé sans faute.
+- `.app` impose HTTPS partout (domaine préchargé HSTS) : compatible avec notre besoin, le service Identity devra avoir un certificat valide.

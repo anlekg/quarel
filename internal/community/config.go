@@ -7,7 +7,7 @@ import (
 )
 
 // DefaultIssuer is the official Identity service trusted when none is configured.
-// The final domain is still to be chosen (see PROJECT.md).
+// It is part of every official identity: never change it.
 const DefaultIssuer = "identity.quarel.app"
 
 // Config holds the community server settings.

@@ -142,7 +142,7 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 
 ### Configuration
 
-`QUAREL_ADDR` (`:8090`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_SERVER_NAME` (nom au 1er démarrage seulement), `QUAREL_TRUSTED_ISSUERS` (liste séparée par des virgules ; défaut `identity.quarel.app`, domaine officiel **à confirmer**).
+`QUAREL_ADDR` (`:8090`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_SERVER_NAME` (nom au 1er démarrage seulement), `QUAREL_TRUSTED_ISSUERS` (liste séparée par des virgules ; défaut `identity.quarel.app`, instance officielle — domaine `quarel.app` choisi par le CP ; **ce nom ne doit jamais changer**, il fait partie de chaque identité).
 
 ## Commandes
 
