@@ -49,4 +49,4 @@ _À définir._
 
 - OS : Linux. Disponibles : Docker, Node.js, Python 3, Go 1.27.1 (installé dans `~/.local/go`, PATH ajouté dans `~/.zshrc`). Non installés : Rust, `gh`.
 - Si `go` est introuvable dans le shell courant : `export PATH="$HOME/.local/go/bin:$HOME/go/bin:$PATH"`.
-- Git : branche `main`, identité locale au dépôt (`anlekg`). Accès SSH à GitHub opérationnel (compte `anlekg`), pas encore de remote.
+- Git : branche `main`, remote `origin` = `git@github.com:anlekg/quarel.git` (SSH). Identité locale au dépôt : `anlekg` / adresse masquée GitHub `106981899+anlekg@users.noreply.github.com` (ne jamais utiliser l'email personnel).
