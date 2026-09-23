@@ -1,6 +1,6 @@
 # Quarel — Plan des fonctionnalités
 
-> **Brouillon à valider avec le CP.** Priorités : **P0** = MVP (indispensable pour un premier test bout à bout), **P1** = V1 publique, **P2** = plus tard.
+> **Validé par le CP le 2026-09-23.** Priorités : **P0** = MVP (indispensable pour un premier test bout à bout), **P1** = V1 publique, **P2** = plus tard.
 > Le front-end (client) est traité en dernier ; en attendant, tout se teste via l'API (scripts, `curl`, client de test en ligne de commande).
 
 ---
@@ -8,10 +8,10 @@
 ## A. Service central « Identity »
 
 ### A1. Comptes
-- [ ] **P0** Inscription : email, pseudo, mot de passe (hash Argon2id)
-- [ ] **P0** Vérification de l'email (lien ou code)
-- [ ] **P0** Connexion / déconnexion, sessions par appareil
-- [ ] **P0** 2FA TOTP (application d'authentification) + codes de secours
+- [x] **P0** Inscription : email, pseudo, mot de passe (hash Argon2id)
+- [x] **P0** Vérification de l'email (lien ou code)
+- [x] **P0** Connexion / déconnexion, sessions par appareil
+- [x] **P0** 2FA TOTP (application d'authentification) + codes de secours
 - [ ] **P1** Mot de passe oublié (via email)
 - [ ] **P1** Changement d'email, de pseudo, de mot de passe
 - [ ] **P1** Suppression de compte par l'utilisateur (effacement réel des données)
@@ -19,9 +19,9 @@
 - [ ] **P2** 2FA par clé matérielle / passkey (WebAuthn)
 
 ### A2. Identité portable
-- [ ] **P0** Identifiant unique au format `pseudo@domaine-du-service`
-- [ ] **P0** Émission d'un jeton d'identité signé (ID, pseudo, clé publique, expiration)
-- [ ] **P0** Publication de la clé publique de signature du service (vérification hors ligne par les serveurs)
+- [x] **P0** Identifiant unique au format `pseudo@domaine-du-service`
+- [x] **P0** Émission d'un jeton d'identité signé (ID, pseudo, clé publique, expiration)
+- [x] **P0** Publication de la clé publique de signature du service (vérification hors ligne par les serveurs)
 - [ ] **P1** Rotation des clés de signature du service
 - [ ] **P1** Liste des comptes désactivés, consultable par les serveurs (réquisition judiciaire)
 - [ ] **P1** Profil public minimal : pseudo, avatar, bio
@@ -139,7 +139,7 @@
 
 ## C. Client (en dernier)
 
-- [ ] **P0** Client de test en ligne de commande (pour valider l'API pendant le dev backend)
+- [x] **P0** Client de test en ligne de commande (pour valider l'API pendant le dev backend)
 - [ ] **P1** Application desktop (multi-serveurs, multi-services d'identité)
 - [ ] **P1** Client web
 - [ ] **P2** Application mobile
@@ -148,7 +148,7 @@
 
 ## Ordre de développement proposé
 
-1. **Jalon 1 — Identity minimal :** A1 P0, A2 P0 → un compte et un jeton d'identité vérifiable.
+1. **Jalon 1 — Identity minimal :** A1 P0, A2 P0 → un compte et un jeton d'identité vérifiable. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-1.md`).*
 2. **Jalon 2 — Serveur communautaire texte :** B1 P0, B2 P0, B3 P0, B4 P0 → rejoindre un serveur et discuter.
 3. **Jalon 3 — Rôles et modération :** B5 P0, B6 P0.
 4. **Jalon 4 — Voix :** B7 P0.

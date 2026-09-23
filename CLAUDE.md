@@ -37,13 +37,70 @@ Alternative à Discord **auto-hébergeable** : chaque serveur tourne chez son pr
 - **UPnP :** `github.com/huin/goupnp`.
 - **Client :** décidé en phase finale (piste : Tauri + cœur Rust pour la crypto E2E).
 
-## Architecture
+## Arborescence
 
-_À définir (phase 3)._
+```
+cmd/quarel-identity/    binaire du service Identity
+cmd/quarelctl/          client de test en ligne de commande (sorties en français, pour le CP)
+internal/identity/      service Identity : HTTP (server.go), endpoints (handlers.go), SQLite (store.go),
+                        argon2id / clés (crypto.go), TOTP (totp.go), emails (mail.go)
+pkg/idtoken/            jetons d'identité portables — partagé avec le futur serveur communautaire
+docs/tests/             guides de test par jalon, destinés au CP
+Dockerfile.identity     image distroless (~23 Mo), volume /data
+```
+
+## Identité portable (implémentée, jalon 1)
+
+- **Identifiant stable** : `(iss, sub)` = domaine du service Identity + ID aléatoire 128 bits (base32). **Les bans et appartenances se basent dessus**, jamais sur le handle `pseudo@domaine` (le pseudo pourra changer).
+- **Jeton** : JWT EdDSA (Ed25519) avec `iss`, `sub`, `handle`, `dkey` (clé publique de l'appareil), `iat`, `exp`, `jti`, en-tête `kid`. Durée : `QUAREL_TOKEN_TTL` (12 h par défaut). **Pas d'audience** : l'Identity ne sait pas à quel serveur le jeton est destiné. Aucun email dans le jeton.
+- **Clés publiques** du service : `GET /.well-known/quarel-identity` → `{issuer, keys:[{kid, alg, crv, x}]}`. Clé privée : `$QUAREL_DATA_DIR/signing.key` (générée au 1er démarrage, à sauvegarder).
+- **Anti-rejeu** : le client génère une paire Ed25519 par appareil, envoie la clé publique au login. Un serveur communautaire envoie un nonce ; le client renvoie `idtoken.SignProof(device, audience, nonce)` ; le serveur appelle `idtoken.Verify` puis `idtoken.VerifyProof`. Le serveur doit garantir l'usage unique de ses nonces.
+
+## Service Identity — détails
+
+- **Mots de passe** : argon2id (t=3, m=64 Mo, p=2), format PHC ; 4 hachages simultanés max ; hachage factice si le compte n'existe pas (pas d'énumération par le temps de réponse).
+- **Sessions** : jeton porteur aléatoire 256 bits, seul le SHA-256 est stocké ; une session par appareil (`device_name`, `device_key`).
+- **Email** : code à 6 chiffres, 15 min, 5 essais, renvoi limité à 1/min ; `resend-verification` répond toujours 202. La connexion exige un email vérifié.
+- **2FA** : TOTP RFC 6238 (SHA1, 30 s, 6 chiffres, ±1 pas), chaque code utilisable une seule fois (`totp_last_step`) ; 10 codes de secours de 80 bits (SHA-256 stocké), usage unique.
+- **Compte désactivé** (`users.disabled_at`, réquisition judiciaire) : login, sessions et émission de jetons refusés. Pas encore d'outil admin (P1).
+- **Erreurs API** : `{"error":{"code":"...","message":"..."}}` ; les codes (`invalid_credentials`, `mfa_required`, `email_not_verified`…) sont stables, les messages sont indicatifs.
+- **Migrations SQLite** : liste `migrations` dans `store.go`, version dans `PRAGMA user_version`. Ne jamais modifier une migration existante, seulement en ajouter.
+
+### Endpoints
+
+| Méthode | Chemin | Auth | Rôle |
+|---|---|---|---|
+| GET | `/.well-known/quarel-identity` | — | Clés publiques de signature |
+| GET | `/v1/health` | — | Santé |
+| POST | `/v1/auth/register` | — | `{email, pseudo, password}` |
+| POST | `/v1/auth/verify-email` | — | `{email, code}` |
+| POST | `/v1/auth/resend-verification` | — | `{email}` |
+| POST | `/v1/auth/login` | — | `{login, password, totp_code?, device_name, device_key}` |
+| POST | `/v1/auth/logout` | session | Ferme la session courante |
+| GET | `/v1/me` | session | Compte courant |
+| GET | `/v1/me/sessions` | session | Sessions ouvertes |
+| DELETE | `/v1/me/sessions/{id}` | session | Ferme une session |
+| POST | `/v1/me/2fa/setup` | session | `{password}` → secret + URI otpauth |
+| POST | `/v1/me/2fa/enable` | session | `{code}` → codes de secours |
+| POST | `/v1/me/2fa/disable` | session | `{password, code}` |
+| POST | `/v1/identity/token` | session | Jeton d'identité portable |
+
+### Configuration (variables d'environnement)
+
+`QUAREL_ADDR` (`:8080`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_ISSUER` (`localhost:8080` — **doit être le domaine public en production**), `QUAREL_TOKEN_TTL` (`12h`), `QUAREL_SMTP_HOST/PORT/USER/PASSWORD/FROM` (sans `QUAREL_SMTP_HOST`, les emails sont écrits dans le log : mode dev).
 
 ## Commandes
 
-_À définir._
+```sh
+make build            # binaires dans bin/
+make test             # tests (go test ./...)
+make vet
+make run-identity     # service Identity local sur :8080, données dans ./data
+make docker-identity  # image quarel-identity
+./bin/quarelctl help  # client de test
+```
+
+Tests : les tests d'intégration (`internal/identity/identity_test.go`) démarrent un vrai serveur HTTP sur une base SQLite temporaire, avec une horloge contrôlable (`srv.now`) et un argon2 allégé.
 
 ## Environnement de dev
 

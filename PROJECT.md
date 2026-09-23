@@ -26,7 +26,7 @@ Un équivalent de Discord où **les serveurs ne sont pas hébergés par un fourn
 | 1 | Revue des solutions open source existantes + choix structurants | ✅ Terminé |
 | 2 | Liste des fonctionnalités → `PLAN.md` | ✅ Validé le 2026-09-23 |
 | 3 | Choix de stack & architecture → `CLAUDE.md` | ✅ Go validé le 2026-09-23 |
-| 4 | Développement backend (itératif, testé par le CP) | ⚪ À faire |
+| 4 | Développement backend (itératif, testé par le CP) | 🟡 Jalon 1 livré, en test |
 | 5 | Front-end / client | ⚪ À faire |
 | 6 | Packaging `.exe` | ⚪ À faire |
 
@@ -128,6 +128,9 @@ Deux types de serveurs :
 | 2026-09-23 | Service central open source, adresse configurable, notre instance par défaut | Pas de dépendance forcée envers l'équipe. |
 | 2026-09-23 | Appels entre amis en P2P WebRTC | Privacy. |
 | 2026-09-23 | Go pour les deux serveurs, monorepo, SQLite pure Go | Binaire unique, `.exe` facile, faible RAM, LiveKit en Go. |
+| 2026-09-23 | Identifiant stable aléatoire distinct du pseudo ; bans basés sur (service, ID) | Le pseudo pourra changer sans casser les bans. |
+| 2026-09-23 | Jeton sans audience + preuve de possession par clé d'appareil (Ed25519) | Privacy (l'Identity ignore les serveurs visités) sans permettre à un serveur de rejouer le jeton ailleurs. |
+| 2026-09-23 | Email vérifié obligatoire pour se connecter ; 2FA facultative | À confirmer par le CP (voir phase 4). |
 
 ---
 
@@ -157,3 +160,22 @@ Deux types de serveurs :
 Le client (phase finale) sera choisi plus tard ; piste : Tauri avec un cœur Rust pour la crypto E2E (OpenMLS ou vodozemac).
 
 **Validé par le CP le 2026-09-23 :** Go pour les serveurs, Go installé localement (`~/.local/go`), dépôt git initialisé.
+
+---
+
+## Phase 4 — Développement
+
+### Jalon 1 — Service Identity minimal (livré le 2026-09-23)
+
+**Livré :** inscription, vérification de l'email par code, connexion par email ou pseudo, sessions par appareil, 2FA TOTP avec codes de secours, jeton d'identité portable vérifiable hors ligne, preuve de possession par l'appareil, client de test `quarelctl`, image Docker (~23 Mo).
+
+**Validation :** 7 tests automatisés (dont vecteurs officiels RFC 6238, rejeu de codes 2FA, rejeu de preuves entre serveurs, jeton falsifié ou `alg=none`) ; parcours complet rejoué à la main avec `quarelctl` ; image Docker démarrée et interrogée.
+
+**Guide de test du CP :** `docs/tests/jalon-1.md`.
+
+**Choix faits pendant le développement (à valider par le CP) :**
+- 2FA **facultative** (activable par l'utilisateur), pas obligatoire à l'inscription.
+- Connexion impossible tant que l'email n'est pas vérifié.
+- Le pseudo est unique sur un service Identity, insensible à la casse ; 3–32 caractères : lettres, chiffres, `_ . -`.
+
+**Reporté (déjà au plan en P1) :** limitation de débit (le brute-force de la 2FA n'est freiné que par la lenteur d'argon2), mot de passe oublié, outil admin de désactivation, chiffrement du secret TOTP au repos.
