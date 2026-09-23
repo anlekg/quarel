@@ -48,7 +48,7 @@ internal/identity/      service Identity : HTTP (server.go), endpoints (handlers
 pkg/idtoken/            jetons d'identité portables — partagé avec le futur serveur communautaire
 docs/tests/             guides de test par jalon, destinés au CP
 Dockerfile.identity     image distroless (~23 Mo), volume /data
-dev.sh                  commandes de dev (build, test, run-identity…) — pas de make sur la machine
+Makefile                commandes de dev (build, test, run-identity…)
 ```
 
 ## Identité portable (implémentée, jalon 1)
@@ -95,11 +95,11 @@ dev.sh                  commandes de dev (build, test, run-identity…) — pas 
 ## Commandes
 
 ```sh
-./dev.sh build          # binaires dans bin/
-./dev.sh test           # tests (go test ./...)
-./dev.sh vet
-./dev.sh run-identity  # service Identity local sur :8080, données dans ./data
-./dev.sh docker-identity # image quarel-identity
+make build            # binaires dans bin/
+make test             # tests (go test ./...)
+make vet
+make run-identity     # service Identity local sur :8080, données dans ./data
+make docker-identity  # image quarel-identity
 ./bin/quarelctl help  # client de test
 ```
 
@@ -107,6 +107,6 @@ Tests : les tests d'intégration (`internal/identity/identity_test.go`) démarre
 
 ## Environnement de dev
 
-- OS : Linux. Disponibles : Docker, Node.js, Python 3, Go 1.27.1 (installé dans `~/.local/go`, PATH ajouté dans `~/.zshrc`). Non installés : Rust, `gh`.
+- OS : Linux. Disponibles : Docker, Node.js, Python 3, make, Go 1.27.1 (installé dans `~/.local/go`, PATH ajouté dans `~/.zshrc`). Non installés : Rust, `gh`. `sudo` non interactif disponible (le CP autorise l'installation d'outils si besoin).
 - Si `go` est introuvable dans le shell courant : `export PATH="$HOME/.local/go/bin:$HOME/go/bin:$PATH"`.
 - Git : branche `main`, remote `origin` = `git@github.com:anlekg/quarel.git` (SSH). Identité locale au dépôt : `anlekg` / adresse masquée GitHub `106981899+anlekg@users.noreply.github.com` (ne jamais utiliser l'email personnel).

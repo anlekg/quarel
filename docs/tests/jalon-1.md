@@ -7,7 +7,7 @@ Objectif : vérifier l'inscription, la vérification d'email, la connexion, les 
 Dans un premier terminal, à la racine du projet :
 
 ```sh
-./dev.sh run-identity
+make run-identity
 ```
 
 Le serveur écoute sur `http://localhost:8080`. Aucun email n'est réellement envoyé en mode dev : **les codes de vérification s'affichent dans ce terminal** (ligne `email not sent ... code de vérification Quarel : 123456`).
@@ -59,7 +59,7 @@ Pour repartir de zéro : arrêter le serveur et supprimer le dossier `data/`.
 
 ### 5. Docker (optionnel)
 ```sh
-./dev.sh docker-identity
+make docker-identity
 docker run --rm -p 8080:8080 -e QUAREL_ISSUER=localhost:8080 -v quarel-identity:/data quarel-identity
 ```
 Les mêmes scénarios fonctionnent ; les codes s'affichent dans la sortie du conteneur.
