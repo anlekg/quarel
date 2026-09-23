@@ -11,6 +11,7 @@ Alternative à Discord **auto-hébergeable** : chaque serveur tourne chez son pr
 - L'utilisateur est chef de projet et testeur ; Claude code. Toute décision d'architecture est validée avec lui puis consignée dans `PROJECT.md` (journal des décisions).
 - Backend / fonctionnalités d'abord, front-end en dernier.
 - Tenir ce fichier à jour à chaque changement de stack, d'architecture ou de commande.
+- Licence **Apache-2.0** (`LICENSE`). Toute dépendance ajoutée doit être compatible (MIT, BSD, Apache-2.0, MPL-2.0… ; pas de GPL/AGPL) ; composants embarqués ou vendus listés dans `NOTICE`.
 
 ## Contraintes techniques (connues à ce stade)
 

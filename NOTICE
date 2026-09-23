@@ -1,0 +1,15 @@
+Quarel
+Copyright 2026 The Quarel authors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes or bundles third-party software:
+
+- livekit-client (JavaScript, vendored in internal/community/voicetest/)
+  Copyright LiveKit, Inc. — Apache License 2.0 (see LICENSE.livekit-client there)
+- livekit-server (bundled in the quarel-server Docker image, not in this repository)
+  Copyright LiveKit, Inc. — Apache License 2.0
+- goolm, part of mautrix-go (used by the quarelctl test client)
+  Mozilla Public License 2.0 — source: https://github.com/mautrix/go
+
+Go module dependencies and their licenses are listed in go.mod / go.sum.

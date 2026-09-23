@@ -151,6 +151,7 @@ Deux types de serveurs :
 | 2026-09-23 | Clé maîtresse par compte certifiant les appareils validés, épinglée par les contacts au premier contact | Un serveur malveillant ne peut pas glisser un faux appareil pour lire les messages. |
 | 2026-09-23 | Code de vérification des appareils sur 80 bits (16 caractères) | Trop long pour qu'un serveur fabrique un faux appareil au même code. |
 | 2026-09-23 | MP et échanges de clés réservés aux amis | Anti-spam et limitation des métadonnées exposées. |
+| 2026-09-23 | Licence **Apache-2.0** (le CP voulait MIT ou Apache) | Permissive comme MIT, avec en plus une protection contre les brevets ; licence de LiveKit. Contrepartie acceptée : un fork hébergé fermé reste possible (l'AGPL l'interdirait). |
 
 ---
 
@@ -267,4 +268,4 @@ Le client (phase finale) sera choisi plus tard ; piste : Tauri avec un cœur Rus
 - Pas de rétention maximale des boîtes aux lettres d'appareils jamais reconnectés (à ajouter, P1).
 - Clés du client de test stockées en clair dans le profil (le vrai client utilisera le trousseau du système).
 
-**Question ouverte :** licence du projet (aucune n'est encore choisie ; les dépendances utilisées sont compatibles avec les licences libres courantes : Apache-2.0, MIT, MPL-2.0).
+**Licence (tranchée le 2026-09-23) :** Apache-2.0 (voir journal des décisions).
