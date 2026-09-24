@@ -12,9 +12,11 @@ import (
 )
 
 const (
-	chanText     = "text"
-	chanVoice    = "voice"
-	chanCategory = "category"
+	chanText         = "text"
+	chanVoice        = "voice"
+	chanCategory     = "category"
+	chanAnnouncement = "announcement" // text channel where posting also needs manage_messages
+	chanThread       = "thread"       // text channel attached to a message; parent_id is the text channel
 
 	targetRole   = "role"
 	targetMember = "member"
@@ -36,28 +38,44 @@ func (o override) roleID() int64 {
 }
 
 type channel struct {
-	ID        int64      `json:"id"`
-	Type      string     `json:"type"`
-	Name      string     `json:"name"`
-	Topic     string     `json:"topic"`
-	ParentID  *int64     `json:"parent_id"`
-	Position  int64      `json:"position"`
-	Overrides []override `json:"overrides"`
+	ID            int64      `json:"id"`
+	Type          string     `json:"type"` // text | voice | category | announcement | thread
+	Name          string     `json:"name"`
+	Topic         string     `json:"topic"`
+	ParentID      *int64     `json:"parent_id"`
+	Position      int64      `json:"position"`
+	ThreadStarter *int64     `json:"thread_starter,omitempty"` // threads: message they started from
+	Overrides     []override `json:"overrides"`
+}
+
+// messaging reports whether the channel holds messages.
+func (c *channel) messaging() bool {
+	return c.Type == chanText || c.Type == chanAnnouncement || c.Type == chanThread
 }
 
 func scanChannel(sc interface{ Scan(...any) error }) (*channel, error) {
 	c := channel{Overrides: []override{}}
-	var parent sql.NullInt64
-	if err := sc.Scan(&c.ID, &c.Type, &c.Name, &c.Topic, &parent, &c.Position); err != nil {
+	var parent, starter sql.NullInt64
+	var announcement, thread bool
+	if err := sc.Scan(&c.ID, &c.Type, &c.Name, &c.Topic, &parent, &c.Position, &announcement, &thread, &starter); err != nil {
 		return nil, err
 	}
 	if parent.Valid {
 		c.ParentID = &parent.Int64
 	}
+	if starter.Valid {
+		c.ThreadStarter = &starter.Int64
+	}
+	switch {
+	case thread:
+		c.Type = chanThread
+	case announcement:
+		c.Type = chanAnnouncement
+	}
 	return &c, nil
 }
 
-const channelCols = `id, type, name, topic, parent_id, position`
+const channelCols = `id, type, name, topic, parent_id, position, announcement, thread, thread_starter`
 
 // loadOverrides attaches overrides to channels (all of them if channelID is 0).
 func loadOverrides(ctx context.Context, q querier, byID map[int64]*channel, channelID int64) error {
@@ -205,9 +223,13 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 	if req.Type == "" {
 		req.Type = chanText
 	}
-	if req.Type != chanText && req.Type != chanVoice && req.Type != chanCategory {
-		writeErr(w, r, errf(http.StatusBadRequest, "invalid_type", "type must be text, voice or category"))
+	if req.Type != chanText && req.Type != chanVoice && req.Type != chanCategory && req.Type != chanAnnouncement {
+		writeErr(w, r, errf(http.StatusBadRequest, "invalid_type", "type must be text, announcement, voice or category (threads start from a message)"))
 		return
+	}
+	storedType, announcement := req.Type, false
+	if req.Type == chanAnnouncement {
+		storedType, announcement = chanText, true
 	}
 	name, err := validName(req.Name)
 	if err != nil {
@@ -231,8 +253,8 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO channels (type, name, topic, parent_id, position, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		req.Type, name, topic, nullParent(req.ParentID), pos, s.nowMs())
+	res, err := s.db.ExecContext(ctx, `INSERT INTO channels (type, name, topic, parent_id, position, created_at, announcement) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		storedType, name, topic, nullParent(req.ParentID), pos, s.nowMs(), announcement)
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -281,6 +303,10 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	moved := false
+	if req.ParentID != nil && c.Type == chanThread {
+		writeErr(w, r, errf(http.StatusBadRequest, "invalid_parent", "a thread stays in its channel"))
+		return
+	}
 	if req.ParentID != nil {
 		if *req.ParentID == c.ID {
 			writeErr(w, r, errf(http.StatusBadRequest, "invalid_parent", "a channel cannot be its own parent"))
@@ -327,7 +353,8 @@ func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM channels WHERE id = ?`, c.ID); err != nil {
+	// A channel's threads go with it (the parent foreign key would only detach them).
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM channels WHERE id = ? OR (thread = 1 AND parent_id = ?)`, c.ID, c.ID); err != nil {
 		writeErr(w, r, err)
 		return
 	}

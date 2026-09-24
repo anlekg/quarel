@@ -8,7 +8,8 @@ import (
 )
 
 // The gateway (GET /v1/gateway) follows the protocol of package realtime.
-// READY carries {member, server, roles, members, channels, voice_states, permissions}.
+// READY carries {member, server, roles, members, channels, voice_states, permissions,
+// read_states, notification_settings}.
 
 func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 	s.hub.Serve(w, r,
@@ -72,7 +73,16 @@ func (s *Server) readyPayload(ctx context.Context, m *member) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
+	readStates, err := s.readStates(ctx, m, messagingChannels(ps, m.ID))
+	if err != nil {
+		return nil, err
+	}
+	notifications, err := s.notificationSettings(ctx, m.ID)
+	if err != nil {
+		return nil, err
+	}
 	ready := s.memberState(ps, m.ID)
 	ready["member"], ready["server"], ready["members"], ready["roles"] = me, info, members, roles
+	ready["read_states"], ready["notification_settings"] = readStates, notifications
 	return ready, nil
 }

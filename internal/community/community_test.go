@@ -49,7 +49,7 @@ func newEnv(t *testing.T) *testEnv {
 	_, serverKey, _ := ed25519.GenerateKey(nil)
 	_, idKey, _ := ed25519.GenerateKey(nil)
 	e := &testEnv{t: t, signer: idtoken.NewSigner(testIssuer, idKey), clock: time.Now()}
-	cfg := Config{Name: "Test", TrustedIssuers: []string{testIssuer}}
+	cfg := Config{Name: "Test", TrustedIssuers: []string{testIssuer}, DataDir: t.TempDir()}
 	e.srv = New(cfg, db, serverKey, staticKeys{testIssuer: e.signer.KeySet()})
 	e.srv.now = func() time.Time { return e.clock }
 	if err := e.srv.seed(context.Background()); err != nil {

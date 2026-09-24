@@ -84,7 +84,7 @@ Serveurs communautaires (connexion Identity requise)
 
 Salons (sur le serveur courant ; un salon se désigne par son nom ou son id)
   channels                         arborescence des salons
-  channel-create <nom> [text|voice|category] [catégorie]
+  channel-create <nom> [text|voice|category|announcement] [catégorie]
   channel-edit <salon> name=… topic=… parent=<catégorie|0> position=N
   channel-delete <salon>
 
@@ -93,6 +93,18 @@ Messages
   history <salon> [nombre] [avant-id]
   edit <salon> <id> <texte…>
   delete <salon> <id>
+  reply <salon> <id> <texte…>      répondre à un message (son auteur est notifié)
+  react|unreact <salon> <id> <emoji>
+  pin|unpin <salon> <id>           épingler (droit manage_messages)
+  pins <salon>                     messages épinglés
+  send-file <salon> <fichier> [texte…]
+  download <id-fichier> [destination]
+  search <mots…> [in:salon] [from:pseudo]   recherche (sans accents ni casse, mots commencés)
+  thread <salon> <id> [nom…]       ouvrir un fil de discussion sur un message
+  unread                           salons non lus et mentions
+  read <salon>                     marquer un salon comme lu
+  typing <salon>                   signaler « en train d'écrire »
+  notify [<salon|serveur> <all|mentions|none|default> [muet=1h|muet=toujours]]
   listen                           afficher les événements en direct (Ctrl+C pour quitter)
 
 Membres et invitations
@@ -107,7 +119,7 @@ Rôles et permissions
   my-perms                         mes permissions sur le serveur et dans chaque salon
   roles                            rôles, du plus haut au plus bas
   role-create <nom> [perm…]        créer un rôle (ex. role-create Modo kick_members manage_messages)
-  role-edit <rôle> name=… color=#RRGGBB perms=a,b mentionable=true position=N
+  role-edit <rôle> name=… color=#RRGGBB perms=a,b mentionable=true hoist=true position=N
   role-delete <rôle>
   role-add <membre> <rôle>         donner un rôle
   role-remove <membre> <rôle>      retirer un rôle

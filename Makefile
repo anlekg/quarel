@@ -1,6 +1,6 @@
 export PATH := $(HOME)/.local/go/bin:$(HOME)/.local/bin:$(PATH)
 
-.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme clean
+.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages clean
 
 build:
 	go build -o bin/ ./cmd/...
@@ -46,6 +46,10 @@ e2e-dm: build
 # Milestone 6 scenario: recovery phrase, TLS identity pinning, rate limiting.
 e2e-security: build
 	test/e2e/security.sh
+
+# P1 scenario: replies, reactions, pins, files, search, threads, unread state.
+e2e-messages: build
+	test/e2e/messages.sh
 
 # HTTPS through ACME (Let's Encrypt protocol) against Pebble in Docker.
 e2e-acme: build

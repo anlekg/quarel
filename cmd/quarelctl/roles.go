@@ -16,6 +16,7 @@ type roleInfo struct {
 	Position    int64    `json:"position"`
 	Permissions []string `json:"permissions"`
 	Mentionable bool     `json:"mentionable"`
+	Hoist       bool     `json:"hoist"`
 }
 
 type overrideInfo struct {
@@ -230,6 +231,8 @@ func (c *cli) roleEdit(args []string) error {
 			body["permissions"] = splitList(v)
 		case "mentionable":
 			body["mentionable"] = v == "true" || v == "oui" || v == "1"
+		case "hoist", "separe":
+			body["hoist"] = v == "true" || v == "oui" || v == "1"
 		case "position":
 			n, err := strconv.ParseInt(v, 10, 64)
 			if err != nil {
@@ -237,7 +240,7 @@ func (c *cli) roleEdit(args []string) error {
 			}
 			body["position"] = n
 		default:
-			return fmt.Errorf("champ inconnu %q (name, color, perms, mentionable, position)", k)
+			return fmt.Errorf("champ inconnu %q (name, color, perms, mentionable, hoist, position)", k)
 		}
 	}
 	var r roleInfo

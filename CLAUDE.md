@@ -44,7 +44,8 @@ Alternative à Discord **auto-hébergeable** : chaque serveur tourne chez son pr
 cmd/quarel-identity/    binaire du service Identity
 cmd/quarel-server/      binaire du serveur communautaire
 cmd/quarelctl/          client de test en ligne de commande (sorties en français, neutres en genre, pour le CP) :
-                        main.go (Identity), community.go (serveurs communautaires), roles.go (rôles, modération),
+                        main.go (Identity), community.go (serveurs communautaires), messages.go (réponses, réactions,
+                        fichiers, recherche, fils, non-lus), roles.go (rôles, modération),
                         voice.go (vocal), social.go (amis, MP), e2e.go (chiffrement Olm/Megolm côté client),
                         recovery.go (phrase de récupération, sauvegarde), network.go (diagnostic réseau)
 internal/identity/      service Identity : HTTP (server.go), endpoints (handlers.go), SQLite (store.go),
@@ -53,7 +54,8 @@ internal/identity/      service Identity : HTTP (server.go), endpoints (handlers
 internal/community/     serveur communautaire : config, clés des Identity (keys.go), auth (auth.go),
                         membres, invitations, salons + droits par salon (channels.go), messages,
                         permissions (permissions.go), rôles (roles.go), expulsion/bannissement
-                        (moderation.go), temps réel (gateway.go)
+                        (moderation.go), temps réel (gateway.go), réactions/épingles/fils/non-lus/recherche/
+                        notifications (extras.go), pièces jointes (attachments.go), aperçus de liens (previews.go)
                         vocal (voice.go), page de test vocal (voicetest/, embarquée)
 internal/voice/         client LiveKit maison (jetons, API salle, webhooks) + lancement de livekit-server
 internal/realtime/      passerelle WebSocket partagée (authentification 1er message, READY, diffusion filtrée)
@@ -69,7 +71,7 @@ pkg/tlsbind/            certificat auto-signé lié à l'identité du serveur, v
 pkg/recovery/           phrase de récupération (BIP-39 français) et chiffrement des sauvegardes
 docs/tests/             guides de test par jalon, destinés au CP
 test/e2e/               tests de bout en bout : vocal (Playwright), MP chiffrés, sécurité (récupération, HTTPS,
-                        limites), ACME contre Pebble (acmeshim : corrige une différence de Pebble avec Let's Encrypt)
+                        limites), messages P1 (messages.sh), ACME contre Pebble (acmeshim : corrige une différence de Pebble avec Let's Encrypt)
 Dockerfile.identity     image distroless (~23 Mo), volume /data, port 8080
 Dockerfile.server       image distroless + livekit-server (~141 Mo), volume /data, ports 8090/tcp, 7881/tcp, 7882/udp
 Makefile                commandes de dev (build, test, run-identity, run-server…)
@@ -184,8 +186,8 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 
 ### Permissions et rôles (jalon 3)
 
-- **Permissions** (`permissions.go`) : bits stockés en base (**ne jamais renuméroter**), échangés par l'API sous forme de **noms** : `view_channel`, `send_messages`, `manage_messages`, `mention_everyone`, `create_invite`, `manage_channels`, `manage_roles`, `kick_members`, `ban_members`, `manage_server`, `connect`, `speak`, `administrator`. Réglables par salon : `view_channel`, `send_messages`, `manage_messages`, `mention_everyone`, `manage_channels`, `connect`, `speak`.
-- **Rôles** (`roles.go`) : le rôle `@everyone` (id 1, position 0, défaut : voir, écrire, inviter, connect, speak) s'applique à tous ; les autres ont les positions 1..n (plus haut = plus puissant), nouveaux rôles en bas. Permissions serveur = union des rôles ; `administrator` ou propriétaire = tout.
+- **Permissions** (`permissions.go`) : bits stockés en base (**ne jamais renuméroter**), échangés par l'API sous forme de **noms** : `view_channel`, `send_messages`, `manage_messages`, `mention_everyone`, `create_invite`, `manage_channels`, `manage_roles`, `kick_members`, `ban_members`, `manage_server`, `connect`, `speak`, `administrator`, puis (P1) `stream`, `add_reactions`, `attach_files`, `moderate_members`, `view_audit_log`, `mute_members`, `deafen_members`, `move_members`. Réglables par salon : `view_channel`, `send_messages`, `manage_messages`, `mention_everyone`, `manage_channels`, `connect`, `speak`, `stream`, `add_reactions`, `attach_files`, `mute_members`, `deafen_members`, `move_members`.
+- **Rôles** (`roles.go`) : le rôle `@everyone` (id 1, position 0, défaut : voir, écrire, inviter, connect, speak, stream, réagir, joindre des fichiers ; `hoist` = affiché à part dans la liste des membres) s'applique à tous ; les autres ont les positions 1..n (plus haut = plus puissant), nouveaux rôles en bas. Permissions serveur = union des rôles ; `administrator` ou propriétaire = tout.
 - **Hiérarchie** : on ne gère/attribue que les rôles **strictement sous** son rôle le plus haut (`checkRoleRank`), on n'accorde ou ne retire que des permissions qu'on possède (`checkGrant`), on n'expulse/bannit/surcharge un membre que s'il est strictement en dessous (`outranks`) ; le propriétaire est au-dessus de tout et intouchable.
 - **Droits par salon** (`channel_overrides`) : par rôle ou par membre, `allow`/`deny`. Calcul (`inChannel`) : permissions serveur → surcharges de la catégorie parente → surcharges du salon ; à chaque niveau `@everyone`, puis l'union des rôles du membre, puis le membre. Sans `view_channel` : aucune permission, salon invisible (404 `not_found`, pas de fuite d'existence). Modifier une surcharge exige `manage_roles` et de posséder dans ce salon les permissions changées.
 - **Instantané** : chaque vérification charge tout l'état des permissions (`loadPerms` : propriétaires, rôles, rôles des membres, salons + surcharges). Simple et cohérent pour des serveurs domestiques ; à mettre en cache si un serveur devient gros.
@@ -195,6 +197,21 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 - **Messages** : 1–4000 caractères ; ids entiers croissants. Historique : `?limit=` (≤100, défaut 50), `?before=ID` ou `?after=ID`, toujours renvoyé en ordre chronologique. Mentions : `<@member_id>` et `@everyone` (mot isolé) ; `<@&role_id>` viendra avec les rôles. Mentions recalculées à l'édition.
 - **Horodatages** en millisecondes Unix en base, RFC 3339 en JSON.
 - **SQLite à une seule connexion** (les deux services) : dans une transaction, **toujours** requêter via `tx`, jamais `s.db`, et faire les vérifications (droits, amis) **avant** d'ouvrir la transaction — sinon interblocage (vécu au jalon 5). Les cibles `make test` ont un délai maximal pour qu'un blocage échoue au lieu de geler.
+
+### Messages et salons (P1 bloc 1)
+
+- **Types de salon côté API** : `text`, `voice`, `category`, `announcement`, `thread`. En base, annonces et fils sont des salons `text` marqués (`announcement`, `thread`, `thread_starter`) : la contrainte CHECK du type ne peut pas changer sans reconstruire la table (ce qui supprimerait les messages en cascade). `channel.messaging()` = text/announcement/thread.
+- **Fils** : créés depuis un message (`thread_starter`, unique), `parent_id` = salon textuel, pas de fil dans un fil, pas de changement de parent. **Droits = ceux du salon parent** (`inChannel` redirige). Supprimer un salon supprime ses fils. Le message de départ porte `thread_id`.
+- **Annonces** : écrire exige `send_messages` **et** `manage_messages` (`requirePost`).
+- **Message** enrichi par `enrich()` (qui remet d'abord à zéro les champs calculés) : `reply_to` + `referenced {id, author_id, content (200 caractères)}` (réponse dans le même salon ; l'auteur cité est mentionné sauf `mention_reply: false`), `attachments`, `embeds`, `reactions [{emoji, count, me}]` (ordre de première réaction), `pinned_at`, `thread_id`.
+- **Réactions** : `add_reactions`, 20 emojis différents max par message, emoji = 32 octets max, au moins un symbole Unicode (≥ U+2000), ni lettre latine, ni espace ; retirer celle d'un autre exige `manage_messages`. Événements `REACTION_ADD|REMOVE {channel_id, message_id, emoji, member_id}`.
+- **Épingles** : `manage_messages`, 50 max par salon, événement `MESSAGE_UPDATE`.
+- **Pièces jointes** (`attachments.go`) : `POST /v1/channels/{id}/attachments` (multipart, champ `file`, `attach_files`, limite `QUAREL_MAX_UPLOAD_MB`, 10 envois/min) → `{id, filename, content_type, size, url}`, puis `attachments: [ids]` dans le message (10 max ; un message peut n'avoir qu'un fichier). Fichiers dans `data/attachments/<id>`. Type **détecté sur le contenu** ; téléchargement réservé à qui voit le salon (un fichier pas encore envoyé : son auteur seulement), `nosniff`, CSP `sandbox`, affichage direct seulement pour images/audio/vidéo/texte, sinon `application/octet-stream` en téléchargement. `CleanupAttachments` (toutes les heures) : envois non rattachés après 1 h, fichiers orphelins. Supprimer le message supprime ses fichiers.
+- **Aperçus de liens** (`previews.go`) : 3 liens max par message, récupérés en tâche de fond puis `MESSAGE_UPDATE`. **Anti-SSRF** : l'adresse **résolue** est vérifiée dans `net.Dialer.Control` (privées, locales, lien-local, multicast, CGNAT refusées ; ports 80/443 seulement), 8 s, 1 Mo, 3 redirections, pas de proxy. Titre/description Open Graph ; l'image n'est jamais téléchargée par le serveur. `QUAREL_LINK_PREVIEWS=off` pour désactiver.
+- **Recherche** : table FTS5 `messages_fts` (`unicode61 remove_diacritics 2`) tenue à jour par déclencheurs ; chaque mot devient un préfixe entre guillemets (10 mots max, tous requis) ; seulement dans les salons visibles ; filtres `channel_id`, `author_id`, `before` ; `limit` ≤ 50 ; du plus récent au plus ancien.
+- **Non-lus** (`read_states`) : `POST /v1/channels/{id}/ack {message_id?}` (absent = dernier message ; ne recule jamais) → `{channel_id, last_read, last_message_id, unread (plafonné à 100), mentions}` + `READ_STATE_UPDATE` aux autres appareils du membre. Envoyer un message marque le salon lu. Messages d'avant l'arrivée du membre et les siens ne comptent pas. `read_states` dans READY.
+- **« En train d'écrire »** : `POST /v1/channels/{id}/typing` (1 par 3 s) → `TYPING_START {channel_id, member_id, at}` ; le client l'affiche ~8 s.
+- **Réglages de notification** : `channel_id` 0 = tout le serveur ; `level` `default|all|mentions|none` ; `mute_for` en secondes (−1 = indéfiniment → `muted_until` = 9999-12-31). `default` sans sourdine supprime la ligne. Stockés et synchronisés (`NOTIFICATION_SETTINGS_UPDATE`, `notification_settings` dans READY) ; **appliqués par le client**.
 
 ### Vocal (jalon 4)
 
@@ -212,8 +229,8 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 
 1. Client → `{"op":"auth","token":"<session>"}` (premier message, ≤ 10 s). Jamais de cookie : toutes origines acceptées.
 2. Serveur → `{"t":"READY","d":{member, server, channels, members}}`.
-3. Serveur → `{"t":"<EVENT>","d":…}` : `MESSAGE_CREATE|UPDATE|DELETE`, `CHANNEL_CREATE|UPDATE|DELETE`, `MEMBER_JOIN|UPDATE`, `MEMBER_LEAVE {id, reason: left|kicked|banned}`, `VOICE_STATE_UPDATE`, `ROLES_UPDATE` (liste complète), `ROLE_DELETE`, `CHANNELS_SYNC {channels, permissions}` (après tout changement de droits : remplace la liste des salons du client), `SERVER_UPDATE`. Les événements peuvent répéter un état déjà dans READY : les appliquer de façon idempotente.
-- READY : `{member, server, roles, members, channels, voice_states, permissions: {server: [...], channels: {id: [...]}}}` — seulement les salons visibles.
+3. Serveur → `{"t":"<EVENT>","d":…}` : `MESSAGE_CREATE|UPDATE|DELETE`, `REACTION_ADD|REMOVE`, `TYPING_START`, `READ_STATE_UPDATE`, `NOTIFICATION_SETTINGS_UPDATE`, `CHANNEL_CREATE|UPDATE|DELETE`, `MEMBER_JOIN|UPDATE`, `MEMBER_LEAVE {id, reason: left|kicked|banned}`, `VOICE_STATE_UPDATE`, `ROLES_UPDATE` (liste complète), `ROLE_DELETE`, `CHANNELS_SYNC {channels, permissions}` (après tout changement de droits : remplace la liste des salons du client), `SERVER_UPDATE`. Les événements peuvent répéter un état déjà dans READY : les appliquer de façon idempotente.
+- READY : `{member, server, roles, members, channels, voice_states, read_states, notification_settings, permissions: {server: [...], channels: {id: [...]}}}` — seulement les salons visibles.
 - Les événements de messages et `CHANNEL_CREATE|UPDATE` ne sont envoyés qu'aux membres qui voient le salon (`broadcastChannel`).
 - Fermetures : `4001` session invalide/expirée ; `1008` membre parti, client trop lent (file de 256 événements pleine) ou arrêt du serveur. Ping toutes les 30 s.
 - Les écritures passent par l'API REST ; le gateway ne fait que diffuser.
@@ -244,9 +261,22 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | PATCH/DELETE | `/v1/channels/{id}` | `manage_channels` dans le salon | |
 | PUT/DELETE | `/v1/channels/{id}/overrides/{role\|member}/{id}` | `manage_roles` + hiérarchie | `{allow: [...], deny: [...]}` |
 | GET | `/v1/channels/{id}/messages` | `view_channel` | Historique |
-| POST | `/v1/channels/{id}/messages` | `send_messages` | `{content}` |
+| POST | `/v1/channels/{id}/messages` | `send_messages` | `{content, reply_to?, mention_reply?, attachments?}` |
 | PATCH | `/v1/channels/{id}/messages/{mid}` | auteur | `{content}` |
 | DELETE | `/v1/channels/{id}/messages/{mid}` | auteur ou `manage_messages` | |
+| POST | `/v1/channels/{id}/attachments` | `attach_files` (+ `send_messages`) | Envoi d'un fichier (multipart `file`) |
+| GET | `/v1/attachments/{id}/{nom}` | `view_channel` | Téléchargement |
+| PUT/DELETE | `/v1/channels/{id}/messages/{mid}/reactions/{emoji}` | `add_reactions` / soi | Réagir / retirer sa réaction |
+| DELETE | `/v1/channels/{id}/messages/{mid}/reactions/{emoji}/{member}` | `manage_messages` | Retirer la réaction d'un autre |
+| GET | `/v1/channels/{id}/pins` | `view_channel` | Messages épinglés |
+| PUT/DELETE | `/v1/channels/{id}/pins/{mid}` | `manage_messages` | Épingler / désépingler |
+| POST | `/v1/channels/{id}/messages/{mid}/threads` | `send_messages` | `{name?}` → fil |
+| POST | `/v1/channels/{id}/typing` | `send_messages` | « En train d'écrire » |
+| POST | `/v1/channels/{id}/ack` | `view_channel` | `{message_id?}` → état de lecture |
+| GET | `/v1/read-states` | session | Non-lus et mentions par salon visible |
+| GET | `/v1/notification-settings` | session | Réglages du membre |
+| PUT | `/v1/notification-settings/{id\|0}` | session | `{level, mute_for?}` |
+| GET | `/v1/search` | session | `?q=&channel_id=&author_id=&before=&limit=` |
 | POST | `/v1/channels/{id}/voice/join` | `connect` | Jeton LiveKit `{url, token, room, can_speak}` |
 | GET | `/v1/voice/states` | session | Qui est dans quel salon vocal (salons visibles) |
 | PATCH | `/v1/voice/state` | session (en vocal) | `{self_mute?, self_deaf?}` |
@@ -259,6 +289,8 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 ### Configuration
 
 Vocal : `QUAREL_VOICE` (`embedded` par défaut, `external`, `off`) ; embarqué : `QUAREL_LIVEKIT_BIN` (`livekit-server`, `/livekit-server` dans l'image), `QUAREL_VOICE_SIGNAL_PORT` (7880, boucle locale), `QUAREL_VOICE_TCP_PORT` (7881), `QUAREL_VOICE_UDP_PORT` (7882), `QUAREL_VOICE_PUBLIC_IP` (vide = adresses locales, `auto` = découverte STUN, ou une IP) ; externe : `QUAREL_LIVEKIT_URL`, `QUAREL_LIVEKIT_API_URL`, `QUAREL_LIVEKIT_KEY`, `QUAREL_LIVEKIT_SECRET`. Sans binaire LiveKit, le serveur démarre avec le vocal désactivé.
+
+Messages : `QUAREL_MAX_UPLOAD_MB` (25), `QUAREL_LINK_PREVIEWS` (`on`). Limites serveur : 10 envois de fichiers/min/membre en plus des précédentes.
 
 `QUAREL_ADDR` (`:8090`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_SERVER_NAME` (nom au 1er démarrage seulement), `QUAREL_TRUSTED_ISSUERS` (liste séparée par des virgules ; défaut `identity.quarel.app`, instance officielle — domaine `quarel.app` choisi par le CP ; **ce nom ne doit jamais changer**, il fait partie de chaque identité).
 
@@ -277,6 +309,7 @@ make e2e-voice        # test vocal de bout en bout avec navigateurs
 make e2e-dm           # scénario MP chiffrés de bout en bout (16 vérifications)
 make e2e-security     # récupération, HTTPS lié à l'identité, limites (18 vérifications)
 make e2e-acme         # HTTPS via ACME contre Pebble (Docker)
+make e2e-messages     # réponses, réactions, fichiers, recherche, fils, non-lus (18 vérifications)
 ./bin/quarelctl help  # client de test
 ```
 

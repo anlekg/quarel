@@ -25,19 +25,34 @@ const (
 	permManageServer    perm = 1 << 9  // server settings, every invite
 	permConnect         perm = 1 << 10 // join a voice channel (milestone 4)
 	permSpeak           perm = 1 << 11 // speak in a voice channel (milestone 4)
+	permStream          perm = 1 << 12 // share camera or screen in a voice channel
+	permAddReactions    perm = 1 << 13 // react to messages
+	permAttachFiles     perm = 1 << 14 // upload files with messages
+	permModerateMembers perm = 1 << 15 // time members out (below one's own top role)
+	permViewAuditLog    perm = 1 << 16 // read the moderation log
+	permMuteMembers     perm = 1 << 17 // mute others in voice channels
+	permDeafenMembers   perm = 1 << 18 // deafen others in voice channels
+	permMoveMembers     perm = 1 << 19 // move or disconnect others in voice channels
 	permAdministrator   perm = 1 << 30 // every permission, ignores channel overrides
 
 	permAll perm = permViewChannel | permSendMessages | permManageMessages | permMentionEveryone |
 		permCreateInvite | permManageChannels | permManageRoles | permKickMembers | permBanMembers |
-		permManageServer | permConnect | permSpeak | permAdministrator
+		permManageServer | permConnect | permSpeak | permStream | permAddReactions | permAttachFiles |
+		permModerateMembers | permViewAuditLog | permMuteMembers | permDeafenMembers | permMoveMembers |
+		permAdministrator
 
 	// permChannelScoped are the permissions a channel override may allow or deny.
 	permChannelScoped perm = permViewChannel | permSendMessages | permManageMessages |
-		permMentionEveryone | permManageChannels | permConnect | permSpeak
+		permMentionEveryone | permManageChannels | permConnect | permSpeak | permStream |
+		permAddReactions | permAttachFiles | permMuteMembers | permDeafenMembers | permMoveMembers
 
 	// permEveryoneDefault is granted to the @everyone role on a new server
-	// (value written in migration 2).
-	permEveryoneDefault perm = permViewChannel | permSendMessages | permCreateInvite | permConnect | permSpeak
+	// (migration 2, extended by migration 3).
+	permEveryoneDefault perm = permViewChannel | permSendMessages | permCreateInvite | permConnect | permSpeak |
+		permStream | permAddReactions | permAttachFiles
+
+	// permTimedOut is what a timed-out member keeps: reading only.
+	permTimedOut perm = permViewChannel
 )
 
 var permNames = []struct {
@@ -56,6 +71,14 @@ var permNames = []struct {
 	{permManageServer, "manage_server"},
 	{permConnect, "connect"},
 	{permSpeak, "speak"},
+	{permStream, "stream"},
+	{permAddReactions, "add_reactions"},
+	{permAttachFiles, "attach_files"},
+	{permModerateMembers, "moderate_members"},
+	{permViewAuditLog, "view_audit_log"},
+	{permMuteMembers, "mute_members"},
+	{permDeafenMembers, "deafen_members"},
+	{permMoveMembers, "move_members"},
 	{permAdministrator, "administrator"},
 }
 
@@ -203,6 +226,9 @@ func (ps *permSnapshot) inChannel(memberID string, channelID int64) perm {
 	c := ps.channels[channelID]
 	if c == nil {
 		return 0
+	}
+	if c.Type == chanThread && c.ParentID != nil {
+		return ps.inChannel(memberID, *c.ParentID) // threads follow their channel
 	}
 	p := ps.base(memberID)
 	if p&permAdministrator != 0 {

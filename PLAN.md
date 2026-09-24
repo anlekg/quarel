@@ -88,8 +88,8 @@
 ### B3. Salons
 - [x] **P0** Salons texte, salons vocaux *(le vocal lui-même arrive au jalon 4)*
 - [x] **P0** Catégories, ordre des salons
-- [ ] **P1** Fils de discussion (threads)
-- [ ] **P1** Salons d'annonces (lecture seule)
+- [x] **P1** Fils de discussion (threads)
+- [x] **P1** Salons d'annonces (lecture seule)
 - [ ] **P2** Salons forum
 
 ### B4. Messages (non chiffrés E2E)
@@ -97,13 +97,13 @@
 - [x] **P0** Historique paginé
 - [x] **P0** Édition / suppression
 - [x] **P0** Mentions (@membre, @rôle, @everyone)
-- [ ] **P1** Réponses (citation d'un message)
-- [ ] **P1** Réactions emoji
-- [ ] **P1** Pièces jointes (stockage disque local, limite de taille configurable)
-- [ ] **P1** Aperçus de liens (générés par le serveur)
-- [ ] **P1** Messages épinglés
-- [ ] **P1** Recherche dans l'historique
-- [ ] **P1** Indicateur « en train d'écrire », messages non lus
+- [x] **P1** Réponses (citation d'un message)
+- [x] **P1** Réactions emoji
+- [x] **P1** Pièces jointes (stockage disque local, limite de taille configurable)
+- [x] **P1** Aperçus de liens (générés par le serveur)
+- [x] **P1** Messages épinglés
+- [x] **P1** Recherche dans l'historique
+- [x] **P1** Indicateur « en train d'écrire », messages non lus *+ réglages de notification par salon (tout / mentions / rien, sourdine)*
 - [ ] **P2** Emojis personnalisés du serveur
 - [ ] **P2** Mise en forme Markdown étendue, blocs de code
 
@@ -111,7 +111,7 @@
 - [x] **P0** Rôles avec permissions (gérer le serveur, salons, rôles, membres, messages…)
 - [x] **P0** Surcharges de permissions par salon / catégorie
 - [x] **P1** Hiérarchie des rôles, couleur *(avancé au jalon 3 : indispensable à la sécurité des rôles)*
-- [ ] **P1** Affichage séparé des rôles dans la liste des membres
+- [x] **P1** Affichage séparé des rôles dans la liste des membres
 
 ### B6. Modération
 - [x] **P0** Expulsion (kick) et bannissement (lié à l'identité portable)

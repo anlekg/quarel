@@ -41,6 +41,9 @@ type Config struct {
 	TLS            tlsconf.Config
 	UPnP           bool // open ports on the router automatically
 	PublicPort     int  // external port of the HTTP(S) service (UPnP mapping); 0 = same as the listening port
+
+	MaxUploadBytes int64 // attachment size limit
+	LinkPreviews   bool  // fetch previews of posted links (the server contacts the linked sites)
 }
 
 // Limits caps request rates (0 disables a limit).
@@ -48,10 +51,11 @@ type Limits struct {
 	Global   int // requests per client IP per minute, all endpoints
 	Auth     int // login challenges and logins per client IP per minute
 	Messages int // messages sent per member per 10 seconds
+	Uploads  int // attachments uploaded per member per minute
 }
 
 // DefaultLimits are the production limits.
-func DefaultLimits() Limits { return Limits{Global: 600, Auth: 30, Messages: 10} }
+func DefaultLimits() Limits { return Limits{Global: 600, Auth: 30, Messages: 10, Uploads: 10} }
 
 // ConfigFromEnv reads the configuration from QUAREL_* environment variables.
 func ConfigFromEnv() (Config, error) {
@@ -87,6 +91,8 @@ func ConfigFromEnv() (Config, error) {
 		return c, err
 	}
 	c.UPnP = env("QUAREL_UPNP", "on") != "off"
+	c.MaxUploadBytes = int64(envInt("QUAREL_MAX_UPLOAD_MB", 25)) << 20
+	c.LinkPreviews = env("QUAREL_LINK_PREVIEWS", "on") != "off"
 	c.PublicPort = envInt("QUAREL_PUBLIC_PORT", 0)
 	return c, nil
 }

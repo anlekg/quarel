@@ -116,6 +116,97 @@ CREATE TABLE message_role_mentions (
 	PRIMARY KEY (message_id, role_id)
 );
 `,
+	// P1 (messages, channels, moderation, voice). New permissions for @everyone:
+	// add_reactions (1<<13) | attach_files (1<<14) | stream (1<<12) = 28672.
+	// Thread and announcement channels are flags on text channels: the type
+	// CHECK constraint cannot change without rebuilding the table, which would
+	// cascade-delete messages while foreign keys are on.
+	`
+UPDATE roles SET permissions = permissions | 28672 WHERE id = 1;
+ALTER TABLE roles ADD COLUMN hoist INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE channels ADD COLUMN announcement INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE channels ADD COLUMN thread INTEGER NOT NULL DEFAULT 0;      -- parent_id is then the text channel
+ALTER TABLE channels ADD COLUMN thread_starter INTEGER;                 -- message the thread started from
+CREATE UNIQUE INDEX channels_thread_starter ON channels (thread_starter) WHERE thread_starter IS NOT NULL;
+
+ALTER TABLE messages ADD COLUMN reply_to INTEGER;
+ALTER TABLE messages ADD COLUMN pinned_at INTEGER;
+ALTER TABLE messages ADD COLUMN pinned_by TEXT;
+
+CREATE TABLE reactions (
+	message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+	member_id  TEXT NOT NULL REFERENCES members(id),
+	emoji      TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	PRIMARY KEY (message_id, member_id, emoji)
+);
+
+-- Files on disk under data/attachments/<id>; message_id is NULL until the message is sent.
+CREATE TABLE attachments (
+	id           TEXT PRIMARY KEY,
+	message_id   INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+	channel_id   INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+	uploader_id  TEXT NOT NULL REFERENCES members(id),
+	filename     TEXT NOT NULL,
+	content_type TEXT NOT NULL,
+	size         INTEGER NOT NULL,
+	created_at   INTEGER NOT NULL
+);
+CREATE INDEX attachments_message ON attachments(message_id);
+
+CREATE TABLE link_previews (
+	message_id  INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+	url         TEXT NOT NULL,
+	title       TEXT NOT NULL DEFAULT '',
+	description TEXT NOT NULL DEFAULT '',
+	site_name   TEXT NOT NULL DEFAULT '',
+	image_url   TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (message_id, url)
+);
+
+CREATE TABLE read_states (
+	member_id  TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+	channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+	last_read  INTEGER NOT NULL,
+	PRIMARY KEY (member_id, channel_id)
+);
+
+-- channel_id 0 = the member's default for the whole server.
+CREATE TABLE notification_settings (
+	member_id   TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+	channel_id  INTEGER NOT NULL,
+	level       TEXT NOT NULL CHECK (level IN ('default', 'all', 'mentions', 'none')),
+	muted_until INTEGER,
+	PRIMARY KEY (member_id, channel_id)
+);
+
+-- Full-text search (accent-insensitive), kept in sync by triggers.
+CREATE VIRTUAL TABLE messages_fts USING fts5(content, content='messages', content_rowid='id', tokenize='unicode61 remove_diacritics 2');
+INSERT INTO messages_fts(messages_fts) VALUES ('rebuild');
+CREATE TRIGGER messages_fts_insert AFTER INSERT ON messages BEGIN
+	INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE TRIGGER messages_fts_delete AFTER DELETE ON messages BEGIN
+	INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.id, old.content);
+END;
+CREATE TRIGGER messages_fts_update AFTER UPDATE OF content ON messages BEGIN
+	INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.id, old.content);
+	INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+END;
+
+-- Moderation.
+ALTER TABLE members ADD COLUMN timeout_until INTEGER;
+CREATE TABLE audit_log (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	actor_id   TEXT,
+	action     TEXT NOT NULL,
+	target_id  TEXT,
+	reason     TEXT NOT NULL DEFAULT '',
+	details    TEXT NOT NULL DEFAULT '{}',
+	created_at INTEGER NOT NULL
+);
+`,
 }
 
 // OpenDB opens (creating if needed) the SQLite database at path and applies migrations.

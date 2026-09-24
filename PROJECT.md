@@ -158,6 +158,11 @@ Deux types de serveurs :
 | 2026-09-23 | UPnP actif par défaut en production, **désactivé en développement et en test** | Ne jamais modifier la box du CP sans son accord. |
 | 2026-09-23 | Blocage anti-bruteforce par (compte, IP) + plafond par compte | Corrige le blocage malveillant signalé au jalon 1 sans affaiblir la protection. |
 | 2026-09-23 | Phrase de récupération : 12 mots BIP-39 **français**, sauvegarde chiffrée (XChaCha20-Poly1305) stockée sur Identity | Standard éprouvé, lisible en français ; complète le choix « historique sur les appareils ». |
+| 2026-09-24 | *(à valider par le CP)* Aperçus de liens **actifs par défaut**, désactivables (`QUAREL_LINK_PREVIEWS=off`) | C'est le serveur (pas les membres) qui contacte les sites : l'IP des membres n'est pas exposée. Protection anti-SSRF : adresses privées/locales refusées après résolution DNS, ports 80/443, taille, durée et redirections plafonnées. Les images d'aperçu ne sont pas téléchargées par le serveur. |
+| 2026-09-24 | *(à valider par le CP)* Pièces jointes limitées à **25 Mo** par défaut (`QUAREL_MAX_UPLOAD_MB`) | Matériel domestique modeste ; réglable par l'hébergeur. Type détecté sur le contenu, seuls images/audio/vidéo/texte s'affichent dans le navigateur, le reste est téléchargé (anti-XSS). |
+| 2026-09-24 | Fils et salons d'annonces = salons textuels marqués (colonnes `thread`, `announcement`) | Changer la contrainte de type de la table aurait imposé de la reconstruire, ce qui supprime les messages en cascade. Un fil hérite des droits de son salon. |
+| 2026-09-24 | Nouvelles permissions : `add_reactions`, `attach_files`, `stream` (données à `@everyone` par défaut), `moderate_members`, `view_audit_log`, `mute_members`, `deafen_members`, `move_members` | Préparées en une migration pour tout le bloc P1. |
+| 2026-09-24 | Réglages de notification stockés par le serveur, appliqués par le client | Le serveur n'envoie pas de notifications push : il synchronise les réglages entre les appareils du membre. |
 
 ---
 
@@ -292,3 +297,14 @@ Le client (phase finale) sera choisi plus tard ; piste : Tauri avec un cœur Rus
 **Non testé en conditions réelles :** UPnP sur une vraie box (logique testée avec une box simulée ; test réel proposé au CP car il ouvre des ports chez lui) ; ACME contre le vrai Let's Encrypt (nécessite un domaine public).
 
 **Guide de test du CP :** `docs/tests/jalon-6.md`.
+
+### P1 — Bloc 1 : messages et salons (livré le 2026-09-24)
+
+Demande du CP : « on finit la P1 ! ». Découpage annoncé en 7 blocs (messages et salons ; modération et accès ; vocal avancé ; comptes ; MP avancés ; appels P2P ; exploitation du serveur), chacun testé, documenté et poussé.
+
+**Livré :** réponses (citation + notification de l'auteur, désactivable), réactions emoji (20 différentes max par message), messages épinglés (50 max par salon), pièces jointes (envoi puis rattachement au message, nettoyage des envois abandonnés après 1 h, fichiers supprimés avec le message), aperçus de liens générés par le serveur (anti-SSRF), recherche plein texte insensible aux accents et à la casse (SQLite FTS5, limitée aux salons visibles), fils de discussion, salons d'annonces, « en train d'écrire », non-lus et compteur de mentions synchronisés entre appareils, réglages de notification, rôles affichés séparément (`hoist`).
+
+**Validation :** tests d'intégration (réponses, réactions, épingles, pièces jointes y compris droits, taille, types dangereux et nettoyage, aperçus et refus SSRF, recherche et fuite de salons cachés, non-lus, fils, annonces, notifications) ; `make e2e-messages` (18/18) avec les vrais binaires ; détecteur de concurrence. Bugs trouvés et corrigés : mentions dupliquées au rechargement, ordre des réactions instable, sourdine « illimitée » impossible à encoder en JSON (date au-delà de l'an 9999).
+
+**Guide de test du CP :** `docs/tests/p1-bloc-1.md`.
+

@@ -22,11 +22,12 @@ type role struct {
 	Position    int64    `json:"position"`
 	Permissions []string `json:"permissions"`
 	Mentionable bool     `json:"mentionable"` // anyone may ping it with <@&id>
+	Hoist       bool     `json:"hoist"`       // members shown in a separate group in member lists
 	perms       perm
 }
 
 func allRoles(ctx context.Context, q querier) ([]*role, error) {
-	rows, err := q.QueryContext(ctx, `SELECT id, name, color, position, permissions, mentionable FROM roles ORDER BY position DESC, id`)
+	rows, err := q.QueryContext(ctx, `SELECT id, name, color, position, permissions, mentionable, hoist FROM roles ORDER BY position DESC, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +35,7 @@ func allRoles(ctx context.Context, q querier) ([]*role, error) {
 	list := []*role{}
 	for rows.Next() {
 		var r role
-		if err := rows.Scan(&r.ID, &r.Name, &r.Color, &r.Position, &r.perms, &r.Mentionable); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.Color, &r.Position, &r.perms, &r.Mentionable, &r.Hoist); err != nil {
 			return nil, err
 		}
 		r.Permissions = r.perms.names()
@@ -45,8 +46,8 @@ func allRoles(ctx context.Context, q querier) ([]*role, error) {
 
 func roleByID(ctx context.Context, q querier, id int64) (*role, error) {
 	var r role
-	err := q.QueryRowContext(ctx, `SELECT id, name, color, position, permissions, mentionable FROM roles WHERE id = ?`, id).
-		Scan(&r.ID, &r.Name, &r.Color, &r.Position, &r.perms, &r.Mentionable)
+	err := q.QueryRowContext(ctx, `SELECT id, name, color, position, permissions, mentionable, hoist FROM roles WHERE id = ?`, id).
+		Scan(&r.ID, &r.Name, &r.Color, &r.Position, &r.perms, &r.Mentionable, &r.Hoist)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errf(http.StatusNotFound, "not_found", "no such role")
 	}
@@ -154,6 +155,7 @@ func (s *Server) handleCreateRole(w http.ResponseWriter, r *http.Request) {
 		Color       int64    `json:"color"`
 		Permissions []string `json:"permissions"`
 		Mentionable bool     `json:"mentionable"`
+		Hoist       bool     `json:"hoist"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, r, err)
@@ -194,8 +196,8 @@ func (s *Server) handleCreateRole(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO roles (name, color, position, permissions, mentionable, created_at) VALUES (?, ?, 1, ?, ?, ?)`,
-		name, req.Color, p, req.Mentionable, s.nowMs())
+	res, err := tx.ExecContext(ctx, `INSERT INTO roles (name, color, position, permissions, mentionable, hoist, created_at) VALUES (?, ?, 1, ?, ?, ?, ?)`,
+		name, req.Color, p, req.Mentionable, req.Hoist, s.nowMs())
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -220,6 +222,7 @@ func (s *Server) handleUpdateRole(w http.ResponseWriter, r *http.Request) {
 		Color       *int64    `json:"color"`
 		Permissions *[]string `json:"permissions"`
 		Mentionable *bool     `json:"mentionable"`
+		Hoist       *bool     `json:"hoist"`
 		Position    *int64    `json:"position"`
 	}
 	if err := decode(r, &req); err != nil {
@@ -279,6 +282,9 @@ func (s *Server) handleUpdateRole(w http.ResponseWriter, r *http.Request) {
 	if req.Mentionable != nil {
 		rl.Mentionable = *req.Mentionable
 	}
+	if req.Hoist != nil {
+		rl.Hoist = *req.Hoist
+	}
 	if req.Position != nil && (*req.Position < 1 || *req.Position >= ps.top(actor)) {
 		writeErr(w, r, errf(http.StatusForbidden, "role_hierarchy", "position must be at least 1 and below your highest role"))
 		return
@@ -290,8 +296,8 @@ func (s *Server) handleUpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `UPDATE roles SET name = ?, color = ?, permissions = ?, mentionable = ? WHERE id = ?`,
-		rl.Name, rl.Color, rl.perms, rl.Mentionable, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE roles SET name = ?, color = ?, permissions = ?, mentionable = ?, hoist = ? WHERE id = ?`,
+		rl.Name, rl.Color, rl.perms, rl.Mentionable, rl.Hoist, id); err != nil {
 		writeErr(w, r, err)
 		return
 	}

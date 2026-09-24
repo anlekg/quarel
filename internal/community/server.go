@@ -43,10 +43,11 @@ type Server struct {
 	voiceOpts *VoiceOptions  // nil: voice disabled
 	voice     *voiceRegistry // who is in which voice channel
 
-	key     ed25519.PrivateKey
-	network func(ctx context.Context) netdiag.Diagnosis // nil: no diagnosis available
-	proxies ratelimit.Proxies
-	limit   struct{ global, auth, messages *ratelimit.Limiter }
+	key      ed25519.PrivateKey
+	network  func(ctx context.Context) netdiag.Diagnosis // nil: no diagnosis available
+	proxies  ratelimit.Proxies
+	limit    struct{ global, auth, messages, uploads, typing *ratelimit.Limiter }
+	previews *previewer // nil: link previews disabled
 }
 
 // ServerID derives the public server identifier from its key.
@@ -90,6 +91,14 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, keys KeySource) *Server
 	s.limit.global = ratelimit.New(cfg.Limits.Global, time.Minute)
 	s.limit.auth = ratelimit.New(cfg.Limits.Auth, time.Minute)
 	s.limit.messages = ratelimit.New(cfg.Limits.Messages, 10*time.Second)
+	s.limit.uploads = ratelimit.New(cfg.Limits.Uploads, time.Minute)
+	s.limit.typing = ratelimit.New(1, 3*time.Second)
+	if s.cfg.MaxUploadBytes <= 0 {
+		s.cfg.MaxUploadBytes = 25 << 20
+	}
+	if cfg.LinkPreviews {
+		s.previews = newPreviewer(false)
+	}
 	return s
 }
 
@@ -251,6 +260,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/channels/{id}", s.authed(s.handleDeleteChannel))
 	mux.HandleFunc("PUT /v1/channels/{id}/overrides/{type}/{target}", s.authed(s.handleSetOverride))
 	mux.HandleFunc("DELETE /v1/channels/{id}/overrides/{type}/{target}", s.authed(s.handleSetOverride))
+
+	mux.HandleFunc("POST /v1/channels/{id}/attachments", s.authed(s.handleUpload))
+	mux.HandleFunc("GET /v1/attachments/{id}/{name}", s.authed(s.handleDownload))
+	mux.HandleFunc("PUT /v1/channels/{id}/messages/{mid}/reactions/{emoji}", s.authed(s.handleReaction))
+	mux.HandleFunc("DELETE /v1/channels/{id}/messages/{mid}/reactions/{emoji}", s.authed(s.handleReaction))
+	mux.HandleFunc("DELETE /v1/channels/{id}/messages/{mid}/reactions/{emoji}/{member}", s.authed(s.handleReaction))
+	mux.HandleFunc("GET /v1/channels/{id}/pins", s.authed(s.handleListPins))
+	mux.HandleFunc("PUT /v1/channels/{id}/pins/{mid}", s.authed(s.handlePin))
+	mux.HandleFunc("DELETE /v1/channels/{id}/pins/{mid}", s.authed(s.handlePin))
+	mux.HandleFunc("POST /v1/channels/{id}/messages/{mid}/threads", s.authed(s.handleCreateThread))
+	mux.HandleFunc("POST /v1/channels/{id}/typing", s.authed(s.handleTyping))
+	mux.HandleFunc("POST /v1/channels/{id}/ack", s.authed(s.handleAck))
+	mux.HandleFunc("GET /v1/read-states", s.authed(s.handleReadStates))
+	mux.HandleFunc("GET /v1/notification-settings", s.authed(s.handleListNotificationSettings))
+	mux.HandleFunc("PUT /v1/notification-settings/{id}", s.authed(s.handleSetNotification))
+	mux.HandleFunc("GET /v1/search", s.authed(s.handleSearch))
 
 	mux.HandleFunc("GET /v1/channels/{id}/messages", s.authed(s.handleListMessages))
 	mux.HandleFunc("POST /v1/channels/{id}/messages", s.authed(s.handleCreateMessage))

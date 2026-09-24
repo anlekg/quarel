@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,27 +29,44 @@ var (
 )
 
 type message struct {
-	ID              int64      `json:"id"`
-	ChannelID       int64      `json:"channel_id"`
-	AuthorID        string     `json:"author_id"`
-	Content         string     `json:"content"`
-	Mentions        []string   `json:"mentions"`      // member IDs
-	MentionRoles    []int64    `json:"mention_roles"` // role IDs
-	MentionEveryone bool       `json:"mention_everyone"`
-	CreatedAt       time.Time  `json:"created_at"`
-	EditedAt        *time.Time `json:"edited_at"`
+	ID              int64            `json:"id"`
+	ChannelID       int64            `json:"channel_id"`
+	AuthorID        string           `json:"author_id"`
+	Content         string           `json:"content"`
+	Mentions        []string         `json:"mentions"`      // member IDs
+	MentionRoles    []int64          `json:"mention_roles"` // role IDs
+	MentionEveryone bool             `json:"mention_everyone"`
+	ReplyTo         *int64           `json:"reply_to"`
+	Referenced      *referenced      `json:"referenced,omitempty"` // excerpt of the message replied to
+	Attachments     []attachmentJSON `json:"attachments"`
+	Embeds          []linkEmbed      `json:"embeds"`    // link previews
+	Reactions       []reactionCount  `json:"reactions"` // "me" is only set in direct API responses
+	PinnedAt        *time.Time       `json:"pinned_at"`
+	ThreadID        *int64           `json:"thread_id"` // thread started from this message
+	CreatedAt       time.Time        `json:"created_at"`
+	EditedAt        *time.Time       `json:"edited_at"`
 }
 
-const messageCols = `id, channel_id, author_id, content, mention_everyone, created_at, edited_at`
+type referenced struct {
+	ID       int64  `json:"id"`
+	AuthorID string `json:"author_id"`
+	Content  string `json:"content"` // first 200 characters
+}
+
+const messageCols = `id, channel_id, author_id, content, mention_everyone, created_at, edited_at, reply_to, pinned_at`
 
 func scanMessage(sc interface{ Scan(...any) error }) (*message, error) {
 	var m message
 	var created int64
-	var edited sql.NullInt64
-	if err := sc.Scan(&m.ID, &m.ChannelID, &m.AuthorID, &m.Content, &m.MentionEveryone, &created, &edited); err != nil {
+	var edited, replyTo, pinned sql.NullInt64
+	if err := sc.Scan(&m.ID, &m.ChannelID, &m.AuthorID, &m.Content, &m.MentionEveryone, &created, &edited, &replyTo, &pinned); err != nil {
 		return nil, err
 	}
-	m.CreatedAt, m.EditedAt, m.Mentions, m.MentionRoles = fromMs(created), nullTime(edited), []string{}, []int64{}
+	m.CreatedAt, m.EditedAt, m.PinnedAt = fromMs(created), nullTime(edited), nullTime(pinned)
+	if replyTo.Valid {
+		m.ReplyTo = &replyTo.Int64
+	}
+	m.Mentions, m.MentionRoles, m.Attachments, m.Embeds, m.Reactions = []string{}, []int64{}, []attachmentJSON{}, []linkEmbed{}, []reactionCount{}
 	return &m, nil
 }
 
@@ -63,14 +81,29 @@ func (s *Server) textChannel(r *http.Request, p perm) (*channel, *permSnapshot, 
 	if err != nil {
 		return nil, nil, err
 	}
-	if c.Type != chanText {
+	if !c.messaging() {
 		return nil, nil, errf(http.StatusBadRequest, "not_text_channel", "only text channels hold messages")
 	}
 	return c, ps, nil
 }
 
-func validContent(content string) (string, error) {
+// requirePost checks the member may post in c: announcement channels also need manage_messages.
+func requirePost(ps *permSnapshot, member string, c *channel, extra perm) error {
+	need := permSendMessages | extra
+	if c.Type == chanAnnouncement {
+		need |= permManageMessages
+	}
+	if have := ps.inChannel(member, c.ID); have&need != need {
+		return missing(need &^ have)
+	}
+	return nil
+}
+
+func validContent(content string, allowEmpty bool) (string, error) {
 	content = strings.TrimSpace(content)
+	if content == "" && allowEmpty {
+		return "", nil
+	}
 	if content == "" || len([]rune(content)) > maxMessageLen {
 		return "", errf(http.StatusBadRequest, "invalid_content", "message must be 1-%d characters", maxMessageLen)
 	}
@@ -236,7 +269,7 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 			msgs[i], msgs[j] = msgs[j], msgs[i]
 		}
 	}
-	if err := s.loadMentions(ctx, msgs); err != nil {
+	if err := s.enrich(ctx, memberFrom(r).ID, msgs); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -245,28 +278,52 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Content string `json:"content"`
+		Content     string   `json:"content"`
+		ReplyTo     int64    `json:"reply_to"`      // 0: not a reply
+		MentionAuth *bool    `json:"mention_reply"` // notify the replied author (default true)
+		Attachments []string `json:"attachments"`   // IDs from POST /v1/channels/{id}/attachments
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	c, ps, err := s.textChannel(r, permSendMessages)
+	c, ps, err := s.textChannel(r, 0)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
 	author := memberFrom(r).ID
+	extra := perm(0)
+	if len(req.Attachments) > 0 {
+		extra = permAttachFiles
+	}
+	if err := requirePost(ps, author, c, extra); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	if err := s.limit.messages.Check(author); err != nil {
 		writeErr(w, r, err)
 		return
 	}
+	if len(req.Attachments) > maxAttachmentsPerMessage {
+		writeErr(w, r, errf(http.StatusBadRequest, "too_many_attachments", "at most %d attachments per message", maxAttachmentsPerMessage))
+		return
+	}
 	msg := &message{ChannelID: c.ID, AuthorID: author}
-	if msg.Content, err = validContent(req.Content); err != nil {
+	if msg.Content, err = validContent(req.Content, len(req.Attachments) > 0); err != nil {
 		writeErr(w, r, err)
 		return
 	}
 	ctx := r.Context()
+	var repliedAuthor string
+	if req.ReplyTo != 0 {
+		err := s.db.QueryRowContext(ctx, `SELECT author_id FROM messages WHERE id = ? AND channel_id = ?`, req.ReplyTo, c.ID).Scan(&repliedAuthor)
+		if err != nil {
+			writeErr(w, r, errf(http.StatusBadRequest, "invalid_reply", "the message replied to is not in this channel"))
+			return
+		}
+		msg.ReplyTo = &req.ReplyTo
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		writeErr(w, r, err)
@@ -277,9 +334,12 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	if repliedAuthor != "" && repliedAuthor != author && (req.MentionAuth == nil || *req.MentionAuth) && !slices.Contains(msg.Mentions, repliedAuthor) {
+		msg.Mentions = append(msg.Mentions, repliedAuthor)
+	}
 	now := s.nowMs()
-	res, err := tx.ExecContext(ctx, `INSERT INTO messages (channel_id, author_id, content, mention_everyone, created_at) VALUES (?, ?, ?, ?, ?)`,
-		c.ID, author, msg.Content, msg.MentionEveryone, now)
+	res, err := tx.ExecContext(ctx, `INSERT INTO messages (channel_id, author_id, content, mention_everyone, created_at, reply_to) VALUES (?, ?, ?, ?, ?, ?)`,
+		c.ID, author, msg.Content, msg.MentionEveryone, now, msg.ReplyTo)
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -290,11 +350,33 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	for _, id := range req.Attachments {
+		res, err := tx.ExecContext(ctx, `UPDATE attachments SET message_id = ? WHERE id = ? AND uploader_id = ? AND channel_id = ? AND message_id IS NULL`,
+			msg.ID, id, author, c.ID)
+		if err != nil {
+			writeErr(w, r, err)
+			return
+		}
+		if n, _ := res.RowsAffected(); n != 1 {
+			writeErr(w, r, errf(http.StatusBadRequest, "invalid_attachment", "attachment %q is not an upload of yours in this channel", id))
+			return
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO read_states (member_id, channel_id, last_read) VALUES (?, ?, ?)
+		ON CONFLICT (member_id, channel_id) DO UPDATE SET last_read = MAX(last_read, excluded.last_read)`, author, c.ID, msg.ID); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		writeErr(w, r, err)
 		return
 	}
+	if err := s.enrich(ctx, "", []*message{msg}); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	s.broadcastChannel(ctx, "MESSAGE_CREATE", c.ID, msg)
+	s.schedulePreviews(msg)
 	writeJSON(w, http.StatusCreated, msg)
 }
 
@@ -334,11 +416,13 @@ func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, errf(http.StatusForbidden, "forbidden", "you can only edit your own messages"))
 		return
 	}
-	if msg.Content, err = validContent(req.Content); err != nil {
+	ctx := r.Context()
+	var attachments int
+	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM attachments WHERE message_id = ?`, msg.ID).Scan(&attachments)
+	if msg.Content, err = validContent(req.Content, attachments > 0); err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	ctx := r.Context()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		writeErr(w, r, err)
@@ -359,13 +443,22 @@ func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM link_previews WHERE message_id = ?`, msg.ID); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		writeErr(w, r, err)
 		return
 	}
 	edited := fromMs(now)
 	msg.EditedAt = &edited
+	if err := s.enrich(ctx, "", []*message{msg}); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	s.broadcastChannel(ctx, "MESSAGE_UPDATE", c.ID, msg)
+	s.schedulePreviews(msg)
 	writeJSON(w, http.StatusOK, msg)
 }
 
@@ -383,10 +476,12 @@ func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	files := s.attachmentIDs(ctx, `message_id = ?`, msg.ID)
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM messages WHERE id = ?`, msg.ID); err != nil {
 		writeErr(w, r, err)
 		return
 	}
+	s.removeFiles(files)
 	s.broadcastChannel(ctx, "MESSAGE_DELETE", c.ID, map[string]int64{"id": msg.ID, "channel_id": msg.ChannelID})
 	w.WriteHeader(http.StatusNoContent)
 }

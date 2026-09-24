@@ -55,6 +55,31 @@ type messageInfo struct {
 	MentionEveryone bool       `json:"mention_everyone"`
 	CreatedAt       time.Time  `json:"created_at"`
 	EditedAt        *time.Time `json:"edited_at"`
+	ReplyTo         *int64     `json:"reply_to"`
+	Referenced      *struct {
+		AuthorID string `json:"author_id"`
+		Content  string `json:"content"`
+	} `json:"referenced"`
+	Attachments []attachmentInfo `json:"attachments"`
+	Embeds      []struct {
+		URL, Title, Description string
+		SiteName                string `json:"site_name"`
+	} `json:"embeds"`
+	Reactions []struct {
+		Emoji string `json:"emoji"`
+		Count int    `json:"count"`
+		Me    bool   `json:"me"`
+	} `json:"reactions"`
+	PinnedAt *time.Time `json:"pinned_at"`
+	ThreadID *int64     `json:"thread_id"`
+}
+
+type attachmentInfo struct {
+	ID          string `json:"id"`
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	Size        int64  `json:"size"`
+	URL         string `json:"url"`
 }
 
 type serverInfo struct {
@@ -117,6 +142,30 @@ func (c *cli) runCommunity(cmd string, args []string) (bool, error) {
 		err = c.deleteMessage(args)
 	case "listen":
 		err = c.listen()
+	case "reply":
+		err = c.reply(args)
+	case "react", "unreact":
+		err = c.react(cmd == "react", args)
+	case "pin", "unpin":
+		err = c.pin(cmd == "pin", args)
+	case "pins":
+		err = c.pins(args)
+	case "send-file":
+		err = c.sendFile(args)
+	case "download":
+		err = c.downloadCmd(args)
+	case "search":
+		err = c.search(args)
+	case "thread":
+		err = c.thread(args)
+	case "unread":
+		err = c.unread()
+	case "read":
+		err = c.markRead(args)
+	case "typing":
+		err = c.typing(args)
+	case "notify":
+		err = c.notify(args)
 	case "members":
 		err = c.printMembers()
 	case "nick":
@@ -394,7 +443,7 @@ func resolveChannel(list []channelInfo, arg, wantType string) (*channelInfo, err
 	return nil, fmt.Errorf("plusieurs salons s'appellent %q : utilisez leur id", arg)
 }
 
-var typeIcon = map[string]string{"text": "#", "voice": "🔊", "category": "▾"}
+var typeIcon = map[string]string{"text": "#", "voice": "🔊", "category": "▾", "announcement": "📢", "thread": "🧵"}
 
 func (c *cli) printChannels() error {
 	list, err := c.channels()
@@ -421,17 +470,19 @@ func (c *cli) printChannels() error {
 		}
 		fmt.Printf("%s%s %s%s  (id %d)%s\n", indent, typeIcon[ch.Type], ch.Name, lock, ch.ID, topic)
 	}
-	for _, ch := range top {
-		line("", ch)
-		for _, sub := range children[ch.ID] {
-			line("    ", sub)
+	var walk func(indent string, chs []channelInfo)
+	walk = func(indent string, chs []channelInfo) { // category → channel → thread
+		for _, ch := range chs {
+			line(indent, ch)
+			walk(indent+"    ", children[ch.ID])
 		}
 	}
+	walk("", top)
 	return nil
 }
 
 func (c *cli) channelCreate(args []string) error {
-	if err := need(args, 1, "<nom> [text|voice|category] [catégorie]"); err != nil {
+	if err := need(args, 1, "<nom> [text|voice|category|announcement] [catégorie]"); err != nil {
 		return err
 	}
 	body := map[string]any{"name": args[0], "type": "text"}
@@ -619,8 +670,63 @@ func formatMessage(m messageInfo, members map[string]memberInfo) string {
 	if m.EditedAt != nil {
 		edited = " (modifié)"
 	}
-	return fmt.Sprintf("[%s] %-5d %s : %s%s", m.CreatedAt.Local().Format("01-02 15:04"), m.ID,
-		authorName(members, m.AuthorID), fromMentions(m.Content, members), edited)
+	var b strings.Builder
+	if m.Referenced != nil {
+		fmt.Fprintf(&b, "                 ↱ %s : %s\n", authorName(members, m.Referenced.AuthorID), excerpt(fromMentions(m.Referenced.Content, members), 60))
+	} else if m.ReplyTo != nil {
+		b.WriteString("                 ↱ (message supprimé)\n")
+	}
+	pin := ""
+	if m.PinnedAt != nil {
+		pin = "📌 "
+	}
+	fmt.Fprintf(&b, "[%s] %-5d %s%s : %s%s", m.CreatedAt.Local().Format("01-02 15:04"), m.ID,
+		pin, authorName(members, m.AuthorID), fromMentions(m.Content, members), edited)
+	for _, a := range m.Attachments {
+		fmt.Fprintf(&b, "\n        📎 %s (%s, %s) — quarelctl download %s", a.Filename, a.ContentType, humanSize(a.Size), a.ID)
+	}
+	for _, e := range m.Embeds {
+		site := e.SiteName
+		if site == "" {
+			site = e.URL
+		}
+		fmt.Fprintf(&b, "\n        🔗 %s — %s", site, e.Title)
+		if e.Description != "" {
+			fmt.Fprintf(&b, " : %s", excerpt(e.Description, 80))
+		}
+	}
+	if len(m.Reactions) > 0 {
+		b.WriteString("\n       ")
+		for _, r := range m.Reactions {
+			mine := ""
+			if r.Me {
+				mine = "*"
+			}
+			fmt.Fprintf(&b, " %s %d%s", r.Emoji, r.Count, mine)
+		}
+	}
+	if m.ThreadID != nil {
+		fmt.Fprintf(&b, "\n        🧵 fil de discussion : salon %d", *m.ThreadID)
+	}
+	return b.String()
+}
+
+func excerpt(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if rs := []rune(s); len(rs) > n {
+		return string(rs[:n]) + "…"
+	}
+	return s
+}
+
+func humanSize(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f Mo", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f ko", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%d o", n)
 }
 
 func (c *cli) textChannel(arg string) (*channelInfo, error) {
@@ -628,7 +734,11 @@ func (c *cli) textChannel(arg string) (*channelInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return resolveChannel(list, arg, "text")
+	ch, err := resolveChannel(list, arg, "")
+	if err == nil && ch.Type != "text" && ch.Type != "announcement" && ch.Type != "thread" {
+		err = fmt.Errorf("%s n'est pas un salon textuel", ch.Name)
+	}
+	return ch, err
 }
 
 func (c *cli) send(args []string) error {
@@ -895,6 +1005,12 @@ func (c *cli) listen() error {
 				ping = "   🔔 @everyone"
 			}
 			fmt.Printf("%s %s%-12s %d  %s : %s%s\n", now, verb, chanName(m.ChannelID), m.ID, authorName(members, m.AuthorID), fromMentions(m.Content, members), ping)
+			for _, a := range m.Attachments {
+				fmt.Printf("         📎 %s (%s)\n", a.Filename, humanSize(a.Size))
+			}
+			for _, e := range m.Embeds {
+				fmt.Printf("         🔗 %s\n", e.Title)
+			}
 		case "MESSAGE_DELETE":
 			var d struct {
 				ID        int64 `json:"id"`
@@ -970,6 +1086,37 @@ func (c *cli) listen() error {
 			} else {
 				fmt.Printf("%s 🔊 %s dans %s%s\n", now, authorName(members, v.MemberID), chanName(*v.ChannelID), v.flags())
 			}
+		case "TYPING_START":
+			var d struct {
+				ChannelID int64  `json:"channel_id"`
+				MemberID  string `json:"member_id"`
+			}
+			json.Unmarshal(ev.D, &d)
+			if d.MemberID != me {
+				fmt.Printf("%s … %s écrit dans %s\n", now, authorName(members, d.MemberID), chanName(d.ChannelID))
+			}
+		case "REACTION_ADD", "REACTION_REMOVE":
+			var d struct {
+				ChannelID int64  `json:"channel_id"`
+				MessageID int64  `json:"message_id"`
+				Emoji     string `json:"emoji"`
+				MemberID  string `json:"member_id"`
+			}
+			json.Unmarshal(ev.D, &d)
+			verb := "réagit"
+			if ev.T == "REACTION_REMOVE" {
+				verb = "retire sa réaction"
+			}
+			fmt.Printf("%s %s %s %s au message %d de %s\n", now, d.Emoji, authorName(members, d.MemberID), verb, d.MessageID, chanName(d.ChannelID))
+		case "READ_STATE_UPDATE":
+			var d struct {
+				ChannelID int64 `json:"channel_id"`
+				Unread    int   `json:"unread"`
+			}
+			json.Unmarshal(ev.D, &d)
+			fmt.Printf("%s ✓ %s lu (sur un de vos appareils), %d non lu(s)\n", now, chanName(d.ChannelID), d.Unread)
+		case "NOTIFICATION_SETTINGS_UPDATE":
+			fmt.Printf("%s ⚙ vos réglages de notification ont changé\n", now)
 		case "SERVER_UPDATE":
 			var s serverInfo
 			json.Unmarshal(ev.D, &s)

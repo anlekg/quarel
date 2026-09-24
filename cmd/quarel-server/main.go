@@ -83,6 +83,19 @@ func run() error {
 		return netdiag.Diagnose(st, ip, ports)
 	})
 
+	go func() { // unsent uploads and orphaned files
+		for {
+			if err := srv.CleanupAttachments(ctx); err != nil {
+				slog.Warn("attachment cleanup", "err", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Hour):
+			}
+		}
+	}()
+
 	// Loopback-only listener for LiveKit webhooks (plain HTTP: LiveKit cannot
 	// verify our self-signed certificate).
 	internal, err := net.Listen("tcp", "127.0.0.1:0")
