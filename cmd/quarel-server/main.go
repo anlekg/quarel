@@ -3,6 +3,8 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,11 +13,13 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/anlekg/quarel/internal/backup"
 	"github.com/anlekg/quarel/internal/community"
 	"github.com/anlekg/quarel/internal/netdiag"
 	"github.com/anlekg/quarel/internal/voice"
@@ -23,7 +27,42 @@ import (
 
 const upnpLease = time.Hour
 
+// opsTool: backup, restore and version, on the data directory of QUAREL_DATA_DIR.
+func opsTool() backup.Tool {
+	dir := os.Getenv("QUAREL_DATA_DIR")
+	if dir == "" {
+		dir = "./data"
+	}
+	return backup.Tool{
+		Spec: backup.Spec{Kind: "quarel-server", DataDir: dir, Database: "server.db", Required: []string{"server.key"},
+			Files: []string{"livekit.keys"}, Dirs: []string{"attachments", "acme"}},
+		MaxSchema: community.SchemaVersion(),
+		Identity: func() (string, bool) {
+			data, err := os.ReadFile(filepath.Join(dir, "server.key"))
+			if err != nil {
+				return "", false
+			}
+			seed, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(data)))
+			if err != nil || len(seed) != ed25519.SeedSize {
+				return "", false
+			}
+			return "serveur " + community.ServerID(ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)), true
+		},
+	}
+}
+
 func main() {
+	if len(os.Args) > 1 {
+		if handled, err := opsTool().Run(os.Args[1], os.Args[2:]); handled {
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "erreur :", err)
+				os.Exit(1)
+			}
+			return
+		}
+		fmt.Fprintln(os.Stderr, "usage : quarel-server [backup <fichier> | restore <fichier> [--force] | version]")
+		os.Exit(2)
+	}
 	if err := run(); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)

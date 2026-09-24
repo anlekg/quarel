@@ -34,14 +34,21 @@ Avec Docker, la plage de ports du relais doit être publiée telle quelle (voir 
 
 ## Sauvegardes
 
-Le volume `identity-data` contient **la base** (`identity.db`) et **la clé de signature** (`signing.key`). Perdre la clé oblige tous les serveurs à recharger vos clés (automatique) mais invalide les jetons en cours ; la voir volée permettrait d'usurper n'importe quel compte de votre service. Sauvegardez le volume chiffré, par exemple :
+Le volume `identity-data` contient **la base** (`identity.db`), **la clé de signature** (`signing.key`) et les fichiers chiffrés des conversations. Perdre la clé invalide les jetons en cours ; la voir volée permettrait d'usurper n'importe quel compte de votre service. La sauvegarde intégrée fonctionne service en marche :
 
 ```sh
-docker run --rm -v identity_identity-data:/data -v "$PWD":/out alpine \
-  tar czf /out/identity-$(date +%F).tar.gz -C /data .
+docker compose exec -T identity /quarel-identity backup - > identity-$(date +%F).tar.gz
 ```
 
-(Le nom exact du volume est donné par `docker volume ls`.)
+Restauration (service arrêté ; les données présentes sont mises de côté, jamais effacées) :
+
+```sh
+docker compose stop identity
+docker compose run --rm -T identity restore - --force < identity-2026-09-24.tar.gz
+docker compose start identity
+```
+
+Gardez les sauvegardes chiffrées, hors de la machine.
 
 ## Outils de l'opérateur
 
@@ -71,4 +78,4 @@ L'ancienne clé privée est détruite ; sa clé publique reste publiée le temps
 git pull && docker compose up -d --build
 ```
 
-La base est migrée automatiquement au démarrage ; faites une sauvegarde avant.
+La base est migrée automatiquement au démarrage, après en avoir gardé une copie (`identity.db.pre-v<version>-<date>`). Une ancienne version refuse de démarrer sur une base plus récente. Faites tout de même une sauvegarde avant.

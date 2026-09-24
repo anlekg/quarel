@@ -187,6 +187,9 @@ Deux types de serveurs :
 | 2026-09-24 | Signalisation des appels **chiffrée de bout en bout** (messages Olm), sans « trickle ICE » | Le service central ne voit ni les adresses IP ni les paramètres des appels (privacy) ; une seule offre et une seule réponse suffisent. |
 | 2026-09-24 | *(à valider par le CP)* Relais TURN **intégré au service Identity** (Pion, MIT), identifiants temporaires par compte, jamais vers des adresses privées | Installation en une commande, sans service tiers ; pas de relais ouvert ni de rebond vers le réseau de l'hébergeur. Coût : la bande passante des appels relayés est à la charge de l'instance centrale. |
 | 2026-09-24 | Refus du relais = **réglage du client** | C'est l'appareil qui choisit ses chemins : le serveur n'a pas besoin de le savoir. |
+| 2026-09-24 | Sauvegarde = une archive `.tar.gz` par service, **à chaud** (copie SQLite cohérente), clés comprises | Une seule commande, sans arrêt ; sans la clé, un serveur restauré aurait une autre identité. |
+| 2026-09-24 | Restauration : vérification complète avant d'écrire, **jamais d'effacement** (anciennes données mises de côté), `--force` obligatoire par-dessus des données | Impossible de perdre des données par erreur de manipulation. |
+| 2026-09-24 | Mises à jour : **copie automatique de la base avant chaque migration**, refus de démarrer une ancienne version sur une base récente | « Mise à jour sans perte » même sans sauvegarde manuelle. |
 
 ---
 
@@ -377,4 +380,16 @@ Demande du CP : « on finit la P1 ! ». Découpage annoncé en 7 blocs (messages
 **Non testé en conditions réelles :** appel entre deux réseaux domestiques distincts derrière des NAT (nécessite deux accès Internet ; la logique direct/relais est la même que testée en local) ; client graphique (le futur client utilisera la même signalisation).
 
 **Guide de test du CP :** `docs/tests/p1-bloc-6.md`.
+
+### P1 — Bloc 7 : exploitation des serveurs (livré le 2026-09-24)
+
+**Livré :** commandes `backup`, `restore` et `version` pour le serveur communautaire et le service Identity (à chaud, vérifiées, sans écrasement), copie de la base avant chaque mise à jour de schéma, refus des retours arrière dangereux, guide de l'hébergeur (`docs/heberger-un-serveur.md`) et procédures Docker.
+
+**Validation :** tests unitaires (aller-retour sauvegarde/restauration avec base ouverte, refus sans `--force`, anciennes données conservées, mauvais type, version trop récente, chemins hors dossier et archive invalide refusés, clé absente ; copie avant migration et refus d'une base plus récente) ; `make e2e-ops` (15/15) avec les vrais binaires en marche ; procédure Docker vérifiée (sauvegarde depuis un conteneur en marche, restauration dans un volume neuf, **même identité de serveur**). Bug trouvé et corrigé : l'utilisateur non-root du conteneur ne pouvait pas lire une sauvegarde de l'hôte → restauration depuis l'entrée standard.
+
+**Guide de test du CP :** `docs/tests/p1-bloc-7.md`.
+
+### Bilan : P1 serveur terminée (2026-09-24)
+
+Les sept blocs annoncés sont livrés, testés et poussés : **toute la P1 côté serveurs est faite**. Reste en P1 le **client graphique** (C), prévu pour le dernier jalon comme convenu. Décisions marquées *(à valider par le CP)* ci-dessus : à passer en revue ensemble.
 

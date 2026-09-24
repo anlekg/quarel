@@ -229,5 +229,8 @@ ALTER TABLE members ADD COLUMN voice_deaf INTEGER NOT NULL DEFAULT 0;
 `,
 }
 
+// SchemaVersion is the database version this program creates and understands.
+func SchemaVersion() int { return len(migrations) }
+
 // OpenDB opens (creating if needed) the SQLite database at path and applies migrations.
 func OpenDB(path string) (*sql.DB, error) { return sqlitedb.Open(path, migrations) }

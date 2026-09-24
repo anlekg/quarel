@@ -12,11 +12,37 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anlekg/quarel/internal/backup"
 	"github.com/anlekg/quarel/internal/identity"
 	"github.com/anlekg/quarel/internal/tlsconf"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] != "admin" {
+		dir := os.Getenv("QUAREL_DATA_DIR")
+		if dir == "" {
+			dir = "./data"
+		}
+		tool := backup.Tool{
+			Spec: backup.Spec{Kind: "quarel-identity", DataDir: dir, Database: "identity.db", Required: []string{"signing.key"},
+				Files: []string{"retired-keys.json", "turn.secret"}, Dirs: []string{"dm-files", "acme"}},
+			MaxSchema: identity.SchemaVersion(),
+			Identity: func() (string, bool) {
+				iss := os.Getenv("QUAREL_ISSUER")
+				return "service " + iss, iss != ""
+			},
+		}
+		handled, err := tool.Run(os.Args[1], os.Args[2:])
+		if !handled {
+			fmt.Fprintln(os.Stderr, "usage : quarel-identity [admin … | backup <fichier> | restore <fichier> [--force] | version]")
+			os.Exit(2)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "erreur :", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "admin" {
 		if err := admin(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "erreur :", err)

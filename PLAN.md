@@ -73,8 +73,8 @@
 - [x] **P0** Création du propriétaire au premier démarrage (lien ou code de revendication)
 - [x] **P1** UPnP : ouverture automatique des ports + diagnostic de joignabilité
 - [x] **P1** HTTPS : certificat automatique (Let's Encrypt) ou auto-signé épinglé
-- [ ] **P1** Sauvegarde / restauration (export des données)
-- [ ] **P1** Mise à jour sans perte de données
+- [x] **P1** Sauvegarde / restauration (export des données)
+- [x] **P1** Mise à jour sans perte de données
 - [ ] **P2** Exécutable Windows (`.exe`)
 
 ### B2. Accès et membres

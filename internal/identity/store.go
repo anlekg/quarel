@@ -243,5 +243,8 @@ ALTER TABLE users ADD COLUMN share_read_receipts INTEGER NOT NULL DEFAULT 1;
 `,
 }
 
+// SchemaVersion is the database version this program creates and understands.
+func SchemaVersion() int { return len(migrations) }
+
 // OpenDB opens (creating if needed) the SQLite database at path and applies migrations.
 func OpenDB(path string) (*sql.DB, error) { return sqlitedb.Open(path, migrations) }

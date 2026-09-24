@@ -68,7 +68,8 @@ internal/ratelimit/     limiteurs en mémoire (seaux de jetons), IP client derri
 internal/tlsconf/       modes HTTPS : off, self-signed, acme (Let's Encrypt), files
 internal/netdiag/       UPnP (ouverture/renouvellement des ports), STUN (IP publique), diagnostic de joignabilité
 internal/httpapi/       conventions JSON partagées (erreurs, décodage strict)
-internal/sqlitedb/      ouverture SQLite + migrations (PRAGMA user_version)
+internal/sqlitedb/      ouverture SQLite + migrations (PRAGMA user_version), copie de la base avant migration
+internal/backup/        sauvegarde/restauration d'un dossier de données (archive .tar.gz + manifeste), commandes backup/restore/version
 internal/secret/        identifiants aléatoires, jetons porteurs, fichiers de clés Ed25519
 pkg/idtoken/            jetons d'identité portables (émission, vérification, preuve d'appareil)
 pkg/e2ekeys/            messages signés des clés E2E (partagés serveur/clients), code de vérification
@@ -79,6 +80,7 @@ test/e2e/               tests de bout en bout : vocal (Playwright), MP chiffrés
                         limites), messages P1 (messages.sh), modération P1 (moderation.sh), ACME contre Pebble (acmeshim : corrige une différence de Pebble avec Let's Encrypt)
 examples/pingbot/       bot d'exemple (répond « pong » à « !ping ») : jeton de bot, passerelle, REST
 deploy/identity/        déploiement Docker Compose du service Identity (Let's Encrypt ou derrière un proxy)
+docs/heberger-un-serveur.md   guide de l'hébergeur d'un serveur communautaire (installation, sauvegarde, restauration, mises à jour)
 docs/api.md             documentation publique de l'API des serveurs communautaires (bots, clients)
 Dockerfile.identity     image distroless (~25 Mo), volume /data, ports 8080/tcp et 3478/udp (relais d'appels)
 Dockerfile.server       image distroless + livekit-server (~141 Mo), volume /data, ports 8090/tcp, 7881/tcp, 7882/udp
@@ -380,6 +382,13 @@ Messages : `QUAREL_MAX_UPLOAD_MB` (25), `QUAREL_LINK_PREVIEWS` (`on`). Limites s
 
 `QUAREL_ADDR` (`:8090`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_SERVER_NAME` (nom au 1er démarrage seulement), `QUAREL_TRUSTED_ISSUERS` (liste séparée par des virgules ; défaut `identity.quarel.app`, instance officielle — domaine `quarel.app` choisi par le CP ; **ce nom ne doit jamais changer**, il fait partie de chaque identité).
 
+## Exploitation : sauvegarde, restauration, mises à jour (P1 bloc 7)
+
+- **`quarel-server backup <fichier|->`** et **`quarel-identity backup <fichier|->`** (service en marche) : archive `.tar.gz` = manifeste `quarel-backup.json` (`{format, kind, created_at, schema_version, identity, files}`) + **copie cohérente de la base** (`VACUUM INTO`, sans arrêter le service) + clés (`server.key` ; `signing.key`, `retired-keys.json`, `turn.secret`) + dossiers (`attachments`, `acme` ; `dm-files`, `acme`). Jamais d'écrasement d'un fichier existant. `-` = sortie standard (Docker : `docker exec … backup - > f.tar.gz`).
+- **`restore <fichier|-> [--force]`** (service arrêté) : tout est vérifié **avant** d'écrire (type de service, format, version de schéma ≤ celle du programme, base et clés présentes, aucun chemin hors du dossier) ; extraction dans un dossier temporaire du dossier de données ; données existantes refusées sans `--force`, sinon **déplacées** dans `before-restore-<date>/` (fonctionne aussi quand le dossier de données est un point de montage Docker). `-` = entrée standard (Docker : l'utilisateur du conteneur ne peut pas lire un fichier 0600 de l'hôte). L'identité restaurée (ID du serveur) est comparée au manifeste.
+- **`version`** : version (révision VCS) et version du schéma de base.
+- **Mises à jour sans perte** (`sqlitedb.Open`) : avant d'appliquer des migrations à une base existante, copie `…db.pre-v<ancienne version>-<date>` (3 dernières gardées) ; une base plus récente que le programme est refusée (pas de retour arrière destructeur).
+
 ## Commandes
 
 ```sh
@@ -397,9 +406,11 @@ make e2e-security     # récupération, HTTPS lié à l'identité, limites (18 v
 make e2e-acme         # HTTPS via ACME contre Pebble (Docker)
 make e2e-messages     # réponses, réactions, fichiers, recherche, fils, non-lus (18 vérifications)
 make e2e-moderation   # exclusion, purge, journal, règles, téléphone, bots avec examples/pingbot (24 vérifications)
+make e2e-ops          # sauvegardes à chaud des deux services, restauration, retour à l'identique (15 vérifications)
 make e2e-calls        # appels pair à pair réels (WebRTC) : direct, par le relais TURN, relais refusé (10 vérifications)
 make e2e-dm-groups    # groupes, modification/suppression, fichiers chiffrés, frappe, lecture (22 vérifications)
 make e2e-accounts     # comptes : mots de passe, email, pseudo, profil, blocage, présence, suppression, outil opérateur (30 vérifications)
+./bin/quarel-server backup f.tar.gz   # sauvegarde à chaud (idem quarel-identity), restore f.tar.gz [--force], version
 ./bin/quarelctl help  # client de test
 ```
 
