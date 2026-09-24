@@ -398,15 +398,23 @@ Messages : `QUAREL_MAX_UPLOAD_MB` (25), `QUAREL_LINK_PREVIEWS` (`on`). Limites s
 ## Client graphique (jalon 7, `client/`)
 
 - **Maquettes validées par le CP** (2026-09-24) : thème sombre, fonds `#111317` / `#16191F` / `#1C2027` / `#242933`, accent `#5FB8A5` (texte `#0E1A17` dessus), Manrope (texte) et Space Grotesk (titres), icônes au trait. Jetons de couleur dans `src/styles/app.css`. Textes en français, neutres en genre.
-- **Étapes** : 1. comptes ✅, 2. serveurs, salons et messages, 3. vocal et vidéo, 4. amis et MP chiffrés (vodozemac), 5. appels, 6. paramètres, 7. version web.
+- **Étapes** : 1. comptes ✅, 2. serveurs, salons et messages ✅, 3. vocal et vidéo, 4. amis et MP chiffrés (vodozemac), 5. appels, 6. paramètres, 7. version web.
 - **Arborescence** : `electron/main.ts` (fenêtre, secrets, permissions), `electron/preload.ts` (seul pont : `window.quarelDesktop.secrets`, `info()`), `src/platform/` (hôte : Electron ou navigateur), `src/api/` (clients HTTP, erreurs `ApiError`), `src/state/` (compte connecté), `src/screens/` (écrans), `src/components/` (champs, boutons, icônes), `src/lib/` (clé d'appareil, adresses, messages d'erreur), `e2e/` (Playwright pilotant Electron).
 - **Sécurité** : `contextIsolation`, `sandbox`, pas de `nodeIntegration` ; navigation hors de l'application interdite, liens ouverts dans le navigateur du système ; CSP dans `index.html` (`connect-src` ouvert : services auto-hébergés) ; IPC acceptée seulement depuis la page de l'application ; permissions accordées : micro/caméra, notifications, presse-papiers, plein écran.
 - **Secrets** (`secrets.json` dans le dossier de l'application, chiffré par `safeStorage`) : `account` (service, émetteur, session, utilisateur), `device-seed:<service>` (graine Ed25519 de l'appareil, **une par service d'identité**). Linux sans trousseau : chiffrement en clair (`setUsePlainTextEncryption`), `info().secureStorage = false`. Client web : `localStorage`. Préférences non secrètes (`quarel.pref.*`) : dernier service, dernier identifiant.
 - **Service d'identité** : saisi sans schéma → `https://`, sauf boucle locale (`http://`) ; validé par `/.well-known/quarel-identity`. Défaut : `identity.quarel.app`.
 - **Session** : restaurée au lancement (`GET /v1/me`) ; 401 → retour à la connexion avec un message ; service injoignable → session gardée.
-- **Tests** : `make client-test` (types + vitest), `make e2e-client` (Electron sous `xvfb-run` contre un vrai `quarel-identity`, codes lus dans son journal, TOTP calculé par le test). `QUAREL_USER_DATA` change le dossier de données de l'application (tests), `QUAREL_DEV_URL` charge l'interface depuis Vite (`make client-dev`).
+- **Tests** : `make client-test` (types + vitest), `make e2e-client` (Electron sous `xvfb-run` contre un vrai `quarel-identity` et un vrai `quarel-server` auto-signé ; une autre personne agit via `quarelctl` ; codes lus dans le journal, TOTP calculé par le test). `QUAREL_USER_DATA` change le dossier de données de l'application (tests), `QUAREL_DEV_URL` charge l'interface depuis Vite (`make client-dev`).
 - **Dépendances** : licences vérifiées (MIT, ISC, BSD, Apache-2.0, MPL-2.0, OFL-1.1 pour les polices). `npm` 11 bloque les scripts d'installation : ceux d'`electron` et `esbuild` sont autorisés dans `package.json` (`allowScripts`). Sous Linux, `chrome-sandbox` d'Electron doit appartenir à root avec le mode 4755 (fait sur la machine de dev).
 - **Serveurs** : `httpapi.CORS` (origine `*`, préflight répondu directement) enveloppe les deux services.
+- **Serveurs communautaires dans le client** (étape 2) :
+  - **Certificat auto-signé** : `electron/tlsbind.ts` refait `pkg/tlsbind` (liaison `quarel://binding/…`, `server_id` = base32 de SHA-256[:16]). Chromium **met en cache ses décisions de certificat, refus compris, pour toute la session** (documenté par Electron, aucun moyen de vider ce cache) : un nouveau serveur est donc d'abord contrôlé par le processus principal avec sa propre connexion TLS (`tls:check` → `authority` | `binding` | `mismatch` | `unreachable`) ; seulement s'il correspond, son `sid` est épinglé (`tls:pin`, `server-pins.json`, par nom d'hôte) et `setCertificateVerifyProc` accepte ce certificat pour Chromium. Certificat d'autorité : vérification normale. Le client web ne peut joindre que des serveurs à certificat d'autorité.
+  - **Connexion** (`src/state/servers.ts`, `communityLogin`) : jeton d'identité (`POST /v1/identity/token`) + défi du serveur (son `server_id` doit être celui du lien) + preuve `quarel-auth-v1\0<sid>\0<nonce>` signée par la clé d'appareil. Session relancée automatiquement à l'expiration ou sur 401/4001 ; `banned`/`invite_required`/`account_disabled` → serveur marqué « retiré ».
+  - **Temps réel** : une `ServerConn` par serveur (WebSocket, reconnexion 1 s → 30 s, état immuable par instantanés pour React) ; READY vide le cache de messages (rechargé à la demande). Événements gérés : messages (création, modification, suppression, en masse), réactions, frappe, lecture, salons, `CHANNELS_SYNC`, membres, rôles, serveur, vocal (affichage seulement).
+  - **Liste des serveurs** : secret `servers:<id utilisateur>` (adresse, `sid`, session). Invitation : `quarel://hôte:port/CODE?sid=…` (`src/lib/invite.ts`).
+  - **Affichage des messages** : rendu sans HTML (`MessageContent` : blocs de code, code, gras, italique, liens, mentions) ; `@pseudo` tapé → `<@id>` à l'envoi (`encodeMentions`) ; pièces jointes téléchargées avec le jeton puis affichées en URL locale (`blob:`) ; aperçus de liens **sans image** (charger l'image révélerait l'adresse IP au site). Regroupement des messages d'un même auteur à moins de 7 min, séparateurs de jour.
+  - **Écrans d'arrivée** : règles (`rules_not_accepted`), téléphone (`phone_not_verified`), exclusion temporaire (lecture seule), serveur retiré (expulsion, bannissement).
+  - **Pas encore** : fils (affichés, pas créés), épingles, recherche, réglages de notification, modération et administration (étape 6), vocal (étape 3).
 
 ## Exploitation : sauvegarde, restauration, mises à jour (P1 bloc 7)
 
@@ -439,7 +447,7 @@ make e2e-accounts     # comptes : mots de passe, email, pseudo, profil, blocage,
 make client-dev       # application desktop en développement (lancer d'abord make run-identity)
 make client-build     # construit l'interface et les processus Electron
 make client-test      # types et tests unitaires du client
-make e2e-client       # application Electron réelle contre un vrai service Identity (xvfb-run)
+make e2e-client       # application Electron réelle contre de vrais services (xvfb-run) : comptes, serveurs et messages
 ./bin/quarel-server backup f.tar.gz   # sauvegarde à chaud (idem quarel-identity), restore f.tar.gz [--force], version
 ./bin/quarelctl help  # client de test
 ```

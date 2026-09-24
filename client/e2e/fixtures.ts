@@ -1,6 +1,6 @@
 // Test helpers: a throwaway Identity service, the desktop app, TOTP codes.
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { createHmac, generateKeyPairSync } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -101,4 +101,70 @@ export function totp(secretB32: string, at = Date.now()): string {
   const h = createHmac('sha1', key).update(counter).digest()
   const o = h[h.length - 1] & 0xf
   return ((h.readUInt32BE(o) & 0x7fffffff) % 1_000_000).toString().padStart(6, '0')
+}
+
+// A community server (self-signed certificate bound to its identity).
+export class Community {
+  proc!: ChildProcess
+  log = ''
+  dir = mkdtempSync(join(tmpdir(), 'quarel-srv-'))
+  constructor(public port: number, public issuer: string) {}
+
+  async start() {
+    this.proc = spawn(join(repo, 'bin', 'quarel-server'), [], {
+      env: {
+        ...process.env,
+        QUAREL_ADDR: '127.0.0.1:' + this.port,
+        QUAREL_TRUSTED_ISSUERS: this.issuer,
+        QUAREL_DATA_DIR: this.dir,
+        QUAREL_UPNP: 'off',
+        QUAREL_VOICE: 'off',
+        QUAREL_RATE_LIMITS: 'off',
+        QUAREL_LINK_PREVIEWS: 'off',
+      },
+    })
+    this.proc.stdout!.on('data', (d) => (this.log += d))
+    this.proc.stderr!.on('data', (d) => (this.log += d))
+    for (let i = 0; i < 50 && !/unique\) : [a-z0-9]+/.test(this.log); i++) await new Promise((r) => setTimeout(r, 100))
+  }
+
+  claimCode() {
+    return /unique\) : ([a-z0-9]+)/.exec(this.log)![1]
+  }
+
+  stop() {
+    this.proc?.kill()
+    rmSync(this.dir, { recursive: true, force: true })
+  }
+}
+
+// The command-line test client, acting as another person.
+export class Ctl {
+  dir = mkdtempSync(join(tmpdir(), 'quarelctl-'))
+  constructor(public identity: Identity) {}
+
+  run(profile: string, ...args: string[]): string {
+    try {
+      return execFileSync(join(repo, 'bin', 'quarelctl'), ['-s', this.identity.url, '-p', profile, ...args], {
+        cwd: this.dir,
+        env: { ...process.env, XDG_CONFIG_HOME: join(this.dir, 'cfg'), QUAREL_PASSWORD: 'motdepasse-solide' },
+        encoding: 'utf8',
+      })
+    } catch (e) {
+      const err = e as { stdout?: string; stderr?: string }
+      return (err.stdout ?? '') + (err.stderr ?? '')
+    }
+  }
+
+  // run() blocks the event loop: logs are read only once it is free again.
+  async account(name: string) {
+    this.run(name, 'register', name + '@example.com', name)
+    await new Promise((r) => setTimeout(r, 300))
+    this.run(name, 'verify-email', name + '@example.com', this.identity.lastCode())
+    this.run(name, 'login', name, 'pc-' + name)
+  }
+
+  stop() {
+    rmSync(this.dir, { recursive: true, force: true })
+  }
 }

@@ -8,5 +8,5 @@ export default defineConfig({
   base: './',
   build: { outDir: 'dist', emptyOutDir: true },
   server: { port: 5190 }, // next free port if taken
-  test: { environment: 'node', include: ['src/**/*.test.ts'] },
+  test: { environment: 'node', include: ['src/**/*.test.ts', 'electron/**/*.test.ts'] },
 })

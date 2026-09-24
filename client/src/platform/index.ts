@@ -17,6 +17,8 @@ interface Secrets {
 interface DesktopBridge {
   secrets: Secrets
   info(): Promise<AppInfo>
+  pinServer(host: string, sid: string): Promise<void>
+  checkServer(host: string, port: number, sid: string): Promise<'authority' | 'binding' | 'mismatch' | 'unreachable'>
 }
 
 declare global {
@@ -75,4 +77,17 @@ export const prefs = {
       /* storage unavailable: preference not kept */
     }
   },
+}
+
+// Lets the desktop app accept the self-signed certificate of this server
+// (checked against its ID during every TLS handshake). Browsers cannot do
+// this: the web client needs servers with a certificate from an authority.
+export async function pinServer(host: string, sid: string) {
+  await desktop?.pinServer(host, sid)
+}
+
+// Desktop: checks a new server's certificate before the UI connects to it.
+// Browsers check it themselves (authority certificates only).
+export async function checkServer(host: string, port: number, sid: string) {
+  return desktop ? desktop.checkServer(host, port, sid) : 'authority'
 }

@@ -420,3 +420,13 @@ Livré pour l'étape 1 : connexion (avec double authentification et codes de sec
 | 2026-09-24 | Secrets (session, clé d'appareil) chiffrés par le **trousseau du système** (`safeStorage`) ; sous Linux sans trousseau, simple obscurcissement (signalé à l'interface) | Pas de mot de passe en clair sur le disque ; l'application reste utilisable partout. |
 | 2026-09-24 | **Une clé d'appareil par service d'identité** | Deux comptes sur deux services ne peuvent pas être reliés par leur clé d'appareil. |
 | 2026-09-24 | **CORS ouvert** (`Access-Control-Allow-Origin: *`) sur les deux services | Nécessaire au client web et à l'interface d'Electron ; sans risque car l'authentification passe par un jeton explicite, jamais par un cookie. Le proxy vocal `/lk/` garde les en-têtes de LiveKit. |
+
+### Client graphique — étape 2 : serveurs, salons, messages (2026-09-24)
+
+Livré : rejoindre un serveur par lien d'invitation (aperçu « Serveur authentifié »), règles et téléphone à l'arrivée, liste des serveurs avec non-lus et mentions, salons par catégorie (fils et vocaux affichés), messages en direct (mentions, réponses, réactions, modification, suppression, fichiers joints, aperçus de liens), « en train d'écrire », lecture, inviter, quitter, expulsion ou bannissement signalés. `make e2e-client` : 2 scénarios (comptes ; serveurs et messages face à une autre personne sur `quarelctl`).
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-09-24 | Certificats auto-signés : **contrôle préalable par le processus principal d'Electron**, puis acceptation par Chromium du seul certificat lié à l'identité du lien | Chromium garde en mémoire tout refus de certificat jusqu'au redémarrage : sans ce contrôle, un lien erroné bloquerait le bon. Aucun serveur n'est contacté par l'interface avant d'avoir prouvé son identité. |
+| 2026-09-24 | **Client web : serveurs à certificat reconnu seulement** (nom de domaine, Let's Encrypt) | Un navigateur ne sait pas vérifier la liaison d'un certificat auto-signé. Les serveurs domestiques sans nom de domaine se rejoignent avec l'application. À reprendre à l'étape « version web » (options possibles : nom de domaine automatique, relais). |
+| 2026-09-24 | Aperçus de liens affichés **sans leur image** | Le serveur ne télécharge jamais l'image (anti-SSRF) ; la charger depuis le client révélerait l'adresse IP de chaque lecteur au site cité. |

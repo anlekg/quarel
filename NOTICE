@@ -21,7 +21,7 @@ This product includes or bundles third-party software:
 
 - Desktop client (client/): Electron (MIT; ships Chromium and Node.js under
   their own licenses, listed in the LICENSES.chromium.html file of each build),
-  React (MIT), @noble/ed25519 (MIT, Paul Miller)
+  React (MIT), @noble/ed25519 and @noble/hashes (MIT, Paul Miller)
 - Manrope and Space Grotesk fonts (bundled in the client via Fontsource)
   SIL Open Font License 1.1
 

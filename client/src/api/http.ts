@@ -20,14 +20,15 @@ export interface RequestOptions {
 export async function request<T>(base: string, method: string, path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {}
   if (opts.token) headers.Authorization = 'Bearer ' + opts.token
-  if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
+  const form = opts.body instanceof FormData
+  if (opts.body !== undefined && !form) headers['Content-Type'] = 'application/json'
   let res: Response
   try {
     res = await fetch(base + path, {
       method,
       headers,
-      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-      signal: opts.signal ?? AbortSignal.timeout(20_000),
+      body: opts.body === undefined ? undefined : form ? (opts.body as FormData) : JSON.stringify(opts.body),
+      signal: opts.signal ?? AbortSignal.timeout(form ? 300_000 : 20_000),
     })
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e
@@ -47,4 +48,16 @@ export async function request<T>(base: string, method: string, path: string, opt
     throw new ApiError(res.status, err?.code ?? 'http_' + res.status, err?.message ?? res.statusText, retry)
   }
   return data as T
+}
+
+// Downloads a file that needs the session token (attachments).
+export async function fetchBlob(url: string, token: string): Promise<Blob> {
+  let res: Response
+  try {
+    res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } })
+  } catch {
+    throw new ApiError(0, 'network', 'server unreachable')
+  }
+  if (!res.ok) throw new ApiError(res.status, 'http_' + res.status, res.statusText)
+  return res.blob()
 }

@@ -76,6 +76,10 @@ export class IdentityClient {
     return this.call<User>('GET', '/v1/me')
   }
 
+  identityToken() {
+    return this.call<{ token: string; expires_at: string }>('POST', '/v1/identity/token')
+  }
+
   sessions() {
     return this.call<SessionInfo[]>('GET', '/v1/me/sessions')
   }

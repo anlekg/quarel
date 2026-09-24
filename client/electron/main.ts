@@ -4,6 +4,7 @@ import { app, BrowserWindow, ipcMain, safeStorage, shell, session } from 'electr
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises'
+import { boundServerID, checkServer } from './tlsbind'
 
 const devURL = process.env.QUAREL_DEV_URL
 if (process.env.QUAREL_USER_DATA) app.setPath('userData', process.env.QUAREL_USER_DATA)
@@ -116,7 +117,57 @@ ipcMain.handle('app:info', (e) => {
   }
 })
 
-app.whenReady().then(() => {
+// --- community servers with a self-signed certificate bound to their identity ---
+// The UI pins, per host name, the server IDs it expects (from invite links).
+// A certificate that the system does not trust is accepted only if its
+// binding proves one of those IDs.
+
+const pinsFile = () => join(app.getPath('userData'), 'server-pins.json')
+let pins: Record<string, string[]> = {}
+
+async function loadPins() {
+  try {
+    pins = JSON.parse(await readFile(pinsFile(), 'utf8'))
+  } catch {
+    pins = {}
+  }
+}
+
+ipcMain.handle('tls:pin', async (e, host, sid) => {
+  fromApp(e)
+  if (typeof host !== 'string' || typeof sid !== 'string' || !/^[a-z2-7]{26}$/.test(sid)) throw new Error('invalid pin')
+  host = host.toLowerCase()
+  const list = pins[host] ?? []
+  if (!list.includes(sid)) {
+    pins[host] = [...list, sid]
+    await mkdir(app.getPath('userData'), { recursive: true })
+    await writeFile(pinsFile(), JSON.stringify(pins), { mode: 0o600 })
+  }
+})
+
+// Chromium caches certificate decisions, refusals included, for the whole
+// session: a mistyped link would block the right one until a restart. So a
+// new server is first checked here, with its own connection; Chromium only
+// talks to it once its certificate is known to match.
+ipcMain.handle('tls:check', async (e, host, port, sid) => {
+  fromApp(e)
+  if (typeof host !== 'string' || typeof port !== 'number' || typeof sid !== 'string') throw new Error('invalid check')
+  return checkServer(host, port, sid)
+})
+
+function installVerifier() {
+  session.defaultSession.setCertificateVerifyProc((req, cb) => {
+    if (req.verificationResult === 'net::OK') return cb(-3) // valid for a public authority
+    const expected = pins[req.hostname.toLowerCase()]
+    const sid = expected?.length ? boundServerID(req.certificate.data) : null
+    cb(sid && expected.includes(sid) ? 0 : -2)
+  })
+}
+
+app.whenReady().then(async () => {
+  await loadPins()
+  installVerifier()
+
   // Linux without a keychain (no Secret Service / KWallet): secrets are then
   // only obfuscated on disk; the UI is told through info().secureStorage.
   if (process.platform === 'linux' && !safeStorage.isEncryptionAvailable()) {
