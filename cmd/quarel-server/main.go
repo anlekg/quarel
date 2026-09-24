@@ -156,7 +156,12 @@ func serve(ctx context.Context, ready func(), state *live, out io.Writer) error 
 	if public == 0 {
 		public = port
 	}
-	ports := []netdiag.Mapping{{Protocol: "TCP", External: public, Internal: port, Purpose: "API"}}
+	// Behind an HTTPS reverse proxy (QUAREL_TLS=off), the proxy owns the public
+	// web port: never map it on the router (it would take the proxy's port).
+	var ports []netdiag.Mapping
+	if cfg.TLS.Mode != "off" {
+		ports = append(ports, netdiag.Mapping{Protocol: "TCP", External: public, Internal: port, Purpose: "API"})
+	}
 	voiceOn := cfg.Voice == "embedded"
 	if voiceOn {
 		if _, err := exec.LookPath(cfg.LiveKitBin); err != nil {

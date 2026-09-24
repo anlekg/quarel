@@ -47,7 +47,7 @@ var fields = []adminui.Field{
 	{Group: "Réseau", Key: "QUAREL_ADDR", Label: "Adresse d'écoute", Kind: "text", Default: ":8090",
 		Help: "Port sur lequel les applications se connectent, au format « :port »."},
 	{Group: "Réseau", Key: "QUAREL_UPNP", Label: "Ouvrir automatiquement les ports sur la box (UPnP)", Kind: "bool", Default: "on",
-		Help: "Sinon, ouvrez vous-même les ports indiqués dans le tableau de bord. La page d'administration n'est jamais ouverte vers Internet."},
+		Help: "Sinon, ouvrez vous-même les ports indiqués dans le tableau de bord. Derrière un proxy HTTPS (certificat « aucun »), seuls les ports du vocal sont ouverts. La page d'administration n'est jamais ouverte vers Internet."},
 	{Group: "Réseau", Key: "QUAREL_PUBLIC_PORT", Label: "Port public", Kind: "number", Placeholder: "identique",
 		Help: "Port vu depuis Internet s'il diffère du port d'écoute (redirection de port)."},
 	{Group: "Réseau", Key: "QUAREL_TRUSTED_PROXIES", Label: "Proxys de confiance", Kind: "list", Placeholder: "aucun",
@@ -56,8 +56,8 @@ var fields = []adminui.Field{
 	{Group: "HTTPS", Key: "QUAREL_TLS", Label: "Certificat", Kind: "select", Default: "self-signed",
 		Options: []adminui.Option{opt("self-signed", "Automatique, lié à l'identité du serveur (recommandé sans nom de domaine)"),
 			opt("acme", "Let's Encrypt (nom de domaine requis, port 443 ouvert)"), opt("files", "Mes fichiers de certificat"), opt("off", "Aucun (derrière un proxy HTTPS)")}},
-	{Group: "HTTPS", Key: "QUAREL_TLS_HOSTS", Label: "Noms et adresses supplémentaires du certificat", Kind: "list", ShowIf: "QUAREL_TLS=self-signed",
-		Help: "Facultatif : l'application vérifie le serveur par son identité, pas par son nom."},
+	{Group: "HTTPS", Key: "QUAREL_TLS_HOSTS", Label: "Nom public du serveur", Kind: "list", ShowIf: "QUAREL_TLS=self-signed|off",
+		Help: "Derrière un proxy HTTPS : son nom de domaine (utilisé dans les liens). Avec le certificat automatique : facultatif, noms ajoutés au certificat."},
 	{Group: "HTTPS", Key: "QUAREL_TLS_DOMAIN", Label: "Nom de domaine", Kind: "text", ShowIf: "QUAREL_TLS=acme", Placeholder: "chat.exemple.fr"},
 	{Group: "HTTPS", Key: "QUAREL_TLS_EMAIL", Label: "Email pour Let's Encrypt", Kind: "text", ShowIf: "QUAREL_TLS=acme", Help: "Facultatif : avertissements d'expiration."},
 	{Group: "HTTPS", Key: "QUAREL_TLS_CERT", Label: "Fichier du certificat", Kind: "text", ShowIf: "QUAREL_TLS=files"},
@@ -107,10 +107,16 @@ func (l *live) status(r *http.Request) map[string]any {
 	}
 	host := hostOf(r, cfg)
 	port := publicPort(cfg)
+	if cfg.TLS.Mode == "off" { // behind an HTTPS proxy: the apps use its address
+		port = 443
+		if len(cfg.TLS.Hosts) > 0 {
+			host = cfg.TLS.Hosts[0]
+		}
+	}
 	items := []map[string]any{
 		{"label": "Nom", "value": ov.Name},
 		{"label": "Identifiant", "value": srv.ID(), "mono": true},
-		{"label": "Adresse", "value": "https://" + net.JoinHostPort(host, strconv.Itoa(port)), "mono": true},
+		{"label": "Adresse", "value": httpsURL(host, port), "mono": true},
 		{"label": "Membres", "value": ov.Members},
 		{"label": "Services d'identité acceptés", "value": strings.Join(cfg.TrustedIssuers, ", ")},
 		{"label": "Certificat", "value": tlsLabels[cfg.TLS.Mode]},
@@ -134,9 +140,16 @@ func (l *live) status(r *http.Request) map[string]any {
 	resp := map[string]any{"items": items, "notices": notices}
 	if !ov.HasOwner && claim != "" {
 		resp["claim_code"] = claim
-		resp["owner_link"] = fmt.Sprintf("quarel://%s/%s?sid=%s&claim=1", net.JoinHostPort(host, strconv.Itoa(port)), claim, srv.ID())
+		resp["owner_link"] = fmt.Sprintf("quarel://%s/%s?sid=%s&claim=1", strings.TrimPrefix(httpsURL(host, port), "https://"), claim, srv.ID())
 	}
 	return resp
+}
+
+func httpsURL(host string, port int) string {
+	if port == 443 {
+		return "https://" + host
+	}
+	return "https://" + net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 // hostOf guesses the address the apps will use: the domain if any, else the
@@ -198,7 +211,14 @@ func (l *live) api() http.Handler {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
-		url := "https://" + net.JoinHostPort(hostOf(r, cfg), strconv.Itoa(publicPort(cfg)))
+		host, port := hostOf(r, cfg), publicPort(cfg)
+		if cfg.TLS.Mode == "off" {
+			port = 443
+			if len(cfg.TLS.Hosts) > 0 {
+				host = cfg.TLS.Hosts[0]
+			}
+		}
+		url := httpsURL(host, port)
 		status, err := srv.RequestApproval(ctx, req.Issuer, url, strings.TrimSpace(req.Contact))
 		if err != nil {
 			adminui.WriteJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]string{"code": "request_failed", "message": err.Error()}})
