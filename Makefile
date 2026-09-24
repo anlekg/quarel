@@ -1,6 +1,6 @@
 export PATH := $(HOME)/.local/go/bin:$(HOME)/.local/bin:$(PATH)
 
-.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages e2e-moderation e2e-accounts e2e-dm-groups e2e-calls e2e-ops clean
+.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages e2e-moderation e2e-accounts e2e-dm-groups e2e-calls e2e-ops client-install client-dev client-build client-test e2e-client clean
 
 build:
 	go build -o bin/ ./cmd/... ./examples/...
@@ -74,3 +74,26 @@ e2e-ops: build
 # HTTPS through ACME (Let's Encrypt protocol) against Pebble in Docker.
 e2e-acme: build
 	test/e2e/acme.sh
+
+# --- desktop client (Electron + web UI, in client/) ---
+
+client-install:
+	cd client && npm ci
+
+# Desktop app in development mode (UI reloads on change). Start an Identity service first (make run-identity)
+# and choose "localhost:8080" under "Service d'identité" on the sign-in screen.
+client-dev:
+	cd client && [ -d node_modules ] || npm ci
+	cd client && npm run dev
+
+client-build:
+	cd client && npm run build
+
+# Unit tests and type checks of the client.
+client-test:
+	cd client && npx tsc --noEmit && npx vitest run
+
+# End-to-end: the real desktop app (virtual display) against a real Identity service.
+e2e-client: build
+	cd client && [ -d node_modules ] || npm ci
+	cd client && npx vite build && node scripts/build-electron.mjs && xvfb-run -a npx playwright test

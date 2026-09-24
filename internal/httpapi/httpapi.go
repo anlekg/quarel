@@ -67,3 +67,23 @@ func DecodeLimit(r *http.Request, v any, limit int64) error {
 	}
 	return nil
 }
+
+// CORS lets browser clients (the desktop app's web UI, the web client) call the
+// API from any origin. Safe because authentication is a bearer token sent
+// explicitly, never a cookie: another site gains nothing it could not already
+// do with its own requests. Preflight requests are answered directly.
+func CORS(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hd := w.Header()
+		hd.Set("Access-Control-Allow-Origin", "*")
+		hd.Set("Access-Control-Expose-Headers", "Retry-After")
+		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+			hd.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
+			hd.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			hd.Set("Access-Control-Max-Age", "86400")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}

@@ -37,7 +37,7 @@ Alternative à Discord **auto-hébergeable** : chaque serveur tourne chez son pr
 - **Base de données :** SQLite embarquée via `modernc.org/sqlite` (pur Go, sans cgo → compilation croisée `.exe` triviale).
 - **Voix / vidéo :** LiveKit (SFU) intégré à l'image du serveur communautaire.
 - **UPnP :** `github.com/huin/goupnp`.
-- **Client :** **Electron** + interface web (choix du CP, 2026-09-24 : voix/vidéo identiques partout grâce au Chromium embarqué) ; chiffrement E2E avec vodozemac (WebAssembly) ; la même interface servira au client web. Maquettes en cours de validation.
+- **Client :** **Electron** + interface web (choix du CP, 2026-09-24 : voix/vidéo identiques partout grâce au Chromium embarqué) ; interface **React + TypeScript + Vite** ; chiffrement E2E avec vodozemac (WebAssembly) ; la même interface servira au client web. Maquettes validées (voir « Client graphique »).
 
 ## Arborescence
 
@@ -76,6 +76,7 @@ pkg/idtoken/            jetons d'identité portables (émission, vérification, 
 pkg/e2ekeys/            messages signés des clés E2E (partagés serveur/clients), code de vérification
 pkg/tlsbind/            certificat auto-signé lié à l'identité du serveur, vérification côté client
 pkg/recovery/           phrase de récupération (BIP-39 français) et chiffrement des sauvegardes
+client/                 client graphique (Electron + React), voir « Client graphique »
 docs/tests/             guides de test par jalon, destinés au CP
 test/e2e/               tests de bout en bout : vocal (Playwright), MP chiffrés, sécurité (récupération, HTTPS,
                         limites), messages P1 (messages.sh), modération P1 (moderation.sh), ACME contre Pebble (acmeshim : corrige une différence de Pebble avec Let's Encrypt)
@@ -394,6 +395,19 @@ Messages : `QUAREL_MAX_UPLOAD_MB` (25), `QUAREL_LINK_PREVIEWS` (`on`). Limites s
 
 `QUAREL_ADDR` (`:8090`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_SERVER_NAME` (nom au 1er démarrage seulement), `QUAREL_TRUSTED_ISSUERS` (liste séparée par des virgules ; défaut `identity.quarel.app`, instance officielle — domaine `quarel.app` choisi par le CP ; **ce nom ne doit jamais changer**, il fait partie de chaque identité).
 
+## Client graphique (jalon 7, `client/`)
+
+- **Maquettes validées par le CP** (2026-09-24) : thème sombre, fonds `#111317` / `#16191F` / `#1C2027` / `#242933`, accent `#5FB8A5` (texte `#0E1A17` dessus), Manrope (texte) et Space Grotesk (titres), icônes au trait. Jetons de couleur dans `src/styles/app.css`. Textes en français, neutres en genre.
+- **Étapes** : 1. comptes ✅, 2. serveurs, salons et messages, 3. vocal et vidéo, 4. amis et MP chiffrés (vodozemac), 5. appels, 6. paramètres, 7. version web.
+- **Arborescence** : `electron/main.ts` (fenêtre, secrets, permissions), `electron/preload.ts` (seul pont : `window.quarelDesktop.secrets`, `info()`), `src/platform/` (hôte : Electron ou navigateur), `src/api/` (clients HTTP, erreurs `ApiError`), `src/state/` (compte connecté), `src/screens/` (écrans), `src/components/` (champs, boutons, icônes), `src/lib/` (clé d'appareil, adresses, messages d'erreur), `e2e/` (Playwright pilotant Electron).
+- **Sécurité** : `contextIsolation`, `sandbox`, pas de `nodeIntegration` ; navigation hors de l'application interdite, liens ouverts dans le navigateur du système ; CSP dans `index.html` (`connect-src` ouvert : services auto-hébergés) ; IPC acceptée seulement depuis la page de l'application ; permissions accordées : micro/caméra, notifications, presse-papiers, plein écran.
+- **Secrets** (`secrets.json` dans le dossier de l'application, chiffré par `safeStorage`) : `account` (service, émetteur, session, utilisateur), `device-seed:<service>` (graine Ed25519 de l'appareil, **une par service d'identité**). Linux sans trousseau : chiffrement en clair (`setUsePlainTextEncryption`), `info().secureStorage = false`. Client web : `localStorage`. Préférences non secrètes (`quarel.pref.*`) : dernier service, dernier identifiant.
+- **Service d'identité** : saisi sans schéma → `https://`, sauf boucle locale (`http://`) ; validé par `/.well-known/quarel-identity`. Défaut : `identity.quarel.app`.
+- **Session** : restaurée au lancement (`GET /v1/me`) ; 401 → retour à la connexion avec un message ; service injoignable → session gardée.
+- **Tests** : `make client-test` (types + vitest), `make e2e-client` (Electron sous `xvfb-run` contre un vrai `quarel-identity`, codes lus dans son journal, TOTP calculé par le test). `QUAREL_USER_DATA` change le dossier de données de l'application (tests), `QUAREL_DEV_URL` charge l'interface depuis Vite (`make client-dev`).
+- **Dépendances** : licences vérifiées (MIT, ISC, BSD, Apache-2.0, MPL-2.0, OFL-1.1 pour les polices). `npm` 11 bloque les scripts d'installation : ceux d'`electron` et `esbuild` sont autorisés dans `package.json` (`allowScripts`). Sous Linux, `chrome-sandbox` d'Electron doit appartenir à root avec le mode 4755 (fait sur la machine de dev).
+- **Serveurs** : `httpapi.CORS` (origine `*`, préflight répondu directement) enveloppe les deux services.
+
 ## Exploitation : sauvegarde, restauration, mises à jour (P1 bloc 7)
 
 - **`quarel-server backup <fichier|->`** et **`quarel-identity backup <fichier|->`** (service en marche) : archive `.tar.gz` = manifeste `quarel-backup.json` (`{format, kind, created_at, schema_version, identity, files}`) + **copie cohérente de la base** (`VACUUM INTO`, sans arrêter le service) + clés (`server.key` ; `signing.key`, `retired-keys.json`, `turn.secret`) + dossiers (`attachments`, `acme` ; `dm-files`, `acme`). Jamais d'écrasement d'un fichier existant. `-` = sortie standard (Docker : `docker exec … backup - > f.tar.gz`).
@@ -422,6 +436,10 @@ make e2e-ops          # sauvegardes à chaud des deux services, restauration, re
 make e2e-calls        # appels pair à pair réels (WebRTC) : direct, par le relais TURN, relais refusé (10 vérifications)
 make e2e-dm-groups    # groupes, modification/suppression, fichiers chiffrés, frappe, lecture (22 vérifications)
 make e2e-accounts     # comptes : mots de passe, email, pseudo, profil, blocage, présence, suppression, outil opérateur (30 vérifications)
+make client-dev       # application desktop en développement (lancer d'abord make run-identity)
+make client-build     # construit l'interface et les processus Electron
+make client-test      # types et tests unitaires du client
+make e2e-client       # application Electron réelle contre un vrai service Identity (xvfb-run)
 ./bin/quarel-server backup f.tar.gz   # sauvegarde à chaud (idem quarel-identity), restore f.tar.gz [--force], version
 ./bin/quarelctl help  # client de test
 ```
@@ -432,6 +450,6 @@ Test vocal de bout en bout (hors `go test`) : `make e2e-voice` — vrai Identity
 
 ## Environnement de dev
 
-- OS : Linux. Disponibles : Docker, Node.js, Python 3, make, gcc, livekit-server 1.13.7 (`~/.local/bin`, somme de contrôle vérifiée), Go 1.27.1 (installé dans `~/.local/go`, PATH ajouté dans `~/.zshrc`). Non installés : Rust, `gh`. `sudo` non interactif disponible (le CP autorise l'installation d'outils si besoin).
+- OS : Linux. Disponibles : Docker, Node.js 24 (npm 11), xvfb-run, Python 3, make, gcc, livekit-server 1.13.7 (`~/.local/bin`, somme de contrôle vérifiée), Go 1.27.1 (installé dans `~/.local/go`, PATH ajouté dans `~/.zshrc`). Non installés : Rust, `gh`. `sudo` non interactif disponible (le CP autorise l'installation d'outils si besoin).
 - Si `go` est introuvable dans le shell courant : `export PATH="$HOME/.local/go/bin:$HOME/go/bin:$PATH"`.
 - Git : branche `main`, remote `origin` = `git@github.com:anlekg/quarel.git` (SSH). Identité locale au dépôt : `anlekg` / adresse masquée GitHub `106981899+anlekg@users.noreply.github.com` (ne jamais utiliser l'email personnel).

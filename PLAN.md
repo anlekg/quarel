@@ -143,7 +143,7 @@
 ## C. Client (en dernier)
 
 - [x] **P0** Client de test en ligne de commande (pour valider l'API pendant le dev backend)
-- [ ] **P1** Application desktop (multi-serveurs, multi-services d'identité)
+- [ ] **P1** Application desktop (multi-serveurs, multi-services d'identité) — *en cours : étape 1 (comptes) livrée le 2026-09-24*
 - [ ] **P1** Client web
 - [ ] **P2** Application mobile
 
@@ -158,4 +158,4 @@
 5. **Jalon 5 — Amis et MP chiffrés :** A3 P0, A4 P0, A5 P0. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-5.md`).*
 6. **Jalon 6 — P1, premier bloc (mise en ligne) :** HTTPS, UPnP, limitation par IP, phrase de récupération. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-6.md`).*
 6 bis. **Jalons suivants — autres blocs P1**, dans l'ordre choisi par le CP.
-7. **Jalon 7 — Client graphique.**
+7. **Jalon 7 — Client graphique.** Maquettes validées le 2026-09-24. Étapes : 1. comptes ✅ (`docs/tests/client-etape-1.md`), 2. serveurs, salons, messages, 3. vocal et vidéo, 4. amis et MP chiffrés, 5. appels, 6. paramètres, 7. version web.

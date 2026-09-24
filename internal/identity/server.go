@@ -284,7 +284,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/backup", s.authed(s.handleDeleteBackup))
 
 	mux.HandleFunc("GET /v1/gateway", s.handleGateway)
-	return s.limit.global.Wrap(s.byIP, mux)
+	return httpapi.CORS(s.limit.global.Wrap(s.byIP, mux))
 }
 
 // --- request/response helpers (shared conventions, see internal/httpapi) ---

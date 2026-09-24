@@ -406,3 +406,17 @@ Validées : aperçus de liens actifs par défaut ; règles pour les seuls nouvea
 
 Le CP choisit l'**option D** pour les fichiers des MP, garde **un relais par service central**, et décide que **chaque service central reste une bulle**. Livré pour D : offre et transfert pair à pair (canal de données WebRTC, signalisation Olm), copie serveur uniquement pour les appareils non servis, effacée dès le dernier accusé (table `conv_file_pending`, migration 7, plafond 7 jours), récupération différée auprès de n'importe quel appareil d'un membre. Tests : copie serveur par appareil (création, accusés, effacement, appareil révoqué, plafond) ; `make e2e-dm-groups` passe à **33/33** (envoi direct à l'appareil en ligne, copie pour l'absent effacée dès réception, fichier au-delà de la limite transmis seulement en direct puis récupéré plus tard auprès d'un autre membre, jamais stocké sur le serveur).
 | 2026-09-24 | Client graphique : **Electron + interface web** (choix du CP, contre Tauri recommandé) ; chiffrement avec vodozemac en WebAssembly ; même interface pour le client web | Voix, vidéo et WebRTC identiques sur toutes les plateformes (Chromium embarqué), technologie de Discord. Contrepartie acceptée : application plus lourde (~150 Mo). Maquettes des écrans principaux proposées au CP avant de commencer. |
+
+### Client graphique — étape 1 : comptes (2026-09-24)
+
+Le CP **valide les maquettes sans modification** (thème sombre, accent vert d'eau, Manrope / Space Grotesk, disposition proche de Discord). Ordre des étapes du client : 1. connexion et comptes, 2. serveurs, salons et messages, 3. vocal et vidéo, 4. amis et MP chiffrés, 5. appels, 6. paramètres, 7. version web.
+
+Livré pour l'étape 1 : connexion (avec double authentification et codes de secours), création de compte, vérification de l'email, mot de passe oublié, choix du service d'identité, session gardée entre deux lancements, écran d'accueil, paramètres « Compte » et « Appareils » (déconnexion d'un autre appareil), déconnexion. Test de bout en bout `make e2e-client` : la vraie application Electron contre un vrai service Identity.
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-09-24 | Interface : **React + TypeScript**, construite par **Vite** ; processus Electron construits par esbuild ; polices embarquées (aucun appel à Google Fonts) | Écosystème le plus répandu (contributions), composants réutilisés tels quels par le client web ; pas de dépendance réseau pour afficher l'interface. |
+| 2026-09-24 | Sécurité d'Electron : page isolée (`contextIsolation`, `sandbox`, pas de Node), seul pont = secrets et infos de l'appareil ; liens externes ouverts dans le navigateur ; politique de sécurité du contenu stricte | Un message piégé ne doit jamais pouvoir exécuter du code sur la machine. |
+| 2026-09-24 | Secrets (session, clé d'appareil) chiffrés par le **trousseau du système** (`safeStorage`) ; sous Linux sans trousseau, simple obscurcissement (signalé à l'interface) | Pas de mot de passe en clair sur le disque ; l'application reste utilisable partout. |
+| 2026-09-24 | **Une clé d'appareil par service d'identité** | Deux comptes sur deux services ne peuvent pas être reliés par leur clé d'appareil. |
+| 2026-09-24 | **CORS ouvert** (`Access-Control-Allow-Origin: *`) sur les deux services | Nécessaire au client web et à l'interface d'Electron ; sans risque car l'authentification passe par un jeton explicite, jamais par un cookie. Le proxy vocal `/lk/` garde les en-têtes de LiveKit. |

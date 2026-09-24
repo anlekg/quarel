@@ -19,4 +19,11 @@ This product includes or bundles third-party software:
 - Pion TURN (call relay, used by quarel-identity) and Pion WebRTC (calls in
   the quarelctl test client) — Copyright The Pion community — MIT License
 
-Go module dependencies and their licenses are listed in go.mod / go.sum.
+- Desktop client (client/): Electron (MIT; ships Chromium and Node.js under
+  their own licenses, listed in the LICENSES.chromium.html file of each build),
+  React (MIT), @noble/ed25519 (MIT, Paul Miller)
+- Manrope and Space Grotesk fonts (bundled in the client via Fontsource)
+  SIL Open Font License 1.1
+
+Go module dependencies and their licenses are listed in go.mod / go.sum;
+client JavaScript dependencies in client/package.json / package-lock.json.

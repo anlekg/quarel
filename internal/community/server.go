@@ -310,7 +310,16 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /voice-test/", voiceTestPage)
 
 	mux.HandleFunc("GET /v1/gateway", s.handleGateway)
-	return s.limit.global.Wrap(s.byIP, mux)
+	api := httpapi.CORS(mux)
+	// The LiveKit proxy passes LiveKit's own CORS headers through.
+	routed := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/lk/") {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		api.ServeHTTP(w, r)
+	})
+	return s.limit.global.Wrap(s.byIP, routed)
 }
 
 // InternalHandler serves the loopback-only endpoints: LiveKit webhooks,
