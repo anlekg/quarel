@@ -34,8 +34,9 @@ type Config struct {
 	TrustedProxies ratelimit.Proxies
 	TLS            tlsconf.Config
 
-	DMFileMaxBytes int64         // size limit of an encrypted conversation file
-	DMFileTTL      time.Duration // how long the server keeps conversation files
+	DMFileMaxBytes  int64         // size limit of an encrypted conversation file
+	DMFileTTL       time.Duration // how long the server keeps conversation files
+	GroupMaxMembers int           // members of a group conversation (QUAREL_DM_GROUP_MAX)
 
 	TURN TURNConfig // relay for peer-to-peer calls
 }
@@ -93,6 +94,7 @@ func ConfigFromEnv() (Config, error) {
 		return c, err
 	}
 	c.DMFileMaxBytes = int64(envInt("QUAREL_DM_FILE_MAX_MB", 25)) << 20
+	c.GroupMaxMembers = envInt("QUAREL_DM_GROUP_MAX", 10)
 	if c.DMFileTTL, err = time.ParseDuration(env("QUAREL_DM_FILE_TTL", "720h")); err != nil || c.DMFileTTL < time.Hour {
 		return c, fmt.Errorf("QUAREL_DM_FILE_TTL: invalid duration (at least 1h)")
 	}
@@ -179,6 +181,9 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer, retired 
 	s.limit.turn = ratelimit.New(60, time.Hour)
 	if s.cfg.DMFileMaxBytes <= 0 {
 		s.cfg.DMFileMaxBytes = 25 << 20
+	}
+	if s.cfg.GroupMaxMembers < 2 {
+		s.cfg.GroupMaxMembers = 10
 	}
 	if s.cfg.DMFileTTL <= 0 {
 		s.cfg.DMFileTTL = 30 * 24 * time.Hour

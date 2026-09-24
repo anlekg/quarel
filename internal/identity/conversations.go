@@ -9,12 +9,11 @@ import (
 	"time"
 )
 
-// Conversations: direct (two friends) or group (up to maxGroupMembers people,
+// Conversations: direct (two friends) or group (up to cfg.GroupMaxMembers people,
 // created among friends). Messages are Megolm ciphertexts the server only
 // relays; edits and deletions are encrypted events too, applied by clients.
 
 const (
-	maxGroupMembers = 10
 	maxGroupNameLen = 100
 	convKindDirect  = "direct"
 	convKindGroup   = "group"
@@ -263,8 +262,8 @@ func (s *Server) createGroup(w http.ResponseWriter, r *http.Request, userIDs []s
 		}
 		members = append(members, id)
 	}
-	if len(members) < 2 || len(members) > maxGroupMembers {
-		writeErr(w, r, errf(http.StatusBadRequest, "invalid_members", "a group has 2 to %d members", maxGroupMembers))
+	if len(members) < 2 || len(members) > s.cfg.GroupMaxMembers {
+		writeErr(w, r, errf(http.StatusBadRequest, "invalid_members", "a group has 2 to %d members", s.cfg.GroupMaxMembers))
 		return
 	}
 	convID, now := newID(), s.now().Unix()
@@ -397,8 +396,8 @@ func (s *Server) handleAddGroupMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, errf(http.StatusForbidden, "not_friends", "you can only add your friends"))
 		return
 	}
-	if len(ids) >= maxGroupMembers {
-		writeErr(w, r, errf(http.StatusBadRequest, "group_full", "a group has at most %d members", maxGroupMembers))
+	if len(ids) >= s.cfg.GroupMaxMembers {
+		writeErr(w, r, errf(http.StatusBadRequest, "group_full", "a group has at most %d members", s.cfg.GroupMaxMembers))
 		return
 	}
 	if _, err := s.db.ExecContext(ctx, `INSERT INTO conversation_members (conversation_id, user_id, joined_at) VALUES (?, ?, ?)`,
