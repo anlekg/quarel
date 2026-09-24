@@ -321,10 +321,12 @@ func (c *cli) dmListen() error {
 			if err := sync(out); err != nil {
 				return err
 			}
+			c.handleFileSignals(out)
 		case "INBOX":
 			if err := sync(out); err != nil {
 				return err
 			}
+			c.handleFileSignals(out)
 		case "FRIENDS_UPDATE":
 			var d struct {
 				User   publicUser `json:"user"`
@@ -386,6 +388,27 @@ func (c *cli) dmListen() error {
 			if d.UserID == me {
 				out("🔑 la liste de vos appareils a changé (quarelctl devices)")
 			}
+		}
+	}
+}
+
+// handleFileSignals answers file transfers while dm-listen runs: fetches the
+// files just offered by other devices, and serves the ones this device holds.
+func (c *cli) handleFileSignals(out func(string)) {
+	var sigs []fileSignal
+	c.withE2E(func(e *e2e) error {
+		sigs = e.takeFileSignals(func(s fileSignal) bool { return s.Action == "offer" || s.Action == "fetch" })
+		return nil
+	})
+	for _, s := range sigs {
+		if s.Action == "offer" {
+			go c.autoFetch(s, out)
+		} else {
+			go func(s fileSignal) {
+				if c.serveFetch(s) {
+					out(fmt.Sprintf("📎 fichier envoyé en direct à un appareil de %s", c.nameOf(s.FromUser)))
+				}
+			}(s)
 		}
 	}
 }

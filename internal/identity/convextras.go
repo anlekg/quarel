@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -121,18 +122,46 @@ func (s *Server) handleRead(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) filesDir() string { return filepath.Join(s.cfg.DataDir, "dm-files") }
 
-// handleUploadFile: POST /v1/dms/{id}/files, body = ciphertext (the key
-// travels inside the encrypted message that references the file).
+// handleUploadFile: POST /v1/dms/{id}/files?for=<device ids>, body = ciphertext
+// (the key travels inside the encrypted message that references the file).
+// The copy is kept for the listed devices only (default: every device of the
+// conversation but the uploader's) and deleted once each has acknowledged it.
 func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	sess := sessionFrom(r)
 	convID := r.PathValue("id")
-	if _, err := s.convMembers(ctx, s.db, convID, sess.UserID); err != nil {
+	members, err := s.convMembers(ctx, s.db, convID, sess.UserID)
+	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
 	if err := s.limit.files.Check(sess.UserID); err != nil {
 		writeErr(w, r, err)
+		return
+	}
+	devices, err := s.convDevices(ctx, members)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	var pending []string
+	if list := r.URL.Query().Get("for"); list != "" {
+		for _, d := range strings.Split(list, ",") {
+			if !devices[d] {
+				writeErr(w, r, errf(http.StatusBadRequest, "invalid_device", "device %q is not in this conversation", d))
+				return
+			}
+			pending = append(pending, d)
+		}
+	} else {
+		for d := range devices {
+			if d != sess.ID {
+				pending = append(pending, d)
+			}
+		}
+	}
+	if len(pending) == 0 {
+		writeErr(w, r, errf(http.StatusBadRequest, "no_recipients", "no device needs this file"))
 		return
 	}
 	if err := os.MkdirAll(s.filesDir(), 0o700); err != nil {
@@ -155,19 +184,81 @@ func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 		os.Remove(path)
 		var mbe *http.MaxBytesError
 		if errors.As(err, &mbe) {
-			err = errf(http.StatusRequestEntityTooLarge, "file_too_large", "files are limited to %d MB", s.cfg.DMFileMaxBytes>>20)
+			err = errf(http.StatusRequestEntityTooLarge, "file_too_large", "files kept by the server are limited to %d MB (larger ones go peer to peer)", s.cfg.DMFileMaxBytes>>20)
 		}
 		writeErr(w, r, err)
 		return
 	}
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO conv_attachments (id, conversation_id, uploader_id, size, created_at) VALUES (?, ?, ?, ?, ?)`,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		os.Remove(path)
+		writeErr(w, r, err)
+		return
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO conv_attachments (id, conversation_id, uploader_id, size, created_at) VALUES (?, ?, ?, ?, ?)`,
 		id, convID, sess.UserID, size, s.now().Unix()); err != nil {
 		os.Remove(path)
 		writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "size": size,
+	for _, d := range pending {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO conv_file_pending (file_id, session_id) VALUES (?, ?)`, id, d); err != nil {
+			os.Remove(path)
+			writeErr(w, r, err)
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		os.Remove(path)
+		writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "size": size, "pending_devices": len(pending),
 		"expires_at": s.now().Add(s.cfg.DMFileTTL).UTC().Truncate(time.Second)})
+}
+
+// convDevices returns the devices (with keys) of the given users.
+func (s *Server) convDevices(ctx context.Context, members []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if len(members) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(members))
+	for i, m := range members {
+		args[i] = m
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT session_id FROM device_keys WHERE user_id IN (?`+strings.Repeat(",?", len(members)-1)+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			out[id] = true
+		}
+	}
+	return out, rows.Err()
+}
+
+// handleAckFile: POST /v1/dms/{id}/files/{file}/ack — this device has the
+// file; once no device is waiting for it, the server copy is deleted.
+func (s *Server) handleAckFile(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.convFile(r); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	ctx := r.Context()
+	file := r.PathValue("file")
+	s.db.ExecContext(ctx, `DELETE FROM conv_file_pending WHERE file_id = ? AND session_id = ?`, file, sessionFrom(r).ID)
+	var left int
+	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM conv_file_pending WHERE file_id = ?`, file).Scan(&left)
+	if left == 0 {
+		s.db.ExecContext(ctx, `DELETE FROM conv_attachments WHERE id = ?`, file)
+		os.Remove(filepath.Join(s.filesDir(), file))
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"pending_devices": left})
 }
 
 func (s *Server) convFile(r *http.Request) (uploader string, err error) {
@@ -178,7 +269,7 @@ func (s *Server) convFile(r *http.Request) (uploader string, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT uploader_id FROM conv_attachments WHERE id = ? AND conversation_id = ?`,
 		r.PathValue("file"), r.PathValue("id")).Scan(&uploader)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", errf(http.StatusNotFound, "not_found", "no such file (files expire after a while: keep them on your devices)")
+		return "", errf(http.StatusNotFound, "not_found", "no such file on the server (it is deleted once every device has it: ask a device that holds it)")
 	}
 	return uploader, err
 }
@@ -223,7 +314,9 @@ func (s *Server) removeConvFiles(ctx context.Context, convID string) {
 
 // CleanupFiles deletes expired files and files whose conversation is gone.
 func (s *Server) CleanupFiles(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM conv_attachments WHERE created_at < ?`, s.now().Add(-s.cfg.DMFileTTL).Unix()); err != nil {
+	// Expired copies, and copies no device waits for any more (revoked devices).
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM conv_attachments WHERE created_at < ?
+		OR NOT EXISTS (SELECT 1 FROM conv_file_pending p WHERE p.file_id = conv_attachments.id)`, s.now().Add(-s.cfg.DMFileTTL).Unix()); err != nil {
 		return err
 	}
 	entries, err := os.ReadDir(s.filesDir())

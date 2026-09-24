@@ -3,8 +3,11 @@ package identity
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -164,8 +167,16 @@ func TestConversationFiles(t *testing.T) {
 	e.srv.cfg.DMFileMaxBytes = 1 << 10
 	alice, _ := e.registerVerified("alice@example.com", "alice", "mot-de-passe-alice")
 	bob, _ := e.registerVerified("bob@example.com", "bob", "mot-de-passe-bob")
+	bob2 := e.login2("bob@example.com", "mot-de-passe-bob", "téléphone")
 	carol, _ := e.registerVerified("carol@example.com", "carol", "mot-de-passe-carol")
 	e.befriend(alice, bob, "bob")
+	// Devices with published keys (the server keeps copies for devices only).
+	_, aliceMaster, _ := ed25519.GenerateKey(nil)
+	_, bobMaster, _ := ed25519.GenerateKey(nil)
+	a1, b1, b2 := newTestDevice(alice), newTestDevice(bob), newTestDevice(bob2)
+	e.expect(200, "", e.upload(a1, aliceMaster, true))
+	e.expect(200, "", e.upload(b1, bobMaster, true))
+	e.expect(200, "", e.upload(b2, bobMaster, false))
 	var dm convJSON
 	e.expect(200, "", e.call("POST", "/v1/dms", alice.SessionToken, map[string]string{"user_id": bob.User.ID}, &dm))
 
@@ -180,17 +191,49 @@ func TestConversationFiles(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		return resp.StatusCode, b
 	}
-	ciphertext := bytes.Repeat([]byte{0xAB}, 100)
-	code, body := do("POST", "/v1/dms/"+dm.ID+"/files", alice.SessionToken, ciphertext)
-	if code != 201 {
-		t.Fatalf("upload: %d %s", code, body)
+	upload := func(query string) (string, int) {
+		code, body := do("POST", "/v1/dms/"+dm.ID+"/files"+query, alice.SessionToken, bytes.Repeat([]byte{0xAB}, 100))
+		var out struct {
+			ID      string `json:"id"`
+			Pending int    `json:"pending_devices"`
+		}
+		json.Unmarshal(body, &out)
+		if code != 201 {
+			t.Fatalf("upload%s: %d %s", query, code, body)
+		}
+		return out.ID, out.Pending
 	}
-	id := string(bytes.Split(bytes.Split(body, []byte(`"id":"`))[1], []byte(`"`))[0])
-	if code, got := do("GET", "/v1/dms/"+dm.ID+"/files/"+id, bob.SessionToken, nil); code != 200 || !bytes.Equal(got, ciphertext) {
+	// By default, the copy waits for every other device of the conversation.
+	id, pending := upload("")
+	if pending != 2 {
+		t.Fatalf("pending = %d, want bob's 2 devices", pending)
+	}
+	if code, got := do("GET", "/v1/dms/"+dm.ID+"/files/"+id, bob.SessionToken, nil); code != 200 || len(got) != 100 {
 		t.Fatalf("download: %d", code)
 	}
 	if code, _ := do("GET", "/v1/dms/"+dm.ID+"/files/"+id, carol.SessionToken, nil); code != 404 {
 		t.Fatalf("non-member download: %d", code)
+	}
+	// Deleted as soon as every waiting device acknowledged it.
+	do("POST", "/v1/dms/"+dm.ID+"/files/"+id+"/ack", bob.SessionToken, nil)
+	if code, _ := do("GET", "/v1/dms/"+dm.ID+"/files/"+id, bob2.SessionToken, nil); code != 200 {
+		t.Fatal("deleted while a device still waits for it")
+	}
+	do("POST", "/v1/dms/"+dm.ID+"/files/"+id+"/ack", bob2.SessionToken, nil)
+	if code, _ := do("GET", "/v1/dms/"+dm.ID+"/files/"+id, bob2.SessionToken, nil); code != 404 {
+		t.Fatal("copy kept after every device had it")
+	}
+	if entries, _ := os.ReadDir(e.srv.filesDir()); len(entries) != 0 {
+		t.Fatalf("%d file(s) left on disk", len(entries))
+	}
+
+	// Only for the devices that could not get it peer to peer.
+	id, pending = upload("?for=" + b2.id())
+	if pending != 1 {
+		t.Fatalf("pending = %d", pending)
+	}
+	if code, _ := do("POST", "/v1/dms/"+dm.ID+"/files?for=someone-else", alice.SessionToken, []byte("x")); code != 400 {
+		t.Fatalf("copy for a device outside the conversation: %d", code)
 	}
 	if code, _ := do("POST", "/v1/dms/"+dm.ID+"/files", alice.SessionToken, bytes.Repeat([]byte{1}, 2<<10)); code != 413 {
 		t.Fatalf("oversized upload: %d", code)
@@ -198,12 +241,19 @@ func TestConversationFiles(t *testing.T) {
 	if code, _ := do("DELETE", "/v1/dms/"+dm.ID+"/files/"+id, bob.SessionToken, nil); code != 403 {
 		t.Fatalf("delete by another member: %d", code)
 	}
-	// Files expire.
-	e.clock = e.clock.Add(e.srv.cfg.DMFileTTL + time.Hour)
+	// A revoked device no longer holds the copy back.
+	e.expect(204, "", e.call("DELETE", "/v1/me/sessions/"+b2.id(), bob.SessionToken, nil, nil))
 	if err := e.srv.CleanupFiles(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if code, _ := do("GET", "/v1/dms/"+dm.ID+"/files/"+id, bob.SessionToken, nil); code != 404 {
-		t.Fatalf("expired file still served: %d", code)
+		t.Fatalf("copy kept for a revoked device: %d", code)
+	}
+	// And copies never outlive the cap (7 days by default).
+	id, _ = upload("")
+	e.clock = e.clock.Add(e.srv.cfg.DMFileTTL + time.Hour)
+	e.srv.CleanupFiles(context.Background())
+	if code, _ := do("GET", "/v1/dms/"+dm.ID+"/files/"+id, bob.SessionToken, nil); code != 404 {
+		t.Fatalf("expired copy still served: %d", code)
 	}
 }

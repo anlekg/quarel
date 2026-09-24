@@ -8,7 +8,7 @@ REPO=$(cd "$(dirname "$0")/../.." && pwd); B=$REPO/bin
 D=$(mktemp -d); PIDS=()
 trap 'kill "${PIDS[@]}" 2>/dev/null; rm -rf "$D"' EXIT
 export XDG_CONFIG_HOME=$D/cfg QUAREL_PASSWORD=motdepasse-solide
-QUAREL_RATE_LIMITS=off QUAREL_ADDR=127.0.0.1:18080 QUAREL_ISSUER=localhost:18080 QUAREL_DATA_DIR=$D/id $B/quarel-identity > $D/id.log 2>&1 & PIDS+=($!)
+QUAREL_RATE_LIMITS=off QUAREL_ADDR=127.0.0.1:18080 QUAREL_ISSUER=localhost:18080 QUAREL_DATA_DIR=$D/id QUAREL_DM_FILE_MAX_MB=1 $B/quarel-identity > $D/id.log 2>&1 & PIDS+=($!)
 sleep 0.5
 Q() { local p=$1; shift; (cd $D && $B/quarelctl -s http://127.0.0.1:18080 -p "$p" "$@" 2>&1); }
 FAIL=0
@@ -75,6 +75,29 @@ Q alice dm-typing Tarot >/dev/null; Q alice dm-read Tarot >/dev/null; sleep 0.4
 L=$(cat $D/bob.log)
 expect "dave toujours visible" "$L" "… dave écrit"
 [ "$(grep -c 'alice écrit' <<<"$L")" = 1 ] && [ "$(grep -c 'vu par alice' <<<"$L")" = 1 ] && echo "✔ désactivés : plus rien d'alice" || { echo "✘ alice partage encore"; FAIL=1; }
+echo "## Fichiers : en direct d'abord, serveur en secours"
+# bob is online (dm-listen), dave is not.
+head -c 5000 /dev/urandom > $D/plan.bin
+N0=$(ls $D/id/dm-files | wc -l)   # the earlier photo still waits for dave
+OUT=$(Q alice dm-file Tarot $D/plan.bin "le plan")
+expect "envoi direct à l'appareil en ligne, serveur pour l'absent" "$OUT" "1 appareil(s) en direct, 1 via le serveur"
+sleep 0.5
+expect "bob l'a reçu en direct" "$(cat $D/bob.log)" "fichier reçu en direct"
+P=$(grep -o '#[0-9]*' <<<"$OUT" | head -1 | tr -d '#')
+expect "bob l'enregistre sans le serveur" "$(Q bob dm-download Tarot $P plan-bob.bin)" "depuis cet appareil"
+[ "$(ls $D/id/dm-files | wc -l)" = $((N0 + 1)) ] && echo "✔ une seule copie serveur de plus, pour l'appareil absent" || { echo "✘ copies serveur : $(ls $D/id/dm-files | wc -l)"; FAIL=1; }
+Q dave dm-history Tarot >/dev/null   # dave comes online: gets the copy, which is then deleted
+[ "$(ls $D/id/dm-files | wc -l)" = 0 ] && echo "✔ copies serveur effacées dès que dave les a" || { echo "✘ copie serveur conservée"; FAIL=1; }
+expect "dave l'a bien" "$(Q dave dm-download Tarot $P plan-dave.bin)" "depuis cet appareil"
+cmp -s $D/plan.bin $D/plan-dave.bin && echo "✔ fichier identique" || { echo "✘ fichier différent"; FAIL=1; }
+head -c 1500000 /dev/urandom > $D/video.bin   # over the server limit (1 MB here)
+OUT=$(Q alice dm-file Tarot $D/video.bin "la vidéo")
+expect "trop gros pour le serveur : direct seulement" "$OUT" "trop gros pour le serveur"
+V=$(grep -o '#[0-9]*' <<<"$OUT" | head -1 | tr -d '#')
+sleep 0.5
+expect "dave le récupère plus tard, en direct depuis un autre membre en ligne" "$(Q dave dm-download Tarot $V video-dave.bin)" "en direct depuis un autre appareil"
+cmp -s $D/video.bin $D/video-dave.bin && echo "✔ gros fichier identique" || { echo "✘ gros fichier différent"; FAIL=1; }
+[ "$(ls $D/id/dm-files | wc -l)" = 0 ] && echo "✔ le gros fichier n'est jamais passé par le serveur" || { echo "✘ gros fichier stocké"; FAIL=1; }
 for w in "Rendez-vous jeudi" "Bienvenue dave" "21 h"; do
   if cat $D/id/identity.db* | grep -aqF "$w"; then echo "✘ « $w » en clair dans la base"; FAIL=1; fi
 done

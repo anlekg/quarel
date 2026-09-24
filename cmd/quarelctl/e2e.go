@@ -88,6 +88,7 @@ type e2eStore struct {
 	Undecrypted []inboxItem               `json:"undecrypted"`            // waiting for their key
 	Names       map[string]string         `json:"names"`                  // user id → pseudo
 	CallSignals []callSignal              `json:"call_signals,omitempty"` // received call signalling, until a call command takes it
+	FileSignals []fileSignal              `json:"file_signals,omitempty"` // received file transfer signalling
 
 	// Encrypted backup (recovery.go).
 	BackupKey     string    `json:"backup_key,omitempty"` // derived from the recovery phrase
@@ -598,12 +599,13 @@ type megolmPlain struct {
 // fileRef points to an encrypted file stored by the Identity service; the
 // key only travels inside the encrypted event.
 type fileRef struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Mime  string `json:"mime"`
-	Size  int64  `json:"size"`
-	Key   string `json:"key"`   // XChaCha20-Poly1305, base64
-	Nonce string `json:"nonce"` // base64
+	ID       string `json:"id"`                  // chosen by the sender: local copies and peer-to-peer transfers
+	ServerID string `json:"server_id,omitempty"` // copy kept by the server for devices that were offline
+	Name     string `json:"name"`
+	Mime     string `json:"mime"`
+	Size     int64  `json:"size"`
+	Key      string `json:"key"`   // XChaCha20-Poly1305, base64
+	Nonce    string `json:"nonce"` // base64
 }
 
 type roomKey struct {
@@ -845,8 +847,15 @@ func (e *e2e) process(it inboxItem, out func(string)) {
 			out(fmt.Sprintf("⚠ message de %s rejeté : %v", e.name(it.SenderUser), err))
 			return
 		}
-		if _, line := e.apply(*it.EventID, *p); line != "" {
+		m, line := e.apply(*it.EventID, *p)
+		if line != "" {
 			out(line)
+		}
+		if m != nil && m.File != nil {
+			// Files not received peer to peer come from the server copy.
+			if err := e.c.pullServerCopy(*it.DMID, m.File); err != nil {
+				out("⚠ fichier pas encore récupéré : " + err.Error())
+			}
 		}
 	case "receipt":
 		var r struct {
@@ -899,6 +908,14 @@ func (e *e2e) handleSecret(plain *olmPlain, sender *deviceInfo, master string, o
 			e.st.BackupKey = a.BackupKey // version learnt on the first upload (conflict → merge)
 		}
 		out(fmt.Sprintf("✔ cet appareil a été validé par « %s » : il peut maintenant envoyer et recevoir des messages privés", sender.DeviceName))
+	case "file":
+		var fs fileSignal
+		if json.Unmarshal(plain.Content, &fs) != nil || !trusted {
+			out(fmt.Sprintf("⚠ transfert de fichier refusé : l'appareil %s de %s n'est pas validé", sender.DeviceName, e.name(plain.SenderUser)))
+			return
+		}
+		fs.FromUser, fs.FromDevice, fs.At = plain.SenderUser, plain.SenderDevice, time.Now()
+		e.st.FileSignals = append(e.st.FileSignals, fs)
 	case "call":
 		var cs callSignal
 		if json.Unmarshal(plain.Content, &cs) != nil || !trusted {

@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -275,54 +278,174 @@ func (c *cli) editOrDelete(target, number, text, kind string) error {
 	})
 }
 
-// dmSendFile encrypts a file locally (XChaCha20-Poly1305, fresh key), uploads
-// the ciphertext and sends the key inside an encrypted event.
+// dmSendFile encrypts a file locally (XChaCha20-Poly1305, fresh key), offers
+// it peer to peer to the conversation's online devices, puts a server copy
+// only for the devices that did not get it, then sends the key inside an
+// encrypted event.
 func (c *cli) dmSendFile(target, path, text string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	return c.withE2E(func(e *e2e) error {
+	key := make([]byte, chacha20poly1305.KeySize)
+	nonce := make([]byte, chacha20poly1305.NonceSizeX)
+	rand.Read(key)
+	rand.Read(nonce)
+	mt := mime.TypeByExtension(filepath.Ext(path))
+	if mt == "" {
+		mt = http.DetectContentType(data)
+	}
+	ref := &fileRef{ID: newCallID(), Name: filepath.Base(path), Mime: mt, Size: int64(len(data)),
+		Key: base64.StdEncoding.EncodeToString(key), Nonce: base64.StdEncoding.EncodeToString(nonce)}
+
+	// 1. Encrypt, keep a copy (this device can serve it later), offer it.
+	var conv *convInfo
+	var targets []deviceInfo
+	var ct []byte
+	err = c.withE2E(func(e *e2e) error {
 		if err := e.sync(printLine); err != nil {
 			return err
 		}
-		conv, err := c.resolveConv(e, target)
-		if err != nil {
+		if conv, err = c.resolveConv(e, target); err != nil {
 			return err
 		}
-		key := make([]byte, chacha20poly1305.KeySize)
-		nonce := make([]byte, chacha20poly1305.NonceSizeX)
-		rand.Read(key)
-		rand.Read(nonce)
 		aead, _ := chacha20poly1305.NewX(key)
-		ct := aead.Seal(nil, nonce, data, []byte(conv.ID))
-		req, _ := http.NewRequest("POST", c.st.Server+"/v1/dms/"+conv.ID+"/files", bytes.NewReader(ct))
-		req.Header.Set("Authorization", "Bearer "+c.st.SessionToken)
-		req.Header.Set("Content-Type", "application/octet-stream")
-		cl := *c.httpClient(c.st.Server)
-		cl.Timeout = 10 * time.Minute
-		resp, err := cl.Do(req)
-		if err != nil {
+		ct = aead.Seal(nil, nonce, data, []byte(conv.ID))
+		for _, u := range append(conv.others(e.st.UserID), e.st.UserID) {
+			devs, err := e.trusted(u)
+			if err != nil {
+				return err
+			}
+			for _, d := range devs {
+				if d.DeviceID != e.st.DeviceID {
+					targets = append(targets, d)
+				}
+			}
+		}
+		if err := c.storeFile(ref.ID, ct); err != nil {
 			return err
 		}
-		var up struct {
-			ID string `json:"id"`
-		}
-		err = decodeResponse(resp, &up)
-		resp.Body.Close()
-		if err != nil {
-			return err
-		}
-		mt := mime.TypeByExtension(filepath.Ext(path))
-		if mt == "" {
-			mt = http.DetectContentType(data)
-		}
-		ref := &fileRef{ID: up.ID, Name: filepath.Base(path), Mime: mt, Size: int64(len(data)),
-			Key: base64.StdEncoding.EncodeToString(key), Nonce: base64.StdEncoding.EncodeToString(nonce)}
-		return c.sendEvent(e, conv, megolmPlain{Type: "file", File: ref, Text: text})
+		return e.sendSecret(targets, "file", fileSignal{Action: "offer", ConvID: conv.ID, FileID: ref.ID, Size: int64(len(ct))})
 	})
+	if err != nil {
+		return err
+	}
+
+	// 2. Serve the online devices that ask for it during a short window.
+	delivered := map[string]bool{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	deadline := time.Now().Add(fileOfferWindow)
+	for time.Now().Before(deadline) && len(delivered) < len(targets) {
+		time.Sleep(300 * time.Millisecond)
+		var reqs []fileSignal
+		c.withE2E(func(e *e2e) error {
+			if e.sync(func(string) {}) == nil {
+				reqs = e.takeFileSignals(func(s fileSignal) bool { return s.Action == "fetch" && s.FileID == ref.ID })
+			}
+			return nil
+		})
+		for _, r := range reqs {
+			wg.Add(1)
+			go func(r fileSignal) {
+				defer wg.Done()
+				if c.serveFetch(r) {
+					mu.Lock()
+					delivered[r.FromDevice] = true
+					mu.Unlock()
+				}
+			}(r)
+		}
+		mu.Lock()
+		n := len(delivered)
+		mu.Unlock()
+		if n == len(targets) {
+			break
+		}
+	}
+	wg.Wait()
+
+	// 3. A server copy, deleted as soon as they have it, for the other devices.
+	var missing []string
+	for _, d := range targets {
+		if !delivered[d.DeviceID] {
+			missing = append(missing, d.DeviceID)
+		}
+	}
+	note := ""
+	if len(missing) > 0 {
+		serverID, err := c.uploadServerCopy(conv.ID, ct, missing)
+		var ae *apiErr
+		switch {
+		case errors.As(err, &ae) && ae.Code == "file_too_large":
+			note = fmt.Sprintf(", %d appareil(s) hors ligne le récupéreront en direct plus tard (trop gros pour le serveur)", len(missing))
+		case err != nil:
+			return err
+		default:
+			ref.ServerID = serverID
+			note = fmt.Sprintf(", %d via le serveur (copie chiffrée effacée dès réception)", len(missing))
+		}
+	}
+	fmt.Printf("📎 %s : %d appareil(s) en direct%s.\n", ref.Name, len(delivered), note)
+	return c.withE2E(func(e *e2e) error { return c.sendEvent(e, conv, megolmPlain{Type: "file", File: ref, Text: text}) })
 }
 
+func (c *cli) uploadServerCopy(convID string, ct []byte, devices []string) (string, error) {
+	req, _ := http.NewRequest("POST", c.st.Server+"/v1/dms/"+convID+"/files?for="+url.QueryEscape(strings.Join(devices, ",")), bytes.NewReader(ct))
+	req.Header.Set("Authorization", "Bearer "+c.st.SessionToken)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	cl := *c.httpClient(c.st.Server)
+	cl.Timeout = 10 * time.Minute
+	resp, err := cl.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var up struct {
+		ID string `json:"id"`
+	}
+	return up.ID, decodeResponse(resp, &up)
+}
+
+func (c *cli) downloadServerCopy(convID, serverID string) ([]byte, error) {
+	req, _ := http.NewRequest("GET", c.st.Server+"/v1/dms/"+convID+"/files/"+url.PathEscape(serverID), nil)
+	req.Header.Set("Authorization", "Bearer "+c.st.SessionToken)
+	cl := *c.httpClient(c.st.Server)
+	cl.Timeout = 10 * time.Minute
+	resp, err := cl.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, decodeResponse(resp, nil)
+	}
+	return io.ReadAll(resp.Body)
+}
+
+// checkFile decrypts a ciphertext with the key of its message.
+func checkFile(convID string, ref *fileRef, ct []byte) error {
+	_, err := openFile(convID, ref, ct)
+	return err
+}
+
+func openFile(convID string, ref *fileRef, ct []byte) ([]byte, error) {
+	key, _ := base64.StdEncoding.DecodeString(ref.Key)
+	nonce, _ := base64.StdEncoding.DecodeString(ref.Nonce)
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil || len(nonce) != chacha20poly1305.NonceSizeX {
+		return nil, errors.New("clé de fichier invalide")
+	}
+	data, err := aead.Open(nil, nonce, ct, []byte(convID))
+	if err != nil {
+		return nil, errors.New("fichier altéré ou mauvaise clé : refusé")
+	}
+	return data, nil
+}
+
+// dmDownloadFile saves a received file: from this device's copy, else the
+// server copy, else peer to peer from a device of the conversation that holds
+// it (the sender's, another member's, or one of mine).
 func (c *cli) dmDownloadFile(target, number, dest string) error {
 	id, err := strconv.ParseInt(strings.TrimPrefix(number, "#"), 10, 64)
 	if err != nil {
@@ -330,6 +453,7 @@ func (c *cli) dmDownloadFile(target, number, dest string) error {
 	}
 	var ref *fileRef
 	var convID string
+	var holders []deviceInfo
 	err = c.withE2E(func(e *e2e) error {
 		if err := e.sync(func(string) {}); err != nil {
 			return err
@@ -344,39 +468,51 @@ func (c *cli) dmDownloadFile(target, number, dest string) error {
 				ref = h.File
 			}
 		}
+		if ref == nil {
+			return fmt.Errorf("le message %d ne contient pas de fichier", id)
+		}
+		// Any member's device holding the file may serve it.
+		for _, u := range append(conv.others(e.st.UserID), e.st.UserID) {
+			devs, err := e.trusted(u)
+			if err != nil {
+				return err
+			}
+			for _, d := range devs {
+				if d.DeviceID != e.st.DeviceID {
+					holders = append(holders, d)
+				}
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	if ref == nil {
-		return fmt.Errorf("le message %d ne contient pas de fichier", id)
+	how := "depuis cet appareil"
+	if !c.haveFile(ref.ID) {
+		how = "via le serveur"
+		if err := c.pullServerCopy(convID, ref); err != nil || !c.haveFile(ref.ID) {
+			how = "en direct depuis un autre appareil"
+			ct, err := c.fetchP2P(convID, ref.ID, holders, fileFetchTimeout)
+			if err != nil {
+				return fmt.Errorf("fichier indisponible : %w", err)
+			}
+			if err := checkFile(convID, ref, ct); err != nil {
+				return err
+			}
+			if err := c.storeFile(ref.ID, ct); err != nil {
+				return err
+			}
+		}
 	}
-	req, _ := http.NewRequest("GET", c.st.Server+"/v1/dms/"+convID+"/files/"+ref.ID, nil)
-	req.Header.Set("Authorization", "Bearer "+c.st.SessionToken)
-	cl := *c.httpClient(c.st.Server)
-	cl.Timeout = 10 * time.Minute
-	resp, err := cl.Do(req)
+	p, _ := c.localFile(ref.ID)
+	ct, err := os.ReadFile(p)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return decodeResponse(resp, nil)
-	}
-	ct, err := io.ReadAll(resp.Body)
+	data, err := openFile(convID, ref, ct)
 	if err != nil {
 		return err
-	}
-	key, _ := base64.StdEncoding.DecodeString(ref.Key)
-	nonce, _ := base64.StdEncoding.DecodeString(ref.Nonce)
-	aead, err := chacha20poly1305.NewX(key)
-	if err != nil {
-		return err
-	}
-	data, err := aead.Open(nil, nonce, ct, []byte(convID))
-	if err != nil {
-		return fmt.Errorf("fichier altéré ou mauvaise clé : refusé")
 	}
 	if dest == "" {
 		dest = filepath.Base(ref.Name)
@@ -392,7 +528,7 @@ func (c *cli) dmDownloadFile(target, number, dest string) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	fmt.Printf("Déchiffré et enregistré : %s (%s)\n", dest, humanSize(int64(len(data))))
+	fmt.Printf("Déchiffré et enregistré : %s (%s, %s)\n", dest, humanSize(int64(len(data))), how)
 	return nil
 }
 

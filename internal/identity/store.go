@@ -241,6 +241,17 @@ CREATE TABLE conv_attachments (
 ALTER TABLE users ADD COLUMN share_typing INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE users ADD COLUMN share_read_receipts INTEGER NOT NULL DEFAULT 1;
 `,
+	// Option D for files (decided by the PM): the server copy only serves the
+	// devices that could not get the file peer to peer, and is deleted as soon
+	// as each of them has it.
+	`
+CREATE TABLE conv_file_pending (
+	file_id    TEXT NOT NULL REFERENCES conv_attachments(id) ON DELETE CASCADE,
+	session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+	PRIMARY KEY (file_id, session_id)
+);
+CREATE INDEX conv_file_pending_session ON conv_file_pending(session_id);
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

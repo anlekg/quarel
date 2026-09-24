@@ -95,7 +95,7 @@ func ConfigFromEnv() (Config, error) {
 	}
 	c.DMFileMaxBytes = int64(envInt("QUAREL_DM_FILE_MAX_MB", 25)) << 20
 	c.GroupMaxMembers = envInt("QUAREL_DM_GROUP_MAX", 10)
-	if c.DMFileTTL, err = time.ParseDuration(env("QUAREL_DM_FILE_TTL", "720h")); err != nil || c.DMFileTTL < time.Hour {
+	if c.DMFileTTL, err = time.ParseDuration(env("QUAREL_DM_FILE_TTL", "168h")); err != nil || c.DMFileTTL < time.Hour {
 		return c, fmt.Errorf("QUAREL_DM_FILE_TTL: invalid duration (at least 1h)")
 	}
 	if c.SMTP.Host != "" && c.SMTP.From == "" {
@@ -186,7 +186,7 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer, retired 
 		s.cfg.GroupMaxMembers = 10
 	}
 	if s.cfg.DMFileTTL <= 0 {
-		s.cfg.DMFileTTL = 30 * 24 * time.Hour
+		s.cfg.DMFileTTL = 7 * 24 * time.Hour
 	}
 	return s
 }
@@ -271,6 +271,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/dms/{id}/files", s.authed(s.handleUploadFile))
 	mux.HandleFunc("GET /v1/dms/{id}/files/{file}", s.authed(s.handleDownloadFile))
 	mux.HandleFunc("DELETE /v1/dms/{id}/files/{file}", s.authed(s.handleDeleteFile))
+	mux.HandleFunc("POST /v1/dms/{id}/files/{file}/ack", s.authed(s.handleAckFile))
 	mux.HandleFunc("GET /v1/me/privacy", s.authed(s.handlePrivacy))
 	mux.HandleFunc("GET /v1/calls/ice-servers", s.authed(s.handleCallServers))
 	mux.HandleFunc("PATCH /v1/me/privacy", s.authed(s.handlePrivacy))
