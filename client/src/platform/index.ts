@@ -14,10 +14,18 @@ interface Secrets {
   delete(key: string): Promise<void>
 }
 
+export interface ScreenSource {
+  id: string
+  name: string
+  thumbnail: string // data URL
+}
+
 interface DesktopBridge {
   secrets: Secrets
   info(): Promise<AppInfo>
   pinServer(host: string, sid: string): Promise<void>
+  screenSources(): Promise<ScreenSource[]>
+  chooseScreenSource(id: string): Promise<void>
   checkServer(host: string, port: number, sid: string): Promise<'authority' | 'binding' | 'mismatch' | 'unreachable'>
 }
 
@@ -90,4 +98,14 @@ export async function pinServer(host: string, sid: string) {
 // Browsers check it themselves (authority certificates only).
 export async function checkServer(host: string, port: number, sid: string) {
   return desktop ? desktop.checkServer(host, port, sid) : 'authority'
+}
+
+// Desktop screen sharing: list the screens and windows, then choose the one
+// the next screen-share request will get.
+export async function screenSources(): Promise<ScreenSource[]> {
+  return desktop ? desktop.screenSources() : []
+}
+
+export async function chooseScreenSource(id: string) {
+  await desktop?.chooseScreenSource(id)
 }

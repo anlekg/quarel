@@ -80,7 +80,8 @@ export class Identity {
 
 export async function launchApp(userData: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
-    args: [client, '--password-store=basic'],
+    // Fake microphone and camera (a beep and a test pattern), no permission prompt.
+    args: [client, '--password-store=basic', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
     env: { ...process.env, QUAREL_USER_DATA: userData, QUAREL_DEV_URL: '' },
   })
   const page = await app.firstWindow()

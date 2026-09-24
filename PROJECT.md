@@ -478,3 +478,7 @@ Choix du CP : **cette machine**, accord pour ouvrir des ports sur la box, DNS ch
 | 2026-09-24 | Relais d'appels (TURN) **désactivé** pour l'instant | UDP hors tunnel ; à décider avec l'étape « appels » du client. |
 | 2026-09-24 | Emails **plus tard** : codes lisibles dans le journal pendant la phase sur invitation | Choix du CP. `quarel.app` a déjà des MX chez OVH : piste possible pour l'envoi. |
 | 2026-09-24 | Cloudflare voit le trafic web (messages des salons) | Accepté pour la phase de test ; les MP restent chiffrés de bout en bout. À rediscuter pour la production. |
+
+### Client graphique — étape 3 : vocal et vidéo (2026-09-24)
+
+Livré : rejoindre un salon vocal d'un clic, participants sous le salon (micro, son, caméra, écran, modération, qui parle), vue du salon (tuiles, caméras, partages d'écran), micro, sourdine, caméra, partage d'écran (sélecteur d'écrans et de fenêtres dans l'application de bureau), barre « Vocal connecté » visible partout, suivi des décisions de la modération (micro/son coupés, déplacement, déconnexion). Fonctionne dans l'application et dans le client web (`app.quarel.app`). Test de bout en bout avec un vrai LiveKit. **Non vérifié automatiquement** : l'indicateur « en train de parler » (le bip du faux micro de Chromium ne déclenche pas la détection de LiveKit) et le vocal à travers Internet (à tester par le CP sur `test.quarel.app`).

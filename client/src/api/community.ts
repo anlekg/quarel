@@ -218,6 +218,19 @@ export class CommunityClient {
     return this.call<void>('POST', '/v1/members/@me/phone/verify', { phone, code })
   }
 
+  voiceJoin(channel: number) {
+    return this.call<{ url: string; token: string; room: string; can_speak: boolean; can_stream: boolean; server_mute: boolean; server_deaf: boolean }>(
+      'POST', `/v1/channels/${channel}/voice/join`)
+  }
+
+  voiceState(state: { self_mute: boolean; self_deaf: boolean }) {
+    return this.call<void>('PATCH', '/v1/voice/state', state)
+  }
+
+  voiceLeave() {
+    return this.call<void>('POST', '/v1/voice/leave')
+  }
+
   gatewayURL() {
     return this.base.replace(/^http/, 'ws') + '/v1/gateway'
   }

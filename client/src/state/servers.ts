@@ -12,6 +12,7 @@ import { identityLabel } from '../lib/identityURL'
 import type { Invite } from '../lib/invite'
 import { checkServer, pinServer, secrets } from '../platform'
 import { identityClient, serverRules, signOut, type Account } from './account'
+import { currentVoice, leaveVoice } from './voice'
 
 export interface SavedServer {
   sid: string
@@ -91,6 +92,8 @@ export class ServerConn {
   private retryTimer: ReturnType<typeof setTimeout> | undefined
   private closed = false
   private relogin: Promise<void> | null = null
+  // Set by the voice session while connected to this server's voice.
+  onVoiceEvent: ((event: 'move' | 'removed', channel?: number) => void) | null = null
 
   constructor(
     public saved: SavedServer,
@@ -209,6 +212,7 @@ export class ServerConn {
   markRemoved(reason: ServerState['removed'], blockedReason?: string) {
     this.set({ status: 'removed', removed: reason, blockedReason })
     this.stop()
+    this.onVoiceEvent?.('removed')
   }
 
   private handle(t: string, d: any) {
@@ -277,6 +281,9 @@ export class ServerConn {
         return this.set({ ready: { ...r, roles: r.roles.filter((x) => x.id !== d.id) } })
       case 'SERVER_UPDATE':
         return this.set({ ready: { ...r, server: d as ServerInfo } })
+      case 'VOICE_MOVE': // moved by a moderator: join the new channel
+        this.onVoiceEvent?.('move', d.channel_id)
+        return
       case 'VOICE_STATE_UPDATE': {
         const v = d as VoiceState & { channel_id: number | null }
         const others = r.voice_states.filter((x) => x.member_id !== v.member_id)
@@ -474,6 +481,7 @@ export async function joinServer(account: Account, inv: Invite): Promise<ServerC
 
 // Leaves the server (if still a member) and forgets it.
 export async function leaveServer(conn: ServerConn, remote = true) {
+  if (currentVoice()?.conn === conn) await leaveVoice()
   if (remote && conn.state.status !== 'removed') await conn.api((c) => c.leave())
   conn.stop()
   conns = conns.filter((c) => c !== conn)

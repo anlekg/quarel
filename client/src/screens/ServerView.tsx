@@ -11,6 +11,9 @@ import { inviteLink } from '../lib/invite'
 import { prefs } from '../platform'
 import { leaveServer, useServerState, type ServerConn, type ServerState } from '../state/servers'
 import { ChannelView } from './ChannelView'
+import { VoiceMembers, VoiceView } from './Voice'
+import { joinVoice, useVoice } from '../state/voice'
+import { can } from '../lib/community'
 
 export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React.ReactNode }) {
   const state = useServerState(conn)
@@ -18,7 +21,16 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
   const [channelID, setChannelID] = useState<number>(() => prefs.get('channel:' + conn.saved.sid, 0))
   const [showMembers, setShowMembers] = useState(() => prefs.get('show-members', true))
 
-  const channel = r?.channels.find((c) => c.id === channelID && c.type !== 'category' && c.type !== 'voice')
+  const channel = r?.channels.find((c) => c.id === channelID && c.type !== 'category')
+  // The "Vocal connecté" bar can bring us back to the voice channel.
+  useEffect(() => {
+    const open = (e: Event) => {
+      const d = (e as CustomEvent<{ sid: string; channelId: number }>).detail
+      if (d.sid === conn.saved.sid) setChannelID(d.channelId)
+    }
+    window.addEventListener('quarel:open-channel', open)
+    return () => window.removeEventListener('quarel:open-channel', open)
+  }, [conn.saved.sid])
   useEffect(() => {
     if (r && !channel) {
       const first = firstTextChannel(r.channels)
@@ -35,7 +47,10 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
         <ServerMenu conn={conn} ready={r} />
         {state.status === 'offline' && <div className="conn-banner" role="status">Connexion perdue, nouvelle tentative…</div>}
         <div className="sidebar-body">
-          {r && <ChannelList ready={r} state={state} active={channel?.id} onPick={setChannelID} />}
+          {r && <ChannelList conn={conn} ready={r} state={state} active={channel?.id} onPick={(c) => {
+            setChannelID(c.id)
+            if (c.type === 'voice' && can(r, c.id, 'connect')) joinVoice(conn, c.id)
+          }} />}
         </div>
         {userbar}
       </aside>
@@ -48,6 +63,8 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
           <RulesGate conn={conn} ready={r} />
         ) : r.restriction === 'phone_not_verified' ? (
           <PhoneGate conn={conn} />
+        ) : channel?.type === 'voice' ? (
+          <VoiceView conn={conn} ready={r} channel={channel} />
         ) : channel ? (
           <ChannelView key={channel.id} conn={conn} ready={r} state={state} channel={channel}
             showMembers={showMembers}
@@ -148,31 +165,33 @@ function channelIcon(c: Channel) {
   return <Hash size={18} />
 }
 
-function ChannelList({ ready, state, active, onPick }: {
+function ChannelList({ conn, ready, state, active, onPick }: {
+  conn: ServerConn
   ready: Ready
   state: ServerState
   active?: number
-  onPick: (id: number) => void
+  onPick: (c: Channel) => void
 }) {
   const tree = useMemo(() => channelTree(ready.channels), [ready.channels])
-  const name = (id: string) => ready.members.find((m) => m.id === id)?.display_name ?? '…'
+  const voice = useVoice()
   const button = (c: Channel) => {
     const rs = state.reads[c.id]
     const unread = !!rs && rs.last_message_id > rs.last_read && c.id !== active
     if (c.type === 'voice') {
-      const inside = ready.voice_states.filter((v) => v.channel_id === c.id)
+      const joined = voice?.conn === conn && voice.channelId === c.id
       return (
         <div key={c.id}>
-          <button className="ch" disabled title="Le vocal arrive à l'étape suivante">{channelIcon(c)}<span className="name">{c.name}</span></button>
-          {inside.length > 0 && (
-            <div className="voice-users">{inside.map((v) => <span key={v.member_id}>{name(v.member_id)}</span>)}</div>
-          )}
+          <button className={'ch' + (c.id === active ? ' active' : '') + (joined ? ' voice-active' : '')} onClick={() => onPick(c)}
+            aria-current={c.id === active ? 'page' : undefined} title={joined ? 'Vous êtes dans ce salon vocal' : 'Rejoindre le salon vocal'}>
+            {channelIcon(c)}<span className="name">{c.name}</span>
+          </button>
+          <VoiceMembers ready={ready} channel={c} conn={conn} />
         </div>
       )
     }
     return (
       <button key={c.id} className={'ch' + (c.id === active ? ' active' : '') + (unread ? ' unread' : '') + (c.type === 'thread' ? ' thread' : '')}
-        onClick={() => onPick(c.id)} aria-current={c.id === active ? 'page' : undefined}>
+        onClick={() => onPick(c)} aria-current={c.id === active ? 'page' : undefined}>
         {channelIcon(c)}
         <span className="name">{c.name}</span>
         {rs && rs.mentions > 0 && c.id !== active && <span className="ch-badge" aria-label={rs.mentions + ' mention(s)'}>{rs.mentions}</span>}

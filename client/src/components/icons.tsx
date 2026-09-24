@@ -40,3 +40,9 @@ export const Download = (p: P) => <Icon {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5
 export const Crown = (p: P) => <Icon {...p}><path d="M2 18h20M3 8l4 5 5-7 5 7 4-5-2 10H5z" /></Icon>
 export const Thread = (p: P) => <Icon {...p}><path d="M4 4v10a4 4 0 0 0 4 4h12M16 14l4 4-4 4" /></Icon>
 export const Send = (p: P) => <Icon {...p}><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" /></Icon>
+export const Mic = (p: P) => <Icon {...p}><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v4" /></Icon>
+export const MicOff = (p: P) => <Icon {...p}><path d="M1 1l22 22M9 9v3a3 3 0 0 0 5.1 2.1M15 9.3V4a3 3 0 0 0-5.9-.6M17 16.9A7 7 0 0 1 5 12M19 12a7 7 0 0 1-.1 1.2M12 19v4" /></Icon>
+export const Headphones = (p: P) => <Icon {...p}><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z" /></Icon>
+export const HeadphonesOff = (p: P) => <Icon {...p}><path d="M1 1l22 22M3 18v-6a9 9 0 0 1 14.5-7.1M21 12v6" /><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z" /></Icon>
+export const Camera = (p: P) => <Icon {...p}><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" /></Icon>
+export const Hangup = (p: P) => <Icon {...p}><path d="M10.7 13.3a16 16 0 0 1-2.5-3.3M5 5l14 14M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1" /></Icon>

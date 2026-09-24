@@ -8,6 +8,8 @@ import { prefs } from '../platform'
 import { closeServers, openServers, useServerState, useServers, type ServerConn } from '../state/servers'
 import { initials, JoinDialog } from './JoinDialog'
 import { ServerView } from './ServerView'
+import { VoiceBar } from './Voice'
+import { leaveVoice } from '../state/voice'
 import { Settings } from './Settings'
 
 export function Shell({ account }: { account: Account }) {
@@ -18,7 +20,10 @@ export function Shell({ account }: { account: Account }) {
 
   useEffect(() => {
     openServers(account)
-    return () => closeServers()
+    return () => {
+      leaveVoice()
+      closeServers()
+    }
   }, [account.user.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const select = (id: string) => {
@@ -29,6 +34,12 @@ export function Shell({ account }: { account: Account }) {
 
   const u = account.user
   const userbar = (
+    <>
+    <VoiceBar onOpen={(conn, channelId) => {
+      prefs.set('channel:' + conn.saved.sid, channelId)
+      select(conn.saved.sid)
+      window.dispatchEvent(new CustomEvent('quarel:open-channel', { detail: { sid: conn.saved.sid, channelId } }))
+    }} />
     <div className="userbar">
       <Avatar id={u.id} name={u.pseudo} src={account.identity + '/v1/users/' + u.id + '/avatar'} />
       <div className="who">
@@ -37,6 +48,7 @@ export function Shell({ account }: { account: Account }) {
       </div>
       <button className="icon-btn" aria-label="Paramètres" title="Paramètres" onClick={() => setSettings(true)}><Gear size={18} /></button>
     </div>
+    </>
   )
 
   return (

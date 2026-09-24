@@ -26,7 +26,8 @@ This product includes or bundles third-party software:
   go-winres (0BSD), a build tool only.
 - Desktop client (client/): Electron (MIT; ships Chromium and Node.js under
   their own licenses, listed in the LICENSES.chromium.html file of each build),
-  React (MIT), @noble/ed25519 and @noble/hashes (MIT, Paul Miller)
+  React (MIT), @noble/ed25519 and @noble/hashes (MIT, Paul Miller),
+  livekit-client (Apache License 2.0, with MIT, BSD-3-Clause and 0BSD dependencies)
 - Manrope and Space Grotesk fonts (bundled in the client via Fontsource)
   SIL Open Font License 1.1
 

@@ -1,6 +1,6 @@
 // Electron main process: one window running the web UI, with the renderer
 // sandboxed (no Node access). The only bridge is the small API in preload.ts.
-import { app, BrowserWindow, ipcMain, safeStorage, shell, session } from 'electron'
+import { app, BrowserWindow, desktopCapturer, ipcMain, safeStorage, shell, session } from 'electron'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises'
@@ -164,7 +164,31 @@ function installVerifier() {
   })
 }
 
+// --- screen sharing: the UI lists sources, the user picks one, and the next
+// getDisplayMedia() request gets it (with system audio on Windows) ---
+
+let chosenScreen = ''
+
+ipcMain.handle('screen:sources', async (e) => {
+  fromApp(e)
+  const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 } })
+  return sources.map((s) => ({ id: s.id, name: s.name, thumbnail: s.thumbnail.toDataURL() }))
+})
+
+ipcMain.handle('screen:choose', (e, id) => {
+  fromApp(e)
+  if (typeof id !== 'string') throw new Error('invalid source')
+  chosenScreen = id
+})
+
 app.whenReady().then(async () => {
+  session.defaultSession.setDisplayMediaRequestHandler(async (_req, cb) => {
+    const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] })
+    const source = sources.find((s) => s.id === chosenScreen) ?? sources.find((s) => s.id.startsWith('screen:'))
+    chosenScreen = ''
+    if (!source) return cb({})
+    cb(process.platform === 'win32' ? { video: source, audio: 'loopback' } : { video: source })
+  })
   await loadPins()
   installVerifier()
 
@@ -174,7 +198,7 @@ app.whenReady().then(async () => {
     safeStorage.setUsePlainTextEncryption(true)
   }
   // Microphone, camera and notifications are needed later (voice, calls).
-  const allowed = new Set(['media', 'notifications', 'clipboard-sanitized-write', 'fullscreen'])
+  const allowed = new Set(['media', 'display-capture', 'notifications', 'clipboard-sanitized-write', 'fullscreen'])
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)))
   createWindow()
   app.on('activate', () => {
