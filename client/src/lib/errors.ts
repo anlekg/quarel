@@ -1,5 +1,7 @@
 // French messages for API error codes. Codes are stable; server messages are not shown.
 import { ApiError } from '../api/http'
+import { E2EError } from '../e2e/engine'
+import { PhraseError } from '../e2e/recovery'
 
 const messages: Record<string, string> = {
   network: 'Service injoignable. Vérifiez votre connexion ou l’adresse du service.',
@@ -48,9 +50,24 @@ const messages: Record<string, string> = {
   insecure_address: 'Adresse non sécurisée : https est obligatoire (http seulement pour cette machine).',
   bad_address: 'Adresse invalide. Exemple : identity.quarel.app',
   not_identity: 'Aucun service d\u2019identité Quarel ne répond à cette adresse.',
+  // End-to-end encryption (client-side).
+  device_not_validated: 'Cet appareil n\u2019est pas encore validé : il ne peut pas encore envoyer de messages privés.',
+  master_key_changed: 'La clé de sécurité de ce contact a changé depuis votre premier échange : envoi bloqué par précaution (possible usurpation).',
+  no_one_time_key: 'Un appareil du destinataire n\u2019a plus de clé disponible ; réessayez plus tard.',
+  device_not_found: 'Cet appareil n\u2019existe plus (déconnecté entre-temps ?).',
+  code_mismatch: 'Ce code ne correspond pas à celui de l\u2019appareil. Ne le validez pas : vérifiez le code affiché sur l\u2019autre appareil. S\u2019il est différent, quelqu\u2019un tente peut-être de s\u2019insérer.',
+  bad_device_keys: 'Les clés de cet appareil sont mal signées : validation refusée.',
+  no_backup: 'Aucune sauvegarde n\u2019existe pour ce compte : il faut valider cet appareil depuis un autre.',
+  wrong_phrase: 'Cette phrase n\u2019ouvre pas la sauvegarde de ce compte (phrase d\u2019un autre compte, ou remplacée depuis).',
+  backup_master_mismatch: 'La clé du compte contenue dans la sauvegarde ne correspond pas à celle publiée : restauration refusée.',
+  backup_exists: 'Une sauvegarde existe déjà pour ce compte.',
+  backup_other_phrase: 'La sauvegarde a été créée avec une autre phrase de récupération.',
+  backup_conflict: 'Trop de modifications simultanées de la sauvegarde, réessayez.',
 }
 
 export function errorMessage(e: unknown): string {
+  if (e instanceof PhraseError) return e.message
+  if (e instanceof E2EError) return messages[e.code] ?? 'Erreur de chiffrement (' + e.code + ').'
   if (e instanceof ApiError) {
     if (e.code === 'account_locked' || e.code === 'rate_limited') {
       const wait = e.retryAfter > 0 ? ' Réessayez ' + waitText(e.retryAfter) + '.' : ' Réessayez plus tard.'

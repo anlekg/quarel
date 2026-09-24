@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react'
 import type { Conversation, FriendLists, InboxItem, PublicUser } from '../api/identity'
 import { ApiError } from '../api/http'
 import { loadCrypto } from '../crypto'
-import { E2E, type E2EEvent } from '../e2e/engine'
+import { E2E, type BackupStatus, type E2EEvent } from '../e2e/engine'
 import { verificationCode } from '../e2e/keys'
 import { identityClient, signOut, type Account } from './account'
 
@@ -13,6 +13,9 @@ export interface SocialState {
   error?: string
   validated: boolean // this device may send (holds the master key)
   code: string // this device's verification code
+  pendingDevices: number // own devices waiting for validation (counted on validated devices)
+  backup: 'unknown' | BackupStatus
+  backupAt?: string
   friends: FriendLists
   presence: Record<string, string> // friend id → online | idle | dnd | offline
   conversations: Conversation[]
@@ -23,7 +26,7 @@ export interface SocialState {
 }
 
 const empty: SocialState = {
-  status: 'starting', validated: false, code: '', friends: { friends: [], incoming: [], outgoing: [] }, presence: {},
+  status: 'starting', validated: false, code: '', pendingDevices: 0, backup: 'unknown', friends: { friends: [], incoming: [], outgoing: [] }, presence: {},
   conversations: [], typing: {}, reads: {}, version: 0, warnings: [],
 }
 
@@ -78,7 +81,7 @@ export async function openSocial(a: Account) {
     e2e = await E2E.open(c, api(), a.user.id, a.user.pseudo, a.sessionId)
     e2e.on(onEngine)
     set({ validated: e2e.validated, code: verificationCode(e2e.ed25519) })
-    await Promise.all([refreshFriends(), refreshConversations()])
+    await Promise.all([refreshFriends(), refreshConversations(), refreshDevices(), refreshBackup()])
     set({ status: 'ready' })
     connect()
   } catch (err) {
@@ -98,7 +101,12 @@ export function closeSocial() {
 
 function onEngine(ev: E2EEvent) {
   if (ev.kind === 'history') set({ version: state.version + 1 })
-  if (ev.kind === 'approved') set({ validated: true })
+  if (ev.kind === 'approved') {
+    set({ validated: true })
+    refreshDevices().catch(() => {})
+    refreshBackup().catch(() => {})
+  }
+  if (ev.kind === 'backup') refreshBackup().catch(() => {})
   if (ev.kind === 'warning') set({ warnings: [...state.warnings.slice(-4), ev.text] })
 }
 
@@ -164,11 +172,47 @@ function handle(t: string, d: any) {
       return
     case 'DEVICES_UPDATE':
       e2e?.forgetKeys(d.user_id)
+      if (d.user_id === account?.user.id) refreshDevices().catch(() => {})
       return
   }
 }
 
+// Own devices not yet validated (only a validated device can validate them).
+async function refreshDevices() {
+  if (!e2e?.validated) return set({ pendingDevices: 0 })
+  const list = await e2e.devices()
+  set({ pendingDevices: list.filter((d) => !d.trusted).length })
+}
+
+async function refreshBackup() {
+  if (!e2e) return
+  const b = await e2e.backupStatus()
+  set({ backup: b.status, backupAt: b.updatedAt })
+}
+
 // --- actions ---
+
+export function listDevices() {
+  return e2e!.devices()
+}
+
+export async function approveDevice(deviceId: string, code: string) {
+  const n = await e2e!.approve(deviceId, code)
+  await refreshDevices()
+  return n
+}
+
+export async function createRecovery(replace = false) {
+  const phrase = await e2e!.createRecovery(replace)
+  await refreshBackup()
+  return phrase
+}
+
+export async function restoreFromPhrase(phrase: string) {
+  const n = await e2e!.restore(phrase)
+  await refreshBackup()
+  return n
+}
 
 export async function addFriend(pseudo: string) {
   const r = await api().addFriend(pseudo.trim().replace(/^@/, '').split('@')[0])

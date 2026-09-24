@@ -8,8 +8,11 @@ import { Close, Monitor } from '../components/icons'
 import { errorMessage } from '../lib/errors'
 import { identityLabel } from '../lib/identityURL'
 import { identityClient, signOut, type Account } from '../state/account'
+import type { OwnDevice } from '../e2e/engine'
+import { listDevices, useSocial } from '../state/social'
+import { ApproveDialog, RecoverySection } from './Security'
 
-type Section = 'account' | 'devices' | 'invites'
+type Section = 'account' | 'devices' | 'recovery' | 'invites'
 
 const dateFmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long' })
 const dateTimeFmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
@@ -30,12 +33,14 @@ export function Settings({ account, onClose }: { account: Account; onClose: () =
         <span className="group">MON COMPTE</span>
         <button className={section === 'account' ? 'active' : ''} onClick={() => setSection('account')}>Compte</button>
         <button className={section === 'devices' ? 'active' : ''} onClick={() => setSection('devices')}>Appareils</button>
+        <button className={section === 'recovery' ? 'active' : ''} onClick={() => setSection('recovery')}>Récupération</button>
         <button className={section === 'invites' ? 'active' : ''} onClick={() => setSection('invites')}>Invitations</button>
         <span className="group" />
         <button className="danger" onClick={() => setConfirmLogout(true)}>Se déconnecter</button>
       </nav>
       <main className="settings-main">
-        {section === 'account' ? <AccountSection account={account} /> : section === 'devices' ? <DevicesSection account={account} /> : <InvitesSection account={account} />}
+        {section === 'account' ? <AccountSection account={account} /> : section === 'devices' ? <DevicesSection account={account} />
+          : section === 'recovery' ? <RecoverySection /> : <InvitesSection account={account} />}
       </main>
       <button className="icon-btn settings-close" aria-label="Fermer les paramètres" title="Fermer (Échap)" onClick={onClose}>
         <Close />
@@ -83,13 +88,18 @@ function AccountSection({ account }: { account: Account }) {
 }
 
 function DevicesSection({ account }: { account: Account }) {
+  const s = useSocial()
   const [list, setList] = useState<SessionInfo[] | null>(null)
+  const [keys, setKeys] = useState<Record<string, OwnDevice>>({})
+  const [approving, setApproving] = useState<OwnDevice | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
 
   const load = useCallback(async () => {
     try {
       setList(await identityClient(account).sessions())
+      const devs = await listDevices().catch(() => [])
+      setKeys(Object.fromEntries(devs.map((d) => [d.device_id, d])))
       setError('')
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return signOut({ remote: false })
@@ -99,7 +109,7 @@ function DevicesSection({ account }: { account: Account }) {
 
   useEffect(() => {
     load()
-  }, [load])
+  }, [load, s.pendingDevices, s.validated])
 
   async function revoke(id: string) {
     setBusy(id)
@@ -118,25 +128,33 @@ function DevicesSection({ account }: { account: Account }) {
       <h2>Appareils</h2>
       <p className="muted" style={{ lineHeight: 1.5 }}>
         Chaque appareil connecté à votre compte a sa propre session. Déconnectez ceux que vous ne reconnaissez pas :
-        leurs clés de chiffrement sont aussi supprimées.
+        leurs clés de chiffrement sont aussi supprimées. Un nouvel appareil doit être <b>validé</b> par un appareil qui l&apos;est déjà
+        (ou avec la phrase de récupération) pour lire vos messages privés.
       </p>
       <Alert kind="error">{error}</Alert>
       {list && (
         <div className="card" data-testid="sessions">
-          {list.map((s) => (
-            <div className="card-row" key={s.id}>
+          {list.map((x) => (
+            <div className="card-row" key={x.id}>
               <Monitor />
               <div className="grow">
-                <span className="title">{s.device_name} {s.current && <span className="tag">Cet appareil</span>}</span>
-                <span className="sub">Connecté le {dateTimeFmt.format(new Date(s.created_at))} · dernière activité le {dateTimeFmt.format(new Date(s.last_seen_at))}</span>
+                <span className="title">
+                  {x.device_name} {x.current && <span className="tag">Cet appareil</span>}{' '}
+                  {keys[x.id] && (keys[x.id].trusted ? <span className="tag">Validé</span> : <span className="tag tag-warn">Non validé</span>)}
+                </span>
+                <span className="sub">Connecté le {dateTimeFmt.format(new Date(x.created_at))} · dernière activité le {dateTimeFmt.format(new Date(x.last_seen_at))}</span>
               </div>
-              {!s.current && (
-                <button className="btn btn-ghost btn-sm" disabled={busy === s.id} onClick={() => revoke(s.id)}>Déconnecter</button>
+              {!x.current && keys[x.id] && !keys[x.id].trusted && s.validated && (
+                <button className="btn btn-primary btn-sm" onClick={() => setApproving(keys[x.id])}>Valider</button>
+              )}
+              {!x.current && (
+                <button className="btn btn-ghost btn-sm" disabled={busy === x.id} onClick={() => revoke(x.id)}>Déconnecter</button>
               )}
             </div>
           ))}
         </div>
       )}
+      {approving && <ApproveDialog device={approving} onClose={() => { setApproving(null); load() }} />}
     </>
   )
 }

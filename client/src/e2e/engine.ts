@@ -8,12 +8,14 @@
 // first contact. The server only relays ciphertexts.
 import type { Crypto } from '../crypto'
 import type { MegolmOutbound, OlmAccount, OlmSession } from '../crypto/wasm/quarel_crypto.js'
-import type { DeviceInfo, IdentityClient, InboxItem, UserKeys } from '../api/identity'
+import type { DeviceInfo, IdentityClient, InboxItem, ServerBackup, UserKeys } from '../api/identity'
 import { ApiError } from '../api/http'
 import { vault } from '../platform'
 import {
-  b64, deviceCert, deviceKeys, masterPublic, masterSign, newMasterSeed, oneTimeKeyMsg, unb64, verify,
+  b64, deviceCert, deviceKeys, masterPublic, masterSign, newMasterSeed, normalizeCode, oneTimeKeyMsg, unb64, verificationCode, verify,
 } from './keys'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { backupKey, generatePhrase, openBackup, parsePhrase, sealBackup, WrongKeyError } from './recovery'
 
 const OTK_TARGET = 20
 const MEGOLM_MAX_MESSAGES = 100
@@ -68,7 +70,33 @@ export interface E2EState {
   history: Record<string, HistMsg[]> // by conversation
   undecrypted: InboxItem[]
   names: Record<string, string>
-  backup_key?: string
+  backup_key?: string // derived from the recovery phrase (unpadded base64)
+  backup_version?: number
+  backup_digest?: string
+  backup_at?: string
+}
+
+// Encrypted account backup content, as the Go client's backupPayload.
+interface BackupPayload {
+  format: number
+  master_seed: string
+  history: Record<string, HistMsg[]>
+  inbound: Record<string, InboundState> // pickle = exported session key
+  pinned: Record<string, string>
+  names: Record<string, string>
+  created_at: string
+}
+
+export interface OwnDevice extends DeviceInfo {
+  current: boolean
+  trusted: boolean // certified by the account's master key
+}
+
+export type BackupStatus = 'none' | 'active' | 'no_key' // no_key: a backup exists, this device lacks its key
+
+const padded = (b: Uint8Array) => {
+  const s = b64(b)
+  return s + '='.repeat((4 - (s.length % 4)) % 4)
 }
 
 interface OlmPlain {
@@ -107,7 +135,8 @@ export class E2EError extends Error {
 // What the UI hears about.
 export type E2EEvent =
   | { kind: 'history'; dmId: string }
-  | { kind: 'approved' } // this device was validated by another one
+  | { kind: 'approved' } // this device was validated (by another one, or restored)
+  | { kind: 'backup' } // backup state changed
   | { kind: 'warning'; text: string }
 
 export class E2E {
@@ -408,6 +437,7 @@ export class E2E {
       this.apply(res.event_id, plain)
       await this.save()
       this.emit({ kind: 'history', dmId })
+      await this.backupQuietly()
       return res
     })
   }
@@ -460,21 +490,24 @@ export class E2E {
   // Fetches, decrypts and acknowledges everything waiting for this device.
   // items: already received through the gateway (INBOX), or undefined to fetch.
   sync(items?: InboxItem[]) {
-    return this.run(async () => {
-      const changed = new Set<string>()
-      let batch = items ?? (await this.api.inbox())
-      while (batch.length) {
-        for (const it of batch) await this.process(it, changed)
-        await this.save() // keep what was decrypted before acknowledging
-        await this.api.ackInbox(batch.map((i) => i.id))
-        batch = items ? [] : await this.api.inbox()
-        items = undefined
-      }
-      this.retryUndecrypted(changed)
-      await this.replenish()
-      await this.save()
-      for (const dmId of changed) this.emit({ kind: 'history', dmId })
-    })
+    return this.run(() => this.doSync(items))
+  }
+
+  private async doSync(items?: InboxItem[]) {
+    const changed = new Set<string>()
+    let batch = items ?? (await this.api.inbox())
+    while (batch.length) {
+      for (const it of batch) await this.process(it, changed)
+      await this.save() // keep what was decrypted before acknowledging
+      await this.api.ackInbox(batch.map((i) => i.id))
+      batch = items ? [] : await this.api.inbox()
+      items = undefined
+    }
+    this.retryUndecrypted(changed)
+    await this.replenish()
+    await this.save()
+    for (const dmId of changed) this.emit({ kind: 'history', dmId })
+    await this.backupQuietly()
   }
 
   private async process(it: InboxItem, changed: Set<string>) {
@@ -529,30 +562,22 @@ export class E2E {
           return
         }
         this.st.master_seed = a.master_seed
-        if (a.backup_key && !this.st.backup_key) this.st.backup_key = a.backup_key
+        if (a.backup_key && !this.st.backup_key) {
+          this.st.backup_key = a.backup_key // version learnt on the first upload (conflict → merge)
+          this.st.backup_version = 0
+        }
         this.emit({ kind: 'approved' })
         return
       }
       case 'history': {
         const h = plain.content as { history: Record<string, HistMsg[]>; inbound: Record<string, InboundState>; keys: Record<string, string> }
-        if (plain.sender_user !== this.st.user_id || !trusted) return
-        for (const [dm, msgs] of Object.entries(h.history ?? {})) {
-          const list = this.st.history[dm] ?? []
-          for (const m of msgs) if (!list.some((x) => x.event_id === m.event_id)) list.push(m)
-          list.sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
-          this.st.history[dm] = list
-          this.emit({ kind: 'history', dmId: dm })
+        if (plain.sender_user !== this.st.user_id || !trusted) {
+          this.emit({ kind: 'warning', text: 'Historique refusé : il ne vient pas d’un de vos appareils validés.' })
+          return
         }
-        for (const [sid, info] of Object.entries(h.inbound ?? {})) {
-          if (this.st.inbound[sid] || !h.keys?.[sid]) continue
-          try {
-            const ig = this.c.MegolmInbound.import(h.keys[sid])
-            if (ig.sessionId !== sid) continue
-            this.st.inbound[sid] = { pickle: ig.pickle(this.pk), sender_user: info.sender_user, sender_device: info.sender_device, dm_id: info.dm_id }
-          } catch {
-            /* skip a bad key */
-          }
-        }
+        const inbound: Record<string, InboundState> = {}
+        for (const [sid, info] of Object.entries(h.inbound ?? {})) if (h.keys?.[sid]) inbound[sid] = { ...info, pickle: h.keys[sid] }
+        this.mergeContent(h.history ?? {}, inbound)
         return
       }
       // "file" and "call" signalling: steps 4c and 5.
@@ -571,5 +596,239 @@ export class E2E {
       }
     }
     this.st.undecrypted = still
+  }
+
+  // Imports history and exported conversation keys (history transfer, backup).
+  // Returns the number of new messages.
+  private mergeContent(history: Record<string, HistMsg[]>, inbound: Record<string, InboundState>): number {
+    let n = 0
+    for (const [dm, msgs] of Object.entries(history)) {
+      const list = this.st.history[dm] ?? []
+      let added = false
+      for (const m of msgs ?? []) {
+        if (list.some((x) => x.event_id === m.event_id)) continue
+        list.push(m)
+        added = true
+        n++
+      }
+      if (!added) continue
+      list.sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+      this.st.history[dm] = list
+      this.emit({ kind: 'history', dmId: dm })
+    }
+    for (const [sid, info] of Object.entries(inbound)) {
+      if (this.st.inbound[sid]) continue
+      try {
+        const ig = this.c.MegolmInbound.import(info.pickle)
+        if (ig.sessionId !== sid) continue
+        this.st.inbound[sid] = { pickle: ig.pickle(this.pk), sender_user: info.sender_user, sender_device: info.sender_device, dm_id: info.dm_id }
+      } catch {
+        /* skip a bad key */
+      }
+    }
+    return n
+  }
+
+  // Conversation keys exported from their first known index.
+  private exportedInbound(): Record<string, InboundState> {
+    const out: Record<string, InboundState> = {}
+    for (const [sid, info] of Object.entries(this.st.inbound)) {
+      try {
+        const ig = this.c.MegolmInbound.fromPickle(info.pickle, this.pk)
+        const exp = ig.exportAt(ig.firstKnownIndex)
+        if (exp) out[sid] = { ...info, pickle: exp }
+      } catch {
+        /* skip */
+      }
+    }
+    return out
+  }
+
+  // --- device approval ---
+
+  // This account's devices, with their trust status.
+  devices() {
+    return this.run(async () => {
+      const k = await this.keysOf(this.st.user_id, true)
+      return k.devices.map((d): OwnDevice => ({
+        ...d, current: d.device_id === this.st.device_id, trusted: !!k.master_key && this.deviceTrusted(this.st.user_id, d, k.master_key),
+      }))
+    })
+  }
+
+  // Certifies another device of the account once the user typed the code it
+  // shows, then gives it the master key, the backup key and the history.
+  // Returns the number of messages transferred.
+  approve(deviceId: string, code: string) {
+    return this.run(async () => {
+      if (!this.st.master_seed) throw new E2EError('device_not_validated')
+      await this.doSync() // catch up first so the transferred history is complete
+      const keys = await this.keysOf(this.st.user_id, true)
+      const d = keys.devices.find((x) => x.device_id === deviceId)
+      if (!d) throw new E2EError('device_not_found')
+      if (normalizeCode(code) !== normalizeCode(verificationCode(d.ed25519))) throw new E2EError('code_mismatch')
+      if (!verify(d.ed25519, deviceKeys(this.st.user_id, d.device_id, d.curve25519, d.ed25519), d.signature)) throw new E2EError('bad_device_keys')
+      const sig = masterSign(this.st.master_seed, deviceCert(this.st.user_id, d.device_id, d.ed25519))
+      await this.api.certifyDevice(d.device_id, sig)
+      const certified = { ...d, master_signature: sig }
+      this.forgetKeys(this.st.user_id)
+      await this.sendSecret([certified], 'device_approval', { master_seed: this.st.master_seed, backup_key: this.st.backup_key ?? '' })
+      const inbound = this.exportedInbound()
+      const h = { history: this.st.history, inbound: {} as Record<string, Omit<InboundState, 'pickle'>>, keys: {} as Record<string, string> }
+      for (const [sid, info] of Object.entries(inbound)) {
+        h.inbound[sid] = { sender_user: info.sender_user, sender_device: info.sender_device, dm_id: info.dm_id }
+        h.keys[sid] = info.pickle
+      }
+      await this.sendSecret([certified], 'history', h)
+      return Object.values(this.st.history).reduce((n, l) => n + l.length, 0)
+    })
+  }
+
+  // --- recovery phrase and encrypted backup ---
+
+  get backupEnabled() {
+    return !!this.st.backup_key
+  }
+
+  private digest() {
+    const data = JSON.stringify([this.st.history, Object.keys(this.st.inbound).sort(), this.st.pinned, !!this.st.master_seed])
+    return b64(sha256(new TextEncoder().encode(data)))
+  }
+
+  private async fetchBackup(): Promise<ServerBackup | null> {
+    try {
+      return await this.api.getBackup()
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'no_backup') return null
+      throw e
+    }
+  }
+
+  private decryptBackup(b: ServerBackup, key: Uint8Array): BackupPayload {
+    return JSON.parse(new TextDecoder().decode(openBackup(key, this.st.user_id, unb64(b.data)))) as BackupPayload
+  }
+
+  // Uploads the encrypted state when backups are on and something changed.
+  // If another device saved in between, its backup is merged first.
+  private async backup(force = false) {
+    if (!this.st.backup_key || !this.st.master_seed) return
+    if (!force && this.digest() === this.st.backup_digest) return
+    const key = unb64(this.st.backup_key)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const p: BackupPayload = {
+        format: 1, master_seed: this.st.master_seed, history: this.st.history, inbound: this.exportedInbound(),
+        pinned: this.st.pinned, names: this.st.names, created_at: new Date().toISOString(),
+      }
+      const data = padded(sealBackup(key, this.st.user_id, new TextEncoder().encode(JSON.stringify(p))))
+      try {
+        const res = await this.api.putBackup(this.st.backup_version ?? 0, data)
+        this.st.backup_version = res.version
+        this.st.backup_digest = this.digest()
+        this.st.backup_at = new Date().toISOString()
+        await this.save()
+        this.emit({ kind: 'backup' })
+        return
+      } catch (e) {
+        if (!(e instanceof ApiError && e.code === 'version_conflict')) throw e
+        const b = await this.fetchBackup()
+        if (!b) {
+          this.st.backup_version = 0
+          continue
+        }
+        let other: BackupPayload
+        try {
+          other = this.decryptBackup(b, key)
+        } catch {
+          throw new E2EError('backup_other_phrase')
+        }
+        this.mergeBackup(other)
+        this.st.backup_version = b.version
+      }
+    }
+    throw new E2EError('backup_conflict')
+  }
+
+  private async backupQuietly() {
+    try {
+      await this.backup()
+    } catch (e) {
+      const code = e instanceof E2EError || e instanceof ApiError ? e.code : String(e)
+      this.emit({ kind: 'warning', text: code === 'backup_other_phrase'
+        ? 'La sauvegarde du compte a été créée avec une autre phrase de récupération : créez-en une nouvelle dans Paramètres › Appareils.'
+        : 'Sauvegarde chiffrée non mise à jour (' + code + ').' })
+    }
+  }
+
+  private mergeBackup(p: BackupPayload): number {
+    const n = this.mergeContent(p.history ?? {}, p.inbound ?? {})
+    for (const [u, k] of Object.entries(p.pinned ?? {})) this.st.pinned[u] ||= k
+    for (const [u, name] of Object.entries(p.names ?? {})) this.st.names[u] ||= name
+    return n
+  }
+
+  backupStatus() {
+    return this.run(async (): Promise<{ status: BackupStatus; updatedAt?: string }> => {
+      const b = await this.fetchBackup()
+      if (!b) return { status: 'none' }
+      return { status: this.st.backup_key ? 'active' : 'no_key', updatedAt: b.updated_at }
+    })
+  }
+
+  // Creates a new recovery phrase and uploads the first backup. replace: an
+  // existing backup (older phrase, or unknown here) is overwritten.
+  createRecovery(replace = false) {
+    return this.run(async () => {
+      if (!this.st.master_seed) throw new E2EError('device_not_validated')
+      const existing = await this.fetchBackup()
+      if (existing && !replace) throw new E2EError('backup_exists')
+      const { phrase, secret } = generatePhrase()
+      const old = { key: this.st.backup_key, version: this.st.backup_version, digest: this.st.backup_digest }
+      this.st.backup_key = b64(backupKey(secret, this.st.user_id))
+      this.st.backup_version = existing?.version ?? 0
+      try {
+        await this.backup(true)
+      } catch (e) {
+        Object.assign(this.st, { backup_key: old.key, backup_version: old.version, backup_digest: old.digest })
+        throw e
+      }
+      return phrase
+    })
+  }
+
+  // Restores the account key and history with the recovery phrase; this
+  // device then certifies itself. Returns the number of messages restored.
+  restore(phrase: string) {
+    return this.run(async () => {
+      const secret = parsePhrase(phrase)
+      const b = await this.fetchBackup()
+      if (!b) throw new E2EError('no_backup')
+      const key = backupKey(secret, this.st.user_id)
+      let p: BackupPayload
+      try {
+        p = this.decryptBackup(b, key)
+      } catch (e) {
+        if (e instanceof WrongKeyError) throw new E2EError('wrong_phrase')
+        throw e
+      }
+      // The backup must hold the account's real master key.
+      const keys = await this.keysOf(this.st.user_id, true)
+      if (!p.master_seed || !keys.master_key || masterPublic(p.master_seed) !== keys.master_key) throw new E2EError('backup_master_mismatch')
+      this.pin(this.st.user_id, keys.master_key)
+      const sig = masterSign(p.master_seed, deviceCert(this.st.user_id, this.st.device_id, this.acc.ed25519))
+      await this.api.certifyDevice(this.st.device_id, sig)
+      this.st.master_seed = p.master_seed
+      const n = this.mergeBackup(p)
+      this.st.backup_key = b64(key)
+      this.st.backup_version = b.version
+      this.st.backup_digest = this.digest()
+      this.forgetKeys(this.st.user_id)
+      await this.save()
+      this.emit({ kind: 'approved' })
+      const changed = new Set<string>()
+      this.retryUndecrypted(changed)
+      await this.save()
+      for (const dmId of changed) this.emit({ kind: 'history', dmId })
+      return n
+    })
   }
 }

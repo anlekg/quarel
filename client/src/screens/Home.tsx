@@ -8,6 +8,7 @@ import { Chat, Lock, Pencil, Plus, Send, Trash, Users } from '../components/icon
 import { errorMessage } from '../lib/errors'
 import { formatDay, formatFull, formatStamp, formatTime, sameDay } from '../lib/format'
 import { prefs } from '../platform'
+import { SecurityBanner } from './Security'
 import type { Account } from '../state/account'
 import type { HistMsg } from '../e2e/engine'
 import {
@@ -111,6 +112,7 @@ function FriendsView({ account, onOpen }: { account: Account; onOpen: (c: Conver
           <button className={'add' + (tab === 'add' ? ' active' : '')} onClick={() => setTab('add')}>Ajouter un ami</button>
         </nav>
       </header>
+      <SecurityBanner />
       <div className="friends-body">
         <Alert kind="error">{error}</Alert>
         {tab === 'add' ? (
@@ -208,12 +210,6 @@ function NewGroupDialog({ account, onClose, onCreated }: { account: Account; onC
   )
 }
 
-const e2eErrors: Record<string, string> = {
-  device_not_validated: 'Cet appareil n’est pas encore validé : il ne peut pas encore envoyer de messages privés.',
-  master_key_changed: 'La clé de sécurité de ce contact a changé depuis votre premier échange : envoi bloqué par précaution (possible usurpation).',
-  no_one_time_key: 'Un appareil du destinataire n’a plus de clé disponible ; réessayez plus tard.',
-}
-
 function ConversationView({ account, conv, onLeft }: { account: Account; conv: Conversation; onLeft: () => void }) {
   const s = useSocial()
   const e = engine()
@@ -243,7 +239,7 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
     return () => window.removeEventListener('focus', mark)
   }, [history, conv, me])
 
-  const run = (p: Promise<unknown>) => p.catch((err) => setError(e2eErrors[(err as { code?: string }).code ?? ''] ?? errorMessage(err)))
+  const run = (p: Promise<unknown>) => p.catch((err) => setError(errorMessage(err)))
   const send = () => {
     const t = text.trim()
     if (!t) return
@@ -271,12 +267,7 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
             <button className="btn btn-ghost btn-sm" onClick={() => { if (confirm('Quitter le groupe « ' + title + ' » ?')) run(leaveGroup(conv).then(onLeft)) }}>Quitter le groupe</button>
           )}
         </header>
-        {!s.validated && (
-          <div className="unvalidated"><Alert kind="warn">
-            Cet appareil n&apos;est pas encore validé : il ne peut ni envoyer ni lire les messages privés. Validez-le depuis un appareil déjà validé,
-            en comparant ce code : <span className="code-box">{s.code}</span>
-          </Alert></div>
-        )}
+        <SecurityBanner />
         {error && <div style={{ padding: '8px 16px 0' }}><Alert kind="error">{error}</Alert></div>}
         {s.warnings.length > 0 && <div style={{ padding: '8px 16px 0' }}><Alert kind="warn">{s.warnings[s.warnings.length - 1]}</Alert></div>}
         <div className="messages" ref={listRef} role="log" aria-label={'Conversation avec ' + title}>

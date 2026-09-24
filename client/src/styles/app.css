@@ -461,3 +461,13 @@ p { margin: 0; }
 .checklist label { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
 .checklist label:hover { background: var(--bg-2); }
 .checklist input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+/* Device validation and recovery phrase */
+.banner-actions { display: flex; gap: 8px; margin-top: 10px; }
+.code-input { font-family: ui-monospace, monospace; letter-spacing: .08em; }
+.phrase-grid { list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0; margin: 0; }
+.phrase-grid li { display: flex; align-items: baseline; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-2); font-weight: 600; }
+.phrase-grid .n { font-size: 11px; color: var(--text-4); min-width: 16px; text-align: right; }
+.check-line { display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; }
+.check-line input { width: 18px; height: 18px; accent-color: var(--accent); }
+.tag-warn { background: #3a3120; color: #f0dcae; }

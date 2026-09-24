@@ -92,6 +92,12 @@ export interface InboxItem {
   created_at: string
 }
 
+export interface ServerBackup {
+  version: number
+  data: string // standard base64 of the encrypted backup
+  updated_at: string
+}
+
 export interface KeySet {
   issuer: string
   keys: unknown[]
@@ -265,6 +271,14 @@ export class IdentityClient {
 
   sessions() {
     return this.call<SessionInfo[]>('GET', '/v1/me/sessions')
+  }
+
+  getBackup() {
+    return this.call<ServerBackup>('GET', '/v1/backup')
+  }
+
+  putBackup(version: number, data: string) {
+    return this.call<{ version: number }>('PUT', '/v1/backup', { version, data })
   }
 
   revokeSession(id: string) {

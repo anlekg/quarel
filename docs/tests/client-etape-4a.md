@@ -13,5 +13,5 @@ Sur `https://app.quarel.app`, avec deux comptes (par exemple le vôtre et « Tes
 7. **Persistance** : recharger la page : l'historique est là (gardé sur l'appareil, jamais sur le serveur).
 
 ## À savoir
-- Chaque connexion est un **appareil**. Le premier appareil d'un compte est validé d'office ; un deuxième (autre navigateur, application de bureau) affiche « Cet appareil n'est pas encore validé » avec un code : sa validation arrive à l'étape **4b**.
+- Chaque connexion est un **appareil**. Le premier appareil d'un compte est validé d'office ; un deuxième (autre navigateur, application de bureau) affiche « Cet appareil n'est pas encore validé » avec un code : le valider : voir `client-etape-4b.md`.
 - Dans un navigateur, l'historique est gardé dans le stockage du navigateur (non chiffré) ; dans l'application de bureau, chiffré par le trousseau du système.
