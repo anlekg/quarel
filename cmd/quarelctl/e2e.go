@@ -78,15 +78,16 @@ type e2eStore struct {
 	DeviceID    string                    `json:"device_id"`
 	PickleKey   string                    `json:"pickle_key"`
 	Account     string                    `json:"account,omitempty"`
-	MasterSeed  string                    `json:"master_seed,omitempty"` // present on verified devices
-	OlmSessions map[string][]string       `json:"olm_sessions"`          // peer curve25519 → pickles, newest first
-	Outbound    map[string]*outboundState `json:"outbound"`              // by dm id
-	Inbound     map[string]*inboundState  `json:"inbound"`               // by megolm session id
-	Seen        map[string]bool           `json:"seen"`                  // "session:index", replay protection
-	Pinned      map[string]string         `json:"pinned"`                // user id → master key (trust on first use)
-	History     map[string][]histMsg      `json:"history"`               // by dm id
-	Undecrypted []inboxItem               `json:"undecrypted"`           // waiting for their key
-	Names       map[string]string         `json:"names"`                 // user id → pseudo
+	MasterSeed  string                    `json:"master_seed,omitempty"`  // present on verified devices
+	OlmSessions map[string][]string       `json:"olm_sessions"`           // peer curve25519 → pickles, newest first
+	Outbound    map[string]*outboundState `json:"outbound"`               // by dm id
+	Inbound     map[string]*inboundState  `json:"inbound"`                // by megolm session id
+	Seen        map[string]bool           `json:"seen"`                   // "session:index", replay protection
+	Pinned      map[string]string         `json:"pinned"`                 // user id → master key (trust on first use)
+	History     map[string][]histMsg      `json:"history"`                // by dm id
+	Undecrypted []inboxItem               `json:"undecrypted"`            // waiting for their key
+	Names       map[string]string         `json:"names"`                  // user id → pseudo
+	CallSignals []callSignal              `json:"call_signals,omitempty"` // received call signalling, until a call command takes it
 
 	// Encrypted backup (recovery.go).
 	BackupKey     string    `json:"backup_key,omitempty"` // derived from the recovery phrase
@@ -425,7 +426,7 @@ type olmEnvelope struct {
 
 // olmPlain binds a secret to its sender and recipient so it cannot be replayed elsewhere.
 type olmPlain struct {
-	Type             string          `json:"type"` // room_key | device_approval | history
+	Type             string          `json:"type"` // room_key | device_approval | history | call
 	SenderUser       string          `json:"sender_user"`
 	SenderDevice     string          `json:"sender_device"`
 	SenderEd25519    string          `json:"sender_ed25519"`
@@ -898,6 +899,17 @@ func (e *e2e) handleSecret(plain *olmPlain, sender *deviceInfo, master string, o
 			e.st.BackupKey = a.BackupKey // version learnt on the first upload (conflict → merge)
 		}
 		out(fmt.Sprintf("✔ cet appareil a été validé par « %s » : il peut maintenant envoyer et recevoir des messages privés", sender.DeviceName))
+	case "call":
+		var cs callSignal
+		if json.Unmarshal(plain.Content, &cs) != nil || !trusted {
+			out(fmt.Sprintf("⚠ signal d'appel refusé : l'appareil %s de %s n'est pas validé", sender.DeviceName, e.name(plain.SenderUser)))
+			return
+		}
+		cs.FromUser, cs.FromDevice, cs.At = plain.SenderUser, plain.SenderDevice, time.Now()
+		e.st.CallSignals = append(e.st.CallSignals, cs)
+		if cs.Action == "invite" {
+			out(fmt.Sprintf("📞 appel entrant de %s (quarelctl call-listen pour répondre)", e.name(plain.SenderUser)))
+		}
 	case "history":
 		var h historyTransfer
 		if json.Unmarshal(plain.Content, &h) != nil || plain.SenderUser != e.st.UserID || !trusted {

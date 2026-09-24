@@ -36,6 +36,8 @@ type Config struct {
 
 	DMFileMaxBytes int64         // size limit of an encrypted conversation file
 	DMFileTTL      time.Duration // how long the server keeps conversation files
+
+	TURN TURNConfig // relay for peer-to-peer calls
 }
 
 // Limits caps request rates (0 disables a limit).
@@ -87,6 +89,9 @@ func ConfigFromEnv() (Config, error) {
 		return c, fmt.Errorf("QUAREL_TOKEN_TTL: invalid duration")
 	}
 	c.TokenTTL = ttl
+	if c.TURN, err = turnConfigFromEnv(); err != nil {
+		return c, err
+	}
 	c.DMFileMaxBytes = int64(envInt("QUAREL_DM_FILE_MAX_MB", 25)) << 20
 	if c.DMFileTTL, err = time.ParseDuration(env("QUAREL_DM_FILE_TTL", "720h")); err != nil || c.DMFileTTL < time.Hour {
 		return c, fmt.Errorf("QUAREL_DM_FILE_TTL: invalid duration (at least 1h)")
@@ -121,7 +126,8 @@ type Server struct {
 	now    func() time.Time
 
 	proxies ratelimit.Proxies
-	limit   struct{ global, register, login, email, friends, files, typing *ratelimit.Limiter }
+	limit   struct{ global, register, login, email, friends, files, typing, turn *ratelimit.Limiter }
+	turnKey string // shared secret of the TURN relay ("" when it is off)
 }
 
 // Open prepares the data directory, database and signing key.
@@ -170,6 +176,7 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer, retired 
 	s.limit.friends = ratelimit.New(cfg.Limits.FriendRequests, time.Hour)
 	s.limit.files = ratelimit.New(cfg.Limits.Files, time.Hour)
 	s.limit.typing = ratelimit.New(1, 3*time.Second)
+	s.limit.turn = ratelimit.New(60, time.Hour)
 	if s.cfg.DMFileMaxBytes <= 0 {
 		s.cfg.DMFileMaxBytes = 25 << 20
 	}
@@ -260,6 +267,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/dms/{id}/files/{file}", s.authed(s.handleDownloadFile))
 	mux.HandleFunc("DELETE /v1/dms/{id}/files/{file}", s.authed(s.handleDeleteFile))
 	mux.HandleFunc("GET /v1/me/privacy", s.authed(s.handlePrivacy))
+	mux.HandleFunc("GET /v1/calls/ice-servers", s.authed(s.handleCallServers))
 	mux.HandleFunc("PATCH /v1/me/privacy", s.authed(s.handlePrivacy))
 	mux.HandleFunc("POST /v1/to-device", s.authed(s.handleSendToDevice))
 	mux.HandleFunc("GET /v1/inbox", s.authed(s.handleInbox))

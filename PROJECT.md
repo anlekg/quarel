@@ -184,6 +184,9 @@ Deux types de serveurs :
 | 2026-09-24 | Modification et suppression = événements chiffrés, appliqués par les clients (l'auteur seulement) | Le serveur ne distingue pas un message d'une modification : aucune métadonnée de plus. |
 | 2026-09-24 | *(à valider par le CP)* Fichiers chiffrés conservés **30 jours** sur le service central, 25 Mo max | Le service ne peut pas savoir quand tous les appareils les ont téléchargés ; ensuite, ils ne vivent que sur les appareils. |
 | 2026-09-24 | « En train d'écrire » et accusés de lecture relayés en direct, **jamais stockés**, désactivables séparément | Privacy ; qui les désactive ne partage plus rien (les siens restent synchronisés entre ses appareils). |
+| 2026-09-24 | Signalisation des appels **chiffrée de bout en bout** (messages Olm), sans « trickle ICE » | Le service central ne voit ni les adresses IP ni les paramètres des appels (privacy) ; une seule offre et une seule réponse suffisent. |
+| 2026-09-24 | *(à valider par le CP)* Relais TURN **intégré au service Identity** (Pion, MIT), identifiants temporaires par compte, jamais vers des adresses privées | Installation en une commande, sans service tiers ; pas de relais ouvert ni de rebond vers le réseau de l'hébergeur. Coût : la bande passante des appels relayés est à la charge de l'instance centrale. |
+| 2026-09-24 | Refus du relais = **réglage du client** | C'est l'appareil qui choisit ses chemins : le serveur n'a pas besoin de le savoir. |
 
 ---
 
@@ -364,4 +367,14 @@ Demande du CP : « on finit la P1 ! ». Découpage annoncé en 7 blocs (messages
 **Validation :** tests d'intégration (migration d'une base contenant des MP, groupes et règles d'ajout/retrait, échange de clés entre co-membres non amis, frappe et lecture avec et sans partage, fichiers : droits, taille, expiration) ; test du client : une modification/suppression forgée par un autre membre est ignorée ; `make e2e-dm-groups` (22/22 : lecture par un membre non ami, nouveau membre sans l'historique antérieur, membre retiré coupé, nouvelle clé, modification/suppression, fichier déchiffré à l'identique et illisible côté serveur, frappe et accusés en direct puis désactivés, aucun clair en base) ; `make e2e-dm` inchangé (16/16). Bug trouvé et corrigé : membres arrivés dans la même seconde classés au hasard, donc groupe transmis à un membre quelconque au départ du créateur (désormais : ordre d'arrivée).
 
 **Guide de test du CP :** `docs/tests/p1-bloc-5.md`.
+
+### P1 — Bloc 6 : appels pair à pair (livré le 2026-09-24)
+
+**Livré :** appels audio 1-à-1 entre amis en WebRTC pair à pair, signalisation chiffrée de bout en bout par les messages Olm existants, relais TURN de secours intégré au service Identity (identifiants temporaires, refus des adresses privées), refus du relais par l'utilisateur ; ports et variables du relais dans l'image Docker et le Compose.
+
+**Validation :** tests d'intégration du relais (relaie réellement entre deux sockets, refuse des identifiants forgés, **refuse de relayer vers une adresse locale** en configuration réelle, pas de relais proposé quand il est coupé) ; `make e2e-calls` (10/10) avec de vrais appels WebRTC entre deux `quarelctl` : audio reçu des deux côtés en direct, puis **forcé par le relais** (chemin TURN confirmé), relais refusé, appels réservés aux amis, aucune trace de la signalisation en clair dans la base ; image Docker démarrée avec le relais.
+
+**Non testé en conditions réelles :** appel entre deux réseaux domestiques distincts derrière des NAT (nécessite deux accès Internet ; la logique direct/relais est la même que testée en local) ; client graphique (le futur client utilisera la même signalisation).
+
+**Guide de test du CP :** `docs/tests/p1-bloc-6.md`.
 

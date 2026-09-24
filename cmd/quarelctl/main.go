@@ -85,6 +85,11 @@ Messages privés (chiffrés de bout en bout, entre amis)
   dm-download <cible> <n°> [destination]   récupérer et déchiffrer un fichier reçu
   dm-typing <cible> / dm-read <cible>      signaler « en train d'écrire » / marquer comme lu
   privacy [typing=on|off] [receipts=on|off]   partager ou non ces deux informations
+
+Appels entre amis (pair à pair, signalisation chiffrée de bout en bout)
+  call <pseudo> [--seconds N] [--relay-only]   appeler (client de test : envoie une tonalité, mesure l'audio reçu)
+  call-listen [--once] [--seconds N]           répondre automatiquement aux appels d'amis
+  calls [relay=on|off]                         autoriser ou non le relais de secours (TURN)
   dms                              conversations et groupes
   dm-group <nom> <pseudo> [pseudo…]   créer un groupe avec des amis (10 membres max)
   dm-add|dm-kick <groupe> <pseudo> / dm-leave <groupe> / dm-rename <groupe> <nom…>
@@ -192,6 +197,8 @@ type state struct {
 	SessionID    string `json:"session_id,omitempty"`
 	SessionToken string `json:"session_token,omitempty"`
 	Handle       string `json:"handle,omitempty"`
+
+	CallRelayOff bool `json:"call_relay_off,omitempty"` // calls: never use the TURN relay
 
 	// Community servers joined, keyed by base URL.
 	Communities map[string]*community `json:"communities,omitempty"`

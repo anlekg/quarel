@@ -47,13 +47,14 @@ cmd/quarelctl/          client de test en ligne de commande (sorties en françai
                         main.go (Identity), account.go (compte, profil, blocage, présence), community.go (serveurs communautaires), messages.go (réponses, réactions,
                         fichiers, recherche, fils, non-lus), access.go (exclusion, purge, journal, règles, téléphone,
                         bots), roles.go (rôles, modération),
-                        voice.go (vocal), social.go (amis, MP), dms.go (groupes, fichiers, lecture), e2e.go (chiffrement Olm/Megolm côté client),
+                        voice.go (vocal), social.go (amis, MP), dms.go (groupes, fichiers, lecture), calls.go (appels WebRTC), e2e.go (chiffrement Olm/Megolm côté client),
                         recovery.go (phrase de récupération, sauvegarde), network.go (diagnostic réseau)
 internal/identity/      service Identity : HTTP (server.go), endpoints (handlers.go), SQLite (store.go),
                         argon2id (crypto.go), TOTP (totp.go), emails (mail.go), anti-bruteforce (lockout.go),
                         amis et conversations (social.go), clés E2E et boîtes aux lettres (e2e.go), temps réel (gateway.go),
                         gestion du compte (account.go), profil/blocage/présence (profile.go), opérateur et rotation de clé (admin.go),
-                        conversations et groupes (conversations.go), fichiers chiffrés, frappe, lecture (convextras.go)
+                        conversations et groupes (conversations.go), fichiers chiffrés, frappe, lecture (convextras.go),
+                        relais d'appels TURN (turn.go)
 internal/community/     serveur communautaire : config, clés des Identity (keys.go), auth (auth.go),
                         membres, invitations, salons + droits par salon (channels.go), messages,
                         permissions (permissions.go), rôles (roles.go), expulsion/bannissement
@@ -79,7 +80,7 @@ test/e2e/               tests de bout en bout : vocal (Playwright), MP chiffrés
 examples/pingbot/       bot d'exemple (répond « pong » à « !ping ») : jeton de bot, passerelle, REST
 deploy/identity/        déploiement Docker Compose du service Identity (Let's Encrypt ou derrière un proxy)
 docs/api.md             documentation publique de l'API des serveurs communautaires (bots, clients)
-Dockerfile.identity     image distroless (~23 Mo), volume /data, port 8080
+Dockerfile.identity     image distroless (~25 Mo), volume /data, ports 8080/tcp et 3478/udp (relais d'appels)
 Dockerfile.server       image distroless + livekit-server (~141 Mo), volume /data, ports 8090/tcp, 7881/tcp, 7882/udp
 Makefile                commandes de dev (build, test, run-identity, run-server…)
 ```
@@ -112,6 +113,14 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 - **Boîte aux lettres** (`inbox`, une ligne par appareil destinataire) : `to_device`, `dm`, `receipt`. `GET /v1/inbox` puis `POST /v1/inbox/ack` (suppression). Accusé de distribution (`receipt`) quand tous les appareils du destinataire ont acquitté. Poussée en direct : événement `INBOX` sur la passerelle Identity (une connexion par appareil). Révocation d'une session → clés, clés à usage unique et boîte supprimées, `DEVICES_UPDATE` aux amis.
 - **Client de test** : état E2E dans `<profil>.e2e.json` (0600, non chiffré — le vrai client utilisera le trousseau du système), protégé par un **verrou de fichier** (`withE2E`) car plusieurs `quarelctl` peuvent tourner sur le même profil (`dm-listen` + `dm`).
 
+### Appels entre amis (P1 bloc 6)
+
+- **Pair à pair** : le média ne passe jamais par un serveur Quarel, sauf par le relais TURN de secours (et reste alors chiffré DTLS-SRTP de bout en bout).
+- **Signalisation chiffrée** : offre/réponse SDP complètes (sans « trickle ICE » : une fois la collecte des chemins terminée) et raccrochage voyagent en messages Olm entre appareils (`olmPlain.type = "call"`, `{call_id, action: invite|answer|reject|hangup, sdp}`) : le service ne voit ni adresses IP ni paramètres. L'invitation part vers tous les appareils validés de l'ami ; le premier qui répond l'emporte, les autres reçoivent un raccrochage. Côté client, les signaux reçus sont gardés dans l'état E2E (`call_signals`, 2 min) pour qu'un autre processus du même profil (ex. `dm-listen`) ne les perde pas. Appels **réservés aux amis** (vérifié par l'appelé).
+- **Relais TURN** intégré au service Identity (`internal/identity/turn.go`, `pion/turn` v5, MIT) : `QUAREL_TURN=on`, `QUAREL_TURN_PUBLIC_IP` (obligatoire), `QUAREL_TURN_LISTEN` (`:3478` UDP), `QUAREL_TURN_PORTS` (`49160-49200`). Identifiants **temporaires par utilisateur** (API REST TURN : `expiration:user_id` + HMAC-SHA1 d'un secret `data/turn.secret`, 12 h) via `GET /v1/calls/ice-servers` (60/h) → `{ice_servers: [stun:…, turn:… + identifiants], relay}`. **Refuse de relayer vers des adresses privées, locales, CGNAT** (`PermissionHandler`) : pas de rebond vers le réseau de l'hébergeur ; `QUAREL_TURN_ALLOW_PRIVATE=1` seulement pour les tests. Le STUN du même port sert à découvrir son adresse publique (pas de STUN tiers).
+- **Refus du relais par l'utilisateur** : réglage du client (`quarelctl calls relay=off`, `state.call_relay_off`) → les serveurs `turn:` sont ignorés ; l'appel ne réussit que si un chemin direct existe.
+- **Client de test** (`cmd/quarelctl/calls.go`, `pion/webrtc` v4) : `call <ami> [--seconds N] [--relay-only]`, `call-listen [--once]` (répond automatiquement), envoie une tonalité PCMU 440 Hz, mesure l'audio reçu et affiche le chemin (réseau local, pair à pair, relais).
+
 ### Endpoints (Identity)
 
 | Méthode | Chemin | Rôle |
@@ -131,6 +140,7 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | POST | `/v1/dms/{id}/typing`, `/v1/dms/{id}/read` | Éphémères : `DM_TYPING`, `DM_READ {event_id}` |
 | POST/GET/DELETE | `/v1/dms/{id}/files[/{file}]` | Fichier chiffré (corps brut) → `{id, size, expires_at}` |
 | GET/PATCH | `/v1/me/privacy` | `{typing, read_receipts}` |
+| GET | `/v1/calls/ice-servers` | Serveurs STUN/TURN + identifiants temporaires du relais |
 | POST | `/v1/to-device` | `{messages: [{device_id, payload}]}` (8 Mo max) |
 | GET | `/v1/inbox` | Éléments en attente pour cet appareil |
 | POST | `/v1/inbox/ack` | `{ids}` |
@@ -222,7 +232,7 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 
 ### Configuration (variables d'environnement)
 
-`QUAREL_ADDR` (`:8080`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_ISSUER` (`localhost:8080` — **doit être le domaine public en production**), `QUAREL_TOKEN_TTL` (`12h`), `QUAREL_DM_FILE_MAX_MB` (25), `QUAREL_DM_FILE_TTL` (`720h`), `QUAREL_SMTP_HOST/PORT/USER/PASSWORD/FROM` (sans `QUAREL_SMTP_HOST`, les emails sont écrits dans le log : mode dev).
+`QUAREL_ADDR` (`:8080`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_ISSUER` (`localhost:8080` — **doit être le domaine public en production**), `QUAREL_TOKEN_TTL` (`12h`), `QUAREL_DM_FILE_MAX_MB` (25), `QUAREL_DM_FILE_TTL` (`720h`), `QUAREL_TURN` (`off`), `QUAREL_TURN_PUBLIC_IP`, `QUAREL_TURN_LISTEN` (`:3478`), `QUAREL_TURN_PORTS` (`49160-49200`), `QUAREL_SMTP_HOST/PORT/USER/PASSWORD/FROM` (sans `QUAREL_SMTP_HOST`, les emails sont écrits dans le log : mode dev).
 
 ## Serveur communautaire (jalon 2)
 
@@ -387,6 +397,7 @@ make e2e-security     # récupération, HTTPS lié à l'identité, limites (18 v
 make e2e-acme         # HTTPS via ACME contre Pebble (Docker)
 make e2e-messages     # réponses, réactions, fichiers, recherche, fils, non-lus (18 vérifications)
 make e2e-moderation   # exclusion, purge, journal, règles, téléphone, bots avec examples/pingbot (24 vérifications)
+make e2e-calls        # appels pair à pair réels (WebRTC) : direct, par le relais TURN, relais refusé (10 vérifications)
 make e2e-dm-groups    # groupes, modification/suppression, fichiers chiffrés, frappe, lecture (22 vérifications)
 make e2e-accounts     # comptes : mots de passe, email, pseudo, profil, blocage, présence, suppression, outil opérateur (30 vérifications)
 ./bin/quarelctl help  # client de test

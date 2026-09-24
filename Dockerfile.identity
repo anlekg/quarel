@@ -13,5 +13,5 @@ COPY --from=build /out/quarel-identity /quarel-identity
 COPY --from=build --chown=65532:65532 /out/data /data
 ENV QUAREL_ADDR=:8080 QUAREL_DATA_DIR=/data
 VOLUME /data
-EXPOSE 8080
+EXPOSE 8080 3478/udp
 ENTRYPOINT ["/quarel-identity"]

@@ -165,7 +165,7 @@ func (c *cli) runDMs(cmd string, args []string) (bool, error) {
 	case "privacy":
 		err = c.privacySettings(args)
 	default:
-		return c.runAccount(cmd, args)
+		return c.runCalls(cmd, args)
 	}
 	return true, err
 }

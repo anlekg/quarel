@@ -44,6 +44,14 @@ func run() error {
 		slog.Warn("QUAREL_SMTP_HOST not set: verification codes will be printed in this log (development mode)")
 	}
 
+	turnSrv, err := srv.StartTURN()
+	if err != nil {
+		return err
+	}
+	if turnSrv != nil {
+		defer turnSrv.Close()
+	}
+
 	if cfg.TLS.Mode == tlsconf.SelfSigned {
 		return errors.New("QUAREL_TLS=self-signed is not supported for the Identity service: community servers check its certificate against public authorities (use acme, files, or off behind a reverse proxy)")
 	}

@@ -7,6 +7,7 @@ Le service Identity gère les comptes (email, pseudo, mot de passe, 2FA), les am
 - Une machine avec Docker et Docker Compose.
 - Un **nom de domaine** pointant vers elle (ex. `identity.mon-asso.fr`). Il fait partie de chaque identité (`pseudo@identity.mon-asso.fr`) et de la configuration des serveurs qui l'acceptent : **choisissez-le une fois pour toutes**.
 - Le port **443** ouvert vers la machine (Let's Encrypt et les utilisateurs y passent).
+- Pour le **relais d'appels** (TURN, utilisé quand deux amis ne peuvent pas se joindre directement) : l'adresse IP publique de la machine (`QUAREL_TURN_PUBLIC_IP`) et les ports **UDP 3478 et 49160-49200** ouverts. Mettre `QUAREL_TURN=off` pour ne pas proposer de relais.
 - Un compte SMTP pour envoyer les codes (vérification d'email, mot de passe oublié). Sans SMTP, les codes n'apparaissent que dans le journal du service : suffisant pour un essai, pas pour de vrais utilisateurs.
 
 ## Installation
@@ -24,6 +25,12 @@ Le certificat HTTPS est obtenu automatiquement au premier accès.
 **Derrière un proxy HTTPS existant** (Caddy, nginx, Traefik…) : utiliser `docker compose -f compose.proxy.yaml up -d --build`. Le service écoute alors en HTTP sur `127.0.0.1:8080` ; le proxy doit transmettre `https://<domaine>` vers cette adresse, WebSockets compris (`/v1/gateway`), et `X-Forwarded-For`.
 
 Pour que des serveurs communautaires acceptent vos comptes, leurs hébergeurs ajoutent votre domaine : `QUAREL_TRUSTED_ISSUERS=identity.quarel.app,identity.mon-asso.fr`.
+
+## Relais d'appels
+
+Les appels entre amis sont pair à pair : le son ne passe par aucun serveur Quarel. Quand aucun chemin direct n'existe (NAT stricts), le relais TURN intégré au service transmet le flux, **toujours chiffré de bout en bout** (il ne peut pas l'écouter). Les identifiants du relais sont temporaires et propres à chaque compte ; il refuse de relayer vers des adresses privées ou locales (il ne peut pas servir à atteindre votre réseau). Chaque utilisateur peut refuser le relais dans son client.
+
+Avec Docker, la plage de ports du relais doit être publiée telle quelle (voir `compose.yaml`) ; ne l'élargissez pas trop (chaque port ouvert est une ligne de règle NAT pour Docker).
 
 ## Sauvegardes
 

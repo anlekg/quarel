@@ -52,9 +52,9 @@
 - [ ] **P2** Messages éphémères
 
 ### A6. Appels entre amis (P2P)
-- [ ] **P1** Signalisation WebRTC via le service central (échange d'offres, sans transit du média)
-- [ ] **P1** Appels audio 1-à-1 en P2P
-- [ ] **P1** Relais TURN de secours, désactivable par l'utilisateur
+- [x] **P1** Signalisation WebRTC via le service central (échange d'offres, sans transit du média)
+- [x] **P1** Appels audio 1-à-1 en P2P
+- [x] **P1** Relais TURN de secours, désactivable par l'utilisateur
 - [ ] **P2** Vidéo et partage d'écran en P2P
 - [ ] **P2** Appels de groupe entre amis
 

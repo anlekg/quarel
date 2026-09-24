@@ -16,5 +16,7 @@ This product includes or bundles third-party software:
   From github.com/bitcoin/bips — MIT License
 - goupnp (UPnP port mapping, used by quarel-server)
   Copyright (c) 2013, John Beisley — BSD 2-Clause License
+- Pion TURN (call relay, used by quarel-identity) and Pion WebRTC (calls in
+  the quarelctl test client) — Copyright The Pion community — MIT License
 
 Go module dependencies and their licenses are listed in go.mod / go.sum.

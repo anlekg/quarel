@@ -20,6 +20,9 @@ services:
       QUAREL_TLS: acme
     ports:
       - "443:8443"
+      # Call relay (TURN), when QUAREL_TURN=on: signalling port and relay range.
+      - "3478:3478/udp"
+      - "49160-49200:49160-49200/udp"
     volumes:
       - identity-data:/data
 
