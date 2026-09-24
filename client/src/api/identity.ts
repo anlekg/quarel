@@ -92,6 +92,21 @@ export interface InboxItem {
   created_at: string
 }
 
+export type Presence = 'online' | 'idle' | 'dnd' | 'invisible'
+
+export interface Profile {
+  id: string
+  handle: string
+  pseudo: string
+  bio: string
+  avatar_url: string | null
+}
+
+export interface Privacy {
+  typing: boolean
+  read_receipts: boolean
+}
+
 export interface ServerBackup {
   version: number
   data: string // standard base64 of the encrypted backup
@@ -294,6 +309,84 @@ export class IdentityClient {
 
   deleteDMFile(convId: string, fileId: string) {
     return this.call<void>('DELETE', '/v1/dms/' + convId + '/files/' + encodeURIComponent(fileId))
+  }
+
+  // --- account settings ---
+
+  changePseudo(pseudo: string) {
+    return this.call<User>('PATCH', '/v1/me', { pseudo })
+  }
+
+  changePassword(current_password: string, new_password: string) {
+    return this.call<void>('POST', '/v1/me/password', { current_password, new_password })
+  }
+
+  changeEmail(password: string, new_email: string) {
+    return this.call<void>('POST', '/v1/me/email', { password, new_email })
+  }
+
+  confirmEmail(code: string) {
+    return this.call<User>('POST', '/v1/me/email/confirm', { code })
+  }
+
+  deleteAccount(password: string, totp_code?: string) {
+    return this.call<void>('DELETE', '/v1/me', { password, totp_code })
+  }
+
+  profile(userId: string) {
+    return this.call<Profile>('GET', '/v1/users/' + encodeURIComponent(userId) + '/profile')
+  }
+
+  updateBio(bio: string) {
+    return this.call<Profile>('PATCH', '/v1/me/profile', { bio })
+  }
+
+  setAvatar(image: Blob) {
+    return this.call<Profile>('PUT', '/v1/me/avatar', image)
+  }
+
+  deleteAvatar() {
+    return this.call<void>('DELETE', '/v1/me/avatar')
+  }
+
+  setPresence(status: Presence) {
+    return this.call<void>('PUT', '/v1/me/presence', { status })
+  }
+
+  blocks() {
+    return this.call<PublicUser[]>('GET', '/v1/blocks')
+  }
+
+  block(pseudo: string) {
+    return this.call<PublicUser>('POST', '/v1/blocks', { pseudo })
+  }
+
+  blockUser(id: string) {
+    return this.call<PublicUser>('PUT', '/v1/blocks/' + encodeURIComponent(id))
+  }
+
+  unblock(id: string) {
+    return this.call<void>('DELETE', '/v1/blocks/' + encodeURIComponent(id))
+  }
+
+  privacy() {
+    return this.call<Privacy>('GET', '/v1/me/privacy')
+  }
+
+  setPrivacy(p: Partial<Privacy>) {
+    return this.call<Privacy>('PATCH', '/v1/me/privacy', p)
+  }
+
+  setup2FA(password: string) {
+    return this.call<{ secret: string; otpauth_uri: string }>('POST', '/v1/me/2fa/setup', { password })
+  }
+
+  enable2FA(code: string) {
+    return this.call<{ backup_codes: string[] }>('POST', '/v1/me/2fa/enable', { code })
+  }
+
+  disable2FA(password: string, code: string) {
+    return this.call<void>('POST', '/v1/me/2fa/disable', { password, code })
   }
 
   getBackup() {

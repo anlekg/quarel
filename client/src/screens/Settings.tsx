@@ -11,16 +11,18 @@ import { identityClient, signOut, type Account } from '../state/account'
 import type { OwnDevice } from '../e2e/engine'
 import { listDevices, useSocial } from '../state/social'
 import { ApproveDialog, RecoverySection } from './Security'
-import { relayAllowed, setRelayAllowed } from '../state/calls'
+import { PrivacySection, ProfileSection, SecuritySection } from './SettingsAccount'
+import { MediaSection } from './SettingsMedia'
 
-type Section = 'account' | 'devices' | 'recovery' | 'calls' | 'invites'
+type Section = 'profile' | 'security' | 'devices' | 'recovery' | 'privacy' | 'media' | 'invites'
 
 const dateFmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long' })
 const dateTimeFmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
 
 export function Settings({ account, onClose }: { account: Account; onClose: () => void }) {
-  const [section, setSection] = useState<Section>('account')
+  const [section, setSection] = useState<Section>('profile')
   const [confirmLogout, setConfirmLogout] = useState(false)
+  const nav = (id: Section, label: string) => <button className={section === id ? 'active' : ''} onClick={() => setSection(id)}>{label}</button>
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !confirmLogout && onClose()
@@ -32,17 +34,24 @@ export function Settings({ account, onClose }: { account: Account; onClose: () =
     <div className="settings" role="dialog" aria-modal="true" aria-label="Paramètres">
       <nav className="settings-nav" aria-label="Sections">
         <span className="group">MON COMPTE</span>
-        <button className={section === 'account' ? 'active' : ''} onClick={() => setSection('account')}>Compte</button>
-        <button className={section === 'devices' ? 'active' : ''} onClick={() => setSection('devices')}>Appareils</button>
-        <button className={section === 'recovery' ? 'active' : ''} onClick={() => setSection('recovery')}>Récupération</button>
-        <button className={section === 'calls' ? 'active' : ''} onClick={() => setSection('calls')}>Appels</button>
-        <button className={section === 'invites' ? 'active' : ''} onClick={() => setSection('invites')}>Invitations</button>
+        {nav('profile', 'Profil')}
+        {nav('security', 'Sécurité')}
+        {nav('devices', 'Appareils')}
+        {nav('recovery', 'Récupération')}
+        {nav('privacy', 'Confidentialité')}
+        {nav('invites', 'Invitations')}
+        <span className="group">APPLICATION</span>
+        {nav('media', 'Voix et vidéo')}
         <span className="group" />
         <button className="danger" onClick={() => setConfirmLogout(true)}>Se déconnecter</button>
       </nav>
       <main className="settings-main">
-        {section === 'account' ? <AccountSection account={account} /> : section === 'devices' ? <DevicesSection account={account} />
-          : section === 'recovery' ? <RecoverySection /> : section === 'calls' ? <CallsSection /> : <InvitesSection account={account} />}
+        {section === 'profile' ? <><ProfileSection account={account} /><AccountInfo account={account} /></>
+          : section === 'security' ? <SecuritySection account={account} />
+            : section === 'devices' ? <DevicesSection account={account} />
+              : section === 'recovery' ? <RecoverySection />
+                : section === 'privacy' ? <PrivacySection account={account} />
+                  : section === 'media' ? <MediaSection /> : <InvitesSection account={account} />}
       </main>
       <button className="icon-btn settings-close" aria-label="Fermer les paramètres" title="Fermer (Échap)" onClick={onClose}>
         <Close />
@@ -71,20 +80,16 @@ function Row({ title, value }: { title: string; value: React.ReactNode }) {
   )
 }
 
-function AccountSection({ account }: { account: Account }) {
+function AccountInfo({ account }: { account: Account }) {
   const u = account.user
   return (
     <>
-      <h2>Compte</h2>
+      <h3 className="settings-sub">Compte</h3>
       <div className="card">
-        <Row title="Pseudo" value={u.pseudo} />
         <Row title="Identifiant complet (pour vous ajouter en ami)" value={u.handle} />
-        <Row title="Email" value={u.email} />
-        <Row title="Double authentification" value={u.totp_enabled ? 'Activée' : 'Désactivée'} />
         <Row title="Service d'identité" value={identityLabel(account.identity)} />
         <Row title="Compte créé le" value={dateFmt.format(new Date(u.created_at))} />
       </div>
-      <p className="muted small">La modification du profil, du mot de passe, de l&apos;email et de la double authentification arrive avec l&apos;étape « Paramètres ».</p>
     </>
   )
 }
@@ -157,25 +162,6 @@ function DevicesSection({ account }: { account: Account }) {
         </div>
       )}
       {approving && <ApproveDialog device={approving} onClose={() => { setApproving(null); load() }} />}
-    </>
-  )
-}
-
-function CallsSection() {
-  const [relay, setRelay] = useState(relayAllowed)
-  return (
-    <>
-      <h2>Appels</h2>
-      <p className="muted" style={{ lineHeight: 1.5 }}>
-        Les appels entre amis passent directement d&apos;un appareil à l&apos;autre, chiffrés de bout en bout. Quand c&apos;est impossible
-        (certaines box ou réseaux d&apos;entreprise), votre service d&apos;identité peut relayer le flux, qui reste chiffré : il ne peut ni
-        l&apos;écouter ni le voir, mais il voit votre adresse IP et celle de votre correspondant·e.
-      </p>
-      <label className="check-line card" style={{ padding: '14px 16px' }}>
-        <input type="checkbox" checked={relay} onChange={(e) => { setRelay(e.target.checked); setRelayAllowed(e.target.checked) }} />
-        <span>Utiliser le relais si aucune connexion directe n&apos;est possible
-          <span className="muted small" style={{ display: 'block' }}>Désactivé : votre appareil n&apos;utilisera jamais le relais (certains appels échoueront). Votre correspondant·e peut toujours utiliser le sien.</span></span>
-      </label>
     </>
   )
 }

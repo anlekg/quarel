@@ -1,7 +1,8 @@
 // Friends and private conversations of the signed-in account: the Identity
 // service's real-time connection, and the end-to-end encryption engine.
 import { useSyncExternalStore } from 'react'
-import type { Conversation, FriendLists, InboxItem, PublicUser } from '../api/identity'
+import type { Conversation, FriendLists, InboxItem, Presence, Profile, PublicUser } from '../api/identity'
+import { bumpAvatar } from '../components/Avatar'
 import { ApiError } from '../api/http'
 import { loadCrypto } from '../crypto'
 import { E2E, type BackupStatus, type E2EEvent, type FileRef } from '../e2e/engine'
@@ -16,6 +17,9 @@ export interface SocialState {
   code: string // this device's verification code
   pendingDevices: number // own devices waiting for validation (counted on validated devices)
   backup: 'unknown' | BackupStatus
+  presence_setting: Presence // my own setting
+  me: Partial<Profile> // my profile (bio, avatar), from USER_UPDATE
+  blocked: string[] // ids of the people I blocked (their messages are hidden on servers)
   backupAt?: string
   friends: FriendLists
   presence: Record<string, string> // friend id → online | idle | dnd | offline
@@ -27,7 +31,7 @@ export interface SocialState {
 }
 
 const empty: SocialState = {
-  status: 'starting', validated: false, code: '', pendingDevices: 0, backup: 'unknown', friends: { friends: [], incoming: [], outgoing: [] }, presence: {},
+  status: 'starting', validated: false, code: '', pendingDevices: 0, backup: 'unknown', presence_setting: 'online', me: {}, blocked: [], friends: { friends: [], incoming: [], outgoing: [] }, presence: {},
   conversations: [], typing: {}, reads: {}, version: 0, warnings: [],
 }
 
@@ -93,7 +97,7 @@ export async function openSocial(a: Account) {
     e2e.on(onEngine)
     files = new Files(e2e, api(), (convId) => state.conversations.find((c) => c.id === convId)?.members.map((m) => m.id))
     set({ validated: e2e.validated, code: verificationCode(e2e.ed25519) })
-    await Promise.all([refreshFriends(), refreshConversations(), refreshDevices(), refreshBackup()])
+    await Promise.all([refreshFriends(), refreshConversations(), refreshDevices(), refreshBackup(), refreshBlocks()])
     set({ status: 'ready' })
     connect()
   } catch (err) {
@@ -160,7 +164,7 @@ function handle(t: string, d: any) {
   switch (t) {
     case 'READY':
       retry = 0
-      set({ status: 'ready' })
+      set({ status: 'ready', presence_setting: d?.presence || 'online' })
       e2e?.sync().catch(() => {})
       refreshFriends().catch(() => {})
       refreshConversations().catch(() => {})
@@ -170,7 +174,12 @@ function handle(t: string, d: any) {
       return
     case 'FRIENDS_UPDATE':
     case 'USER_UPDATE':
+      if (d?.id) bumpAvatar(d.id)
+      if (d?.id === account?.user.id) set({ me: { ...state.me, ...d } })
       refreshFriends().catch(() => {})
+      return
+    case 'PRESENCE_SETTING':
+      set({ presence_setting: d.status })
       return
     case 'PRESENCE_UPDATE':
       set({ presence: { ...state.presence, [d.user_id]: d.status } })
@@ -214,6 +223,26 @@ async function refreshBackup() {
 }
 
 // --- actions ---
+
+export async function setPresence(status: Presence) {
+  await api().setPresence(status)
+  set({ presence_setting: status })
+}
+
+export async function refreshBlocks() {
+  if (!account) return
+  set({ blocked: (await api().blocks()).map((u) => u.id) })
+}
+
+export async function blockUser(u: PublicUser) {
+  await api().blockUser(u.id)
+  await Promise.all([refreshFriends(), refreshBlocks()])
+}
+
+// Whether a community server member is someone I blocked (same identity service).
+export function isBlockedMember(issuer: string, subject: string) {
+  return !!account && issuer === account.issuer && state.blocked.includes(subject)
+}
 
 export function listDevices() {
   return e2e!.devices()

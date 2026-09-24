@@ -10,6 +10,7 @@ import { can, canPost, memberAvatar, memberColor } from '../lib/community'
 import { errorMessage } from '../lib/errors'
 import { formatDay, formatFull, formatSize, formatStamp, formatTime, roleColor, sameDay } from '../lib/format'
 import type { ServerConn, ServerState } from '../state/servers'
+import { isBlockedMember, useSocial } from '../state/social'
 
 const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎉', '✅', '👀']
 const GROUP_MS = 7 * 60 * 1000
@@ -197,7 +198,17 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
   onError: (e: string) => void
 }) {
   const [picking, setPicking] = useState(false)
+  const [reveal, setReveal] = useState(false)
+  useSocial() // re-render when the block list changes
   const author = ready.members.find((x) => x.id === m.author_id)
+  if (author && !reveal && isBlockedMember(author.issuer, author.subject)) {
+    return (
+      <div className={'msg blocked' + (grouped ? '' : ' head')} data-mid={m.id}>
+        <div className="gutter" />
+        <div className="body"><span className="muted small">Message d&apos;une personne bloquée · <button className="link small" onClick={() => setReveal(true)}>Afficher</button></span></div>
+      </div>
+    )
+  }
   const name = author?.display_name ?? 'Ancien membre'
   const mentioned = conn.mentionsMe(m) && !mine
   const toggle = (emoji: string, on: boolean) =>

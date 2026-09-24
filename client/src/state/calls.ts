@@ -13,6 +13,7 @@ import { useSyncExternalStore } from 'react'
 import type { DeviceInfo, PublicUser } from '../api/identity'
 import type { CallSignal } from '../e2e/engine'
 import { UserError } from '../lib/errors'
+import { applyOutput, audioConstraints, onDeviceChange, videoConstraints } from '../lib/media'
 import { prefs } from '../platform'
 import { engine, identityAPI, onEngineEvent, socialState } from './social'
 import { leaveVoice } from './voice'
@@ -148,6 +149,7 @@ function stopRing() {
 function newCall(id: string, peer: PublicUser, direction: 'out' | 'in', status: CallStatus): Call {
   const audio = new Audio()
   audio.autoplay = true
+  applyOutput(audio)
   return {
     snap: {
       id, peer, direction, status, muted: prefs.get('call-muted', false), camera: false, canVideo: false, remoteMuted: false, remoteCamera: false,
@@ -258,7 +260,7 @@ function watchStats(c: Call) {
 
 async function microphone(c: Call) {
   try {
-    const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+    const s = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints() })
     c.mic = s.getAudioTracks()[0]
     c.mic.enabled = !c.snap.muted
   } catch {
@@ -342,8 +344,9 @@ async function onInvite(s: CallSignal) {
   c.peerDevice = dev
   call = c
   publish()
-  ring('in')
-  if (!document.hasFocus()) {
+  const dnd = socialState().presence_setting === 'dnd' // do not disturb: no sound, no notification
+  if (!dnd) ring('in')
+  if (!dnd && !document.hasFocus()) {
     try {
       new Notification('Appel de ' + friend.pseudo, { body: 'Ouvrez Quarel pour répondre.', silent: true })
     } catch {
@@ -439,7 +442,7 @@ export async function toggleCallCamera() {
     c.snap.camera = false
     c.snap.localStream = null
   } else {
-    const s = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } })
+    const s = await navigator.mediaDevices.getUserMedia({ video: videoConstraints() })
     c.cam = s.getVideoTracks()[0]
     await t.sender.replaceTrack(c.cam)
     c.snap.camera = true
@@ -453,3 +456,30 @@ export async function toggleCallCamera() {
 export function closeCalls() {
   if (call) hangUp()
 }
+
+// Devices chosen in the settings apply to the call in progress.
+onDeviceChange(async (kind) => {
+  const c = call
+  if (!c || c.snap.status === 'ended') return
+  if (kind === 'audiooutput') return void applyOutput(c.audio)
+  const t = c.pc?.getTransceivers().find((x) => x.receiver.track.kind === (kind === 'audioinput' ? 'audio' : 'video'))
+  if (!t) return
+  try {
+    if (kind === 'audioinput' && c.mic) {
+      const mic = (await navigator.mediaDevices.getUserMedia({ audio: audioConstraints() })).getAudioTracks()[0]
+      mic.enabled = !c.snap.muted
+      await t.sender.replaceTrack(mic)
+      c.mic.stop()
+      c.mic = mic
+    } else if (kind === 'videoinput' && c.cam) {
+      const cam = (await navigator.mediaDevices.getUserMedia({ video: videoConstraints() })).getVideoTracks()[0]
+      await t.sender.replaceTrack(cam)
+      c.cam.stop()
+      c.cam = cam
+      c.snap.localStream = new MediaStream([cam])
+      publish()
+    }
+  } catch {
+    /* device unavailable: keep the current one */
+  }
+})

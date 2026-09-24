@@ -15,7 +15,7 @@ import type { Account } from '../state/account'
 import type { FileRef, HistMsg } from '../e2e/engine'
 import { FileError, MAX_FILE } from '../e2e/files'
 import {
-  acceptFriend, addFriend, createGroup, deleteMessage, editText, engine, leaveGroup, markRead, openDirect, openFile, removeFriend, sendFile, sendText,
+  acceptFriend, addFriend, blockUser, createGroup, deleteMessage, editText, engine, leaveGroup, markRead, openDirect, openFile, removeFriend, sendFile, sendText,
   typing, typingIn, useSocial,
 } from '../state/social'
 
@@ -179,6 +179,7 @@ function FriendsView({ account, onOpen }: { account: Account; onOpen: (c: Conver
                 <div className="acts">
                   <button className="icon-btn" aria-label={'Écrire à ' + u.pseudo} title="Message" onClick={() => message(u)}><Chat size={18} /></button>
                   <button className="btn btn-ghost btn-sm" onClick={() => { if (confirm('Retirer ' + u.pseudo + ' de vos amis ?')) act(() => removeFriend(u)) }}>Retirer</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { if (confirm('Bloquer ' + u.pseudo + ' ? Cette personne sera retirée de vos amis et ne pourra plus vous écrire.')) act(() => blockUser(u)) }}>Bloquer</button>
                 </div>
               </div>
             ))}

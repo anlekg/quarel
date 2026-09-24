@@ -24,6 +24,13 @@ const messages: Record<string, string> = {
   server_blocked: 'Ce serveur est bloqué par votre service d\u2019identité.',
   server_not_approved: 'Ce serveur n\u2019est pas approuvé par votre service d\u2019identité : ses comptes ne peuvent pas s\u2019y connecter.',
   wrong_audience: 'Jeton d\u2019identité destiné à un autre serveur.',
+  pseudo_change_too_soon: 'Le pseudo ne peut changer qu\u2019une fois par jour (changer seulement les majuscules reste possible).',
+  invalid_bio: 'La présentation est limitée à 500 caractères.',
+  invalid_image: 'Image non reconnue : PNG, JPEG, GIF ou WebP.',
+  invalid_status: 'Statut inconnu.',
+  self_block: 'Vous ne pouvez pas vous bloquer vous-même.',
+  mfa_required: 'Entrez aussi un code de double authentification.',
+  not_found: 'Introuvable.',
   // Community servers.
   invalid_invite: 'Invitation inconnue, expirée, épuisée ou révoquée. Demandez-en une nouvelle.',
   invite_required: 'Une invitation est nécessaire.',

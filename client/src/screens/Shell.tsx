@@ -10,7 +10,8 @@ import { initials, JoinDialog } from './JoinDialog'
 import { ServerView } from './ServerView'
 import { VoiceBar } from './Voice'
 import { leaveVoice } from '../state/voice'
-import { closeSocial, openSocial, useSocial } from '../state/social'
+import { closeSocial, openSocial, setPresence, useSocial } from '../state/social'
+import type { Presence } from '../api/identity'
 import { Home } from './Home'
 import { Settings } from './Settings'
 import { CallBar, IncomingCall } from './Call'
@@ -39,7 +40,6 @@ export function Shell({ account }: { account: Account }) {
   }
   const current = servers.find((s) => s.saved.sid === selected)
 
-  const u = account.user
   const userbar = (
     <>
     <CallBar onOpen={(userId) => {
@@ -52,11 +52,7 @@ export function Shell({ account }: { account: Account }) {
       window.dispatchEvent(new CustomEvent('quarel:open-channel', { detail: { sid: conn.saved.sid, channelId } }))
     }} />
     <div className="userbar">
-      <Avatar id={u.id} name={u.pseudo} src={account.identity + '/v1/users/' + u.id + '/avatar'} />
-      <div className="who">
-        <span className="name">{u.pseudo}</span>
-        <span className="handle" title={u.handle}>{u.handle}</span>
-      </div>
+      <PresenceButton account={account} />
       <button className="icon-btn" aria-label="Paramètres" title="Paramètres" onClick={() => setSettings(true)}><Gear size={18} /></button>
     </div>
     </>
@@ -114,5 +110,56 @@ function HomeButton({ active, onClick }: { active: boolean; onClick: () => void 
       <Chat />
       {pending > 0 && <span className="badge">{pending}</span>}
     </button>
+  )
+}
+
+const presences: { id: Presence; label: string; sub?: string; dot: string }[] = [
+  { id: 'online', label: 'En ligne', dot: 'online' },
+  { id: 'idle', label: 'Absent', dot: 'idle' },
+  { id: 'dnd', label: 'Ne pas déranger', sub: 'Pas de notifications', dot: 'dnd' },
+  { id: 'invisible', label: 'Invisible', sub: 'Vous apparaissez hors ligne', dot: 'offline' },
+]
+
+// The signed-in person, with their presence; a click chooses it.
+function PresenceButton({ account }: { account: Account }) {
+  const s = useSocial()
+  const [open, setOpen] = useState(false)
+  const u = account.user
+  const cur = presences.find((p) => p.id === s.presence_setting) ?? presences[0]
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => !(e.target as HTMLElement).closest('.presence-menu, .me-btn') && setOpen(false)
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    window.addEventListener('mousedown', close)
+    window.addEventListener('keydown', esc)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('keydown', esc)
+    }
+  }, [open])
+  return (
+    <>
+      <button className="me-btn" aria-haspopup="menu" aria-expanded={open} aria-label={'Statut : ' + cur.label} title="Changer de statut" onClick={() => setOpen(!open)}>
+        <span className="presence-wrap">
+          <Avatar id={u.id} name={u.pseudo} src={account.identity + '/v1/users/' + u.id + '/avatar'} />
+          <span className={'presence ' + cur.dot} />
+        </span>
+        <span className="who">
+          <span className="name">{u.pseudo}</span>
+          <span className="handle" title={u.handle}>{cur.label}</span>
+        </span>
+      </button>
+      {open && (
+        <div className="presence-menu" role="menu" aria-label="Statut">
+          {presences.map((p) => (
+            <button key={p.id} role="menuitemradio" aria-checked={p.id === cur.id} className={p.id === cur.id ? 'active' : ''}
+              onClick={() => { setOpen(false); setPresence(p.id).catch(() => {}) }}>
+              <span className={'presence ' + p.dot} />
+              <span>{p.label}{p.sub && <span className="sub">{p.sub}</span>}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
   )
 }

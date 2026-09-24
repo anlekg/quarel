@@ -144,7 +144,7 @@
 ## C. Client (en dernier)
 
 - [x] **P0** Client de test en ligne de commande (pour valider l'API pendant le dev backend)
-- [ ] **P1** Application desktop (multi-serveurs, multi-services d'identité) — *en cours : étapes 1 (comptes), 2 (serveurs, salons, messages), 3 (vocal, vidéo), 4a (amis, MP chiffrés), 4b (validation des appareils, phrase de récupération) 4c (fichiers chiffrés) et 5 (appels entre amis) livrées le 2026-09-24*
+- [ ] **P1** Application desktop (multi-serveurs, multi-services d'identité) — *en cours : étapes 1 (comptes), 2 (serveurs, salons, messages), 3 (vocal, vidéo), 4a (amis, MP chiffrés), 4b (validation des appareils, phrase de récupération) 4c (fichiers chiffrés), 5 (appels entre amis) et 6a (paramètres de la personne) livrées le 2026-09-24*
 - [ ] **P1** Client web
 - [ ] **P2** Application mobile
 
@@ -159,4 +159,4 @@
 5. **Jalon 5 — Amis et MP chiffrés :** A3 P0, A4 P0, A5 P0. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-5.md`).*
 6. **Jalon 6 — P1, premier bloc (mise en ligne) :** HTTPS, UPnP, limitation par IP, phrase de récupération. ✅ *Livré le 2026-09-23, en test par le CP (`docs/tests/jalon-6.md`).*
 6 bis. **Jalons suivants — autres blocs P1**, dans l'ordre choisi par le CP.
-7. **Jalon 7 — Client graphique.** Maquettes validées le 2026-09-24. Étapes : 1. comptes ✅ (`docs/tests/client-etape-1.md`), 2. serveurs, salons, messages ✅ (`docs/tests/client-etape-2.md`), 3. vocal et vidéo ✅ (`docs/tests/client-etape-3.md`), 4. amis et MP chiffrés : 4a ✅ (`docs/tests/client-etape-4a.md`), 4b ✅ (`docs/tests/client-etape-4b.md`), 4c ✅ (`docs/tests/client-etape-4c.md`), 5. appels ✅ (`docs/tests/client-etape-5.md`), 6. paramètres, 7. version web.
+7. **Jalon 7 — Client graphique.** Maquettes validées le 2026-09-24. Étapes : 1. comptes ✅ (`docs/tests/client-etape-1.md`), 2. serveurs, salons, messages ✅ (`docs/tests/client-etape-2.md`), 3. vocal et vidéo ✅ (`docs/tests/client-etape-3.md`), 4. amis et MP chiffrés : 4a ✅ (`docs/tests/client-etape-4a.md`), 4b ✅ (`docs/tests/client-etape-4b.md`), 4c ✅ (`docs/tests/client-etape-4c.md`), 5. appels ✅ (`docs/tests/client-etape-5.md`), 6a. paramètres de la personne ✅ (`docs/tests/client-etape-6a.md`), 6b. administration des serveurs, 6. paramètres, 7. version web.

@@ -27,6 +27,7 @@ This product includes or bundles third-party software:
 - Desktop client (client/): Electron (MIT; ships Chromium and Node.js under
   their own licenses, listed in the LICENSES.chromium.html file of each build),
   React (MIT), @noble/ed25519, @noble/hashes and @noble/ciphers (MIT, Paul Miller),
+  qrcode-generator (MIT, Kazuhiko Arase),
   livekit-client (Apache License 2.0, with MIT, BSD-3-Clause and 0BSD dependencies),
   vodozemac (Matrix.org Foundation, Apache License 2.0) compiled to WebAssembly
   in client/src/crypto/wasm/, with Rust dependencies under MIT, Apache-2.0,

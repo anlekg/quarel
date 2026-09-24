@@ -40,7 +40,7 @@ test('accounts: register, verify, stay signed in, 2FA, devices, reset', async ()
   await page.getByLabel('Code reçu par email').fill(id.lastCode())
   await page.getByRole('button', { name: 'Vérifier' }).click()
   await expect(page.locator('.userbar .name', { hasText: 'alice' })).toBeVisible()
-  await expect(page.getByText('alice@localhost:' + id.port).first()).toBeVisible()
+  await expect(page.locator('.userbar .handle')).toHaveAttribute('title', 'alice@localhost:' + id.port)
 
   // The session survives a restart.
   await app.close()

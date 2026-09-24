@@ -8,6 +8,7 @@ import {
 } from 'livekit-client'
 import { ApiError } from '../api/http'
 import type { ServerConn } from './servers'
+import { applyOutput, chosenDevice, onDeviceChange } from '../lib/media'
 
 export interface VideoTile {
   key: string // track SID
@@ -67,6 +68,7 @@ function attachAudio(track: RemoteTrack, pub: RemoteTrackPublication) {
   const el = track.attach()
   el.muted = prefs.deafened
   el.dataset.quarelVoice = pub.trackSid
+  applyOutput(el)
   document.body.append(el)
   audioEls.set(pub.trackSid, el)
 }
@@ -145,7 +147,12 @@ export async function joinVoice(conn: ServerConn, channelId: number) {
     emit({ status: 'error', error: e instanceof ApiError ? e.code : 'network' })
     return
   }
-  const r = new Room({ adaptiveStream: true, dynacast: true })
+  const r = new Room({
+    adaptiveStream: true, dynacast: true,
+    audioCaptureDefaults: { deviceId: chosenDevice('audioinput') || undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    videoCaptureDefaults: { deviceId: chosenDevice('videoinput') || undefined },
+    audioOutput: { deviceId: chosenDevice('audiooutput') || undefined },
+  })
   room = r
   r.on(RoomEvent.TrackSubscribed, (track, pub) => {
     if (track.kind === Track.Kind.Audio) attachAudio(track, pub)
@@ -252,3 +259,9 @@ export async function toggleScreen() {
 }
 
 export type { LocalTrackPublication }
+
+// Devices chosen in the settings apply at once.
+onDeviceChange((kind, id) => {
+  room?.switchActiveDevice(kind, id || 'default').catch(() => {})
+  if (kind === 'audiooutput') for (const el of audioEls.values()) applyOutput(el)
+})
