@@ -10,6 +10,8 @@ import { initials, JoinDialog } from './JoinDialog'
 import { ServerView } from './ServerView'
 import { VoiceBar } from './Voice'
 import { leaveVoice } from '../state/voice'
+import { closeSocial, openSocial, useSocial } from '../state/social'
+import { Home } from './Home'
 import { Settings } from './Settings'
 
 export function Shell({ account }: { account: Account }) {
@@ -20,9 +22,11 @@ export function Shell({ account }: { account: Account }) {
 
   useEffect(() => {
     openServers(account)
+    openSocial(account)
     return () => {
       leaveVoice()
       closeServers()
+      closeSocial()
     }
   }, [account.user.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -54,8 +58,7 @@ export function Shell({ account }: { account: Account }) {
   return (
     <div className="shell">
       <nav className="rail" aria-label="Serveurs">
-        <button className={'rail-btn' + (!current ? ' active' : '')} aria-label="Messages privés" title="Messages privés"
-          aria-current={!current ? 'page' : undefined} onClick={() => select('home')}><Chat /></button>
+        <HomeButton active={!current} onClick={() => select('home')} />
         <span className="rail-sep" />
         {servers.map((s) => <RailServer key={s.saved.sid} conn={s} active={s === current} onClick={() => select(s.saved.sid)} />)}
         <button className="rail-btn add" aria-label="Ajouter un serveur" title="Ajouter un serveur" onClick={() => setJoining(true)}>
@@ -65,26 +68,7 @@ export function Shell({ account }: { account: Account }) {
       {current ? (
         <ServerView key={current.saved.sid} conn={current} userbar={userbar} />
       ) : (
-        <>
-          <aside className="sidebar">
-            <div className="sidebar-head">Messages privés</div>
-            <div className="sidebar-body">
-              <p className="muted small" style={{ padding: '4px 8px', lineHeight: 1.5 }}>Vos amis et conversations apparaîtront ici.</p>
-            </div>
-            {userbar}
-          </aside>
-          <main className="content">
-            <div className="empty-state">
-              <h2>Bienvenue, {u.pseudo}</h2>
-              {servers.length === 0
-                ? <>
-                    <p>Rejoignez un serveur avec le lien d&apos;invitation reçu d&apos;un membre.</p>
-                    <button className="btn btn-primary" onClick={() => setJoining(true)}>Rejoindre un serveur</button>
-                  </>
-                : <p>Les amis et messages privés chiffrés arrivent dans une prochaine étape.</p>}
-            </div>
-          </main>
-        </>
+        <Home account={account} userbar={userbar} />
       )}
       {joining && (
         <JoinDialog account={account} onClose={() => setJoining(false)}
@@ -109,6 +93,18 @@ function RailServer({ conn, active, onClick }: { conn: ServerConn; active: boole
       {unread && !active && <span className="dot" />}
       {initials(name)}
       {mentions > 0 && <span className="badge">{mentions > 99 ? '99+' : mentions}</span>}
+    </button>
+  )
+}
+
+function HomeButton({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const s = useSocial()
+  const pending = s.friends.incoming.length
+  return (
+    <button className={'rail-btn server' + (active ? ' active' : '')} aria-label={'Messages privés' + (pending ? ', ' + pending + ' demande(s) d\u2019ami' : '')}
+      title="Messages privés" aria-current={active ? 'page' : undefined} onClick={onClick}>
+      <Chat />
+      {pending > 0 && <span className="badge">{pending}</span>}
     </button>
   )
 }

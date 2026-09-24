@@ -20,8 +20,14 @@ export interface ScreenSource {
   thumbnail: string // data URL
 }
 
+interface Vault {
+  get(key: string): Promise<string | null>
+  set(key: string, value: string): Promise<void>
+}
+
 interface DesktopBridge {
   secrets: Secrets
+  vault: Vault
   info(): Promise<AppInfo>
   pinServer(host: string, sid: string): Promise<void>
   screenSources(): Promise<ScreenSource[]>
@@ -109,3 +115,35 @@ export async function screenSources(): Promise<ScreenSource[]> {
 export async function chooseScreenSource(id: string) {
   await desktop?.chooseScreenSource(id)
 }
+
+// Larger private state (end-to-end keys, decrypted history). Desktop: files
+// encrypted by the OS keychain. Browser: IndexedDB (not encrypted at rest).
+const idb = (): Promise<IDBDatabase> =>
+  new Promise((resolve, reject) => {
+    const req = indexedDB.open('quarel', 1)
+    req.onupgradeneeded = () => req.result.createObjectStore('vault')
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+
+const webVault: Vault = {
+  async get(key) {
+    const db = await idb()
+    return new Promise((resolve, reject) => {
+      const r = db.transaction('vault').objectStore('vault').get(key)
+      r.onsuccess = () => resolve((r.result as string | undefined) ?? null)
+      r.onerror = () => reject(r.error)
+    })
+  },
+  async set(key, value) {
+    const db = await idb()
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('vault', 'readwrite')
+      tx.objectStore('vault').put(value, key)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+  },
+}
+
+export const vault: Vault = desktop?.vault ?? webVault

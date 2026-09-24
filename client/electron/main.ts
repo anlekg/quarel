@@ -1,8 +1,8 @@
 // Electron main process: one window running the web UI, with the renderer
 // sandboxed (no Node access). The only bridge is the small API in preload.ts.
-import { app, BrowserWindow, desktopCapturer, ipcMain, safeStorage, shell, session } from 'electron'
+import { app, BrowserWindow, desktopCapturer, ipcMain, protocol, safeStorage, shell, session } from 'electron'
 import { hostname } from 'node:os'
-import { join } from 'node:path'
+import { extname, join, normalize, sep } from 'node:path'
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises'
 import { boundServerID, checkServer } from './tlsbind'
 
@@ -10,6 +10,31 @@ const devURL = process.env.QUAREL_DEV_URL
 if (process.env.QUAREL_USER_DATA) app.setPath('userData', process.env.QUAREL_USER_DATA)
 
 let win: BrowserWindow | null = null
+
+// The UI is served from app://quarel/ (not file://): a real origin, fetch()
+// works (WebAssembly), and nothing outside the built UI can be read.
+const APP_ORIGIN = 'app://quarel'
+protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }])
+
+const mimeTypes: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json',
+}
+
+function serveApp() {
+  const root = join(__dirname, '..', 'dist')
+  protocol.handle('app', async (req) => {
+    const url = new URL(req.url)
+    const path = normalize(join(root, decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname)))
+    if (url.host !== 'quarel' || (path !== root && !path.startsWith(root + sep))) return new Response('not found', { status: 404 })
+    try {
+      const body = await readFile(path)
+      return new Response(body, { headers: { 'Content-Type': mimeTypes[extname(path)] ?? 'application/octet-stream' } })
+    } catch {
+      return new Response('not found', { status: 404 })
+    }
+  })
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -38,12 +63,11 @@ function createWindow() {
       openExternal(url)
     }
   })
-  if (devURL) win.loadURL(devURL)
-  else win.loadFile(join(__dirname, '..', 'dist', 'index.html'))
+  win.loadURL(devURL || APP_ORIGIN + '/index.html')
 }
 
 function isAppURL(url: string) {
-  return devURL ? url.startsWith(devURL) : url.startsWith('file://')
+  return devURL ? url.startsWith(devURL) : url.startsWith(APP_ORIGIN + '/')
 }
 
 function openExternal(url: string) {
@@ -103,6 +127,30 @@ ipcMain.handle('secrets:delete', async (e, key) => {
   const all = await loadSecrets()
   delete all[checkKey(key)]
   await saveSecrets()
+})
+
+// --- vault: larger encrypted state (end-to-end encryption keys, decrypted
+// message history), one file per entry, encrypted with the OS keychain ---
+
+const vaultDir = () => join(app.getPath('userData'), 'vault')
+
+ipcMain.handle('vault:get', async (e, key) => {
+  fromApp(e)
+  try {
+    const data = await readFile(join(vaultDir(), checkKey(key)))
+    return safeStorage.decryptString(data)
+  } catch {
+    return null
+  }
+})
+
+ipcMain.handle('vault:set', async (e, key, value) => {
+  fromApp(e)
+  if (typeof value !== 'string') throw new Error('vault value must be a string')
+  await mkdir(vaultDir(), { recursive: true, mode: 0o700 })
+  const path = join(vaultDir(), checkKey(key))
+  await writeFile(path + '.tmp', safeStorage.encryptString(value), { mode: 0o600 })
+  await rename(path + '.tmp', path)
 })
 
 ipcMain.handle('app:info', (e) => {
@@ -182,6 +230,7 @@ ipcMain.handle('screen:choose', (e, id) => {
 })
 
 app.whenReady().then(async () => {
+  serveApp()
   session.defaultSession.setDisplayMediaRequestHandler(async (_req, cb) => {
     const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] })
     const source = sources.find((s) => s.id === chosenScreen) ?? sources.find((s) => s.id.startsWith('screen:'))

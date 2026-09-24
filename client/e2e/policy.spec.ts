@@ -46,7 +46,7 @@ test('identity limits: invitations, approved servers, block list', async () => {
   await expect(page.getByRole('heading', { name: 'Vérifier votre email' })).toBeVisible()
   await page.getByLabel('Code reçu par email').fill(id.lastCode())
   await page.getByRole('button', { name: 'Vérifier' }).click()
-  await expect(page.getByRole('heading', { name: 'Bienvenue, hote' })).toBeVisible()
+  await expect(page.locator('.userbar .name', { hasText: 'hote' })).toBeVisible()
 
   // The user's own invitation (quota 1).
   await page.getByRole('button', { name: 'Paramètres' }).click()
@@ -60,7 +60,7 @@ test('identity limits: invitations, approved servers, block list', async () => {
   // The community server is not approved yet.
   const sid = /server_id=([a-z2-7]{26})/.exec(srv.log)![1]
   const link = `quarel://localhost:${srv.port}/${srv.claimCode()}?sid=${sid}&claim=1`
-  await page.getByRole('button', { name: 'Rejoindre un serveur' }).click()
+  await page.getByRole('button', { name: 'Ajouter un serveur' }).click()
   await page.getByLabel("Lien d'invitation").fill(link)
   await page.getByRole('button', { name: 'Continuer' }).click()
   await page.getByRole('button', { name: 'Rejoindre', exact: true }).click()
@@ -88,7 +88,7 @@ test('identity limits: invitations, approved servers, block list', async () => {
   await page.getByLabel('Email ou pseudo').fill('hote')
   await page.getByLabel('Mot de passe', { exact: true }).fill(password)
   await page.getByRole('button', { name: 'Se connecter' }).click()
-  await page.getByRole('button', { name: 'Rejoindre un serveur' }).click()
+  await page.getByRole('button', { name: 'Ajouter un serveur' }).click()
   await page.getByLabel("Lien d'invitation").fill(`quarel://localhost:${srv.port}/abcdefghij?sid=${sid}`)
   await page.getByRole('button', { name: 'Continuer' }).click()
   await expect(page.getByText('Ce serveur est bloqué par votre service d’identité. Raison : contenus illicites')).toBeVisible()

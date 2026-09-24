@@ -39,13 +39,13 @@ test('accounts: register, verify, stay signed in, 2FA, devices, reset', async ()
   await expect(page.getByText('Code invalide ou expiré')).toBeVisible()
   await page.getByLabel('Code reçu par email').fill(id.lastCode())
   await page.getByRole('button', { name: 'Vérifier' }).click()
-  await expect(page.getByRole('heading', { name: 'Bienvenue, alice' })).toBeVisible()
+  await expect(page.locator('.userbar .name', { hasText: 'alice' })).toBeVisible()
   await expect(page.getByText('alice@localhost:' + id.port).first()).toBeVisible()
 
   // The session survives a restart.
   await app.close()
   ;({ app, page } = await launchApp(userData))
-  await expect(page.getByRole('heading', { name: 'Bienvenue, alice' })).toBeVisible()
+  await expect(page.locator('.userbar .name', { hasText: 'alice' })).toBeVisible()
 
   // Another device signs in, then 2FA is turned on (through the API for now).
   const phone = await id.login('alice', password)
@@ -75,7 +75,7 @@ test('accounts: register, verify, stay signed in, 2FA, devices, reset', async ()
   // The enabling code used the current step; the next one is accepted (±1 step).
   await page.getByLabel('Code', { exact: true }).fill(totp(secret, Date.now() + 30_000))
   await page.getByRole('button', { name: 'Valider' }).click()
-  await expect(page.getByRole('heading', { name: 'Bienvenue, alice' })).toBeVisible()
+  await expect(page.locator('.userbar .name', { hasText: 'alice' })).toBeVisible()
 
   // Session closed elsewhere: the app notices at the next start.
   const other = await id.login('alice', password, backup_codes[0])
@@ -106,7 +106,7 @@ test('accounts: register, verify, stay signed in, 2FA, devices, reset', async ()
   await page.getByRole('button', { name: 'Utiliser un code de secours' }).click()
   await page.getByLabel('Code de secours').fill(backup_codes[2])
   await page.getByRole('button', { name: 'Valider' }).click()
-  await expect(page.getByRole('heading', { name: 'Bienvenue, alice' })).toBeVisible()
+  await expect(page.locator('.userbar .name', { hasText: 'alice' })).toBeVisible()
 
   await app.close()
 })

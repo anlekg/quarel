@@ -491,3 +491,5 @@ Livré : rejoindre un salon vocal d'un clic, participants sous le salon (micro, 
 | 2026-09-24 | Formats « version 1 » (ceux de libolm) partout | Compatibilité exacte avec le client de test (goolm) : **vérifiée** par `make client-interop` (signatures, sessions Olm et messages Megolm dans les deux sens, clés exportées). |
 
 Découpage : **4a** amis, conversations et groupes chiffrés ; **4b** validation des appareils, transfert d'historique, phrase de récupération ; **4c** fichiers chiffrés.
+
+**4a livré (2026-09-24)** : amis (demandes, acceptation, retrait, présence), conversations directes et groupes chiffrés de bout en bout, envoi / réception en direct, distribué, vu, « … écrit », modification et suppression, historique gardé sur l'appareil (coffre chiffré par le trousseau). **Interopérabilité réelle vérifiée** : l'application et `quarelctl` échangent des messages dans les deux sens, groupes compris (`e2e/dm.spec.ts`). Correctif au passage : l'application de bureau sert son interface par `app://quarel/` au lieu de `file://`.

@@ -29,7 +29,7 @@ test('owner link: the host claims the server from the app', async () => {
   const sid = /server_id=([a-z2-7]{26})/.exec(srv.log)![1]
   const link = `quarel://localhost:18690/${srv.claimCode()}?sid=${sid}&claim=1`
 
-  await page.getByRole('button', { name: 'Rejoindre un serveur' }).click()
+  await page.getByRole('button', { name: 'Ajouter un serveur' }).click()
   await page.getByLabel("Lien d'invitation").fill(link)
   await page.getByRole('button', { name: 'Continuer' }).click()
   await expect(page.getByText('Lien propriétaire : vous deviendrez propriétaire de ce serveur.')).toBeVisible()

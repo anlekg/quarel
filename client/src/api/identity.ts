@@ -39,6 +39,59 @@ export interface MyInvites {
   invites: { code: string; uses: number; max_uses: number; created_at: string; expires_at: string | null }[]
 }
 
+export interface PublicUser {
+  id: string
+  handle: string
+  pseudo: string
+  presence?: 'online' | 'idle' | 'dnd' | 'offline'
+}
+
+export interface FriendLists {
+  friends: PublicUser[]
+  incoming: PublicUser[]
+  outgoing: PublicUser[]
+}
+
+export type Relation = 'friends' | 'incoming' | 'outgoing' | 'none'
+
+export interface Conversation {
+  id: string
+  kind: 'direct' | 'group'
+  name: string
+  owner_id: string | null
+  members: PublicUser[]
+  user?: PublicUser // direct: the other participant
+  created_at: string
+}
+
+export interface DeviceInfo {
+  device_id: string
+  device_name: string
+  curve25519: string
+  ed25519: string
+  signature: string
+  master_signature: string | null
+  verified: boolean
+  verification_code: string
+}
+
+export interface UserKeys {
+  user: PublicUser
+  master_key: string | null
+  devices: DeviceInfo[]
+}
+
+export interface InboxItem {
+  id: number
+  kind: 'to_device' | 'dm' | 'receipt'
+  sender_user: string
+  sender_device: string
+  dm_id?: string
+  event_id?: number
+  payload: string
+  created_at: string
+}
+
 export interface KeySet {
   issuer: string
   keys: unknown[]
@@ -102,6 +155,104 @@ export class IdentityClient {
   // service requires it (approved servers only).
   identityToken(audience?: string) {
     return this.call<{ token: string; expires_at: string }>('POST', '/v1/identity/token', audience ? { audience } : undefined)
+  }
+
+  // --- friends ---
+
+  friends() {
+    return this.call<FriendLists>('GET', '/v1/friends')
+  }
+
+  addFriend(pseudo: string) {
+    return this.call<{ user: PublicUser; status: Relation }>('POST', '/v1/friends', { pseudo })
+  }
+
+  acceptFriend(id: string) {
+    return this.call<{ user: PublicUser; status: Relation }>('POST', '/v1/friends/' + id + '/accept')
+  }
+
+  removeFriend(id: string) {
+    return this.call<void>('DELETE', '/v1/friends/' + id)
+  }
+
+  // --- end-to-end keys ---
+
+  publishDevice(body: Record<string, string>) {
+    return this.call<unknown>('POST', '/v1/keys/device', body)
+  }
+
+  certifyDevice(deviceId: string, masterSignature: string) {
+    return this.call<void>('POST', '/v1/keys/certify', { device_id: deviceId, master_signature: masterSignature })
+  }
+
+  uploadOneTimeKeys(keys: { id: string; key: string; signature: string }[]) {
+    return this.call<{ one_time_keys: number }>('POST', '/v1/keys/one-time', { keys })
+  }
+
+  claimKeys(deviceIds: string[]) {
+    return this.call<Record<string, { id: string; key: string; signature: string }>>('POST', '/v1/keys/claim', { device_ids: deviceIds })
+  }
+
+  userKeys(userId: string) {
+    return this.call<UserKeys>('GET', '/v1/users/' + encodeURIComponent(userId) + '/keys')
+  }
+
+  sendToDevice(messages: { device_id: string; payload: string }[]) {
+    return this.call<void>('POST', '/v1/to-device', { messages })
+  }
+
+  inbox() {
+    return this.call<InboxItem[]>('GET', '/v1/inbox')
+  }
+
+  ackInbox(ids: number[]) {
+    return this.call<void>('POST', '/v1/inbox/ack', { ids })
+  }
+
+  // --- conversations ---
+
+  conversations() {
+    return this.call<Conversation[]>('GET', '/v1/dms')
+  }
+
+  openDirect(userId: string) {
+    return this.call<Conversation>('POST', '/v1/dms', { user_id: userId })
+  }
+
+  createGroup(userIds: string[], name: string) {
+    return this.call<Conversation>('POST', '/v1/dms', { user_ids: userIds, name })
+  }
+
+  renameGroup(id: string, name: string) {
+    return this.call<Conversation>('PATCH', '/v1/dms/' + id, { name })
+  }
+
+  addToGroup(id: string, userId: string) {
+    return this.call<Conversation>('PUT', '/v1/dms/' + id + '/members/' + userId)
+  }
+
+  removeFromGroup(id: string, userId: string) {
+    return this.call<void>('DELETE', '/v1/dms/' + id + '/members/' + userId)
+  }
+
+  leaveGroup(id: string) {
+    return this.call<void>('DELETE', '/v1/dms/' + id + '/members/@me')
+  }
+
+  sendDM(id: string, payload: string) {
+    return this.call<{ event_id: number; recipient_devices: number }>('POST', '/v1/dms/' + id + '/messages', { payload })
+  }
+
+  dmTyping(id: string) {
+    return this.call<void>('POST', '/v1/dms/' + id + '/typing')
+  }
+
+  dmRead(id: string, eventId: number) {
+    return this.call<void>('POST', '/v1/dms/' + id + '/read', { event_id: eventId })
+  }
+
+  gatewayURL() {
+    return this.base.replace(/^http/, 'ws') + '/v1/gateway'
   }
 
   myInvites() {

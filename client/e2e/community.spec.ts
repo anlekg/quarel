@@ -36,7 +36,7 @@ async function signIn(page: Page) {
   await page.getByLabel('Email ou pseudo').fill('bob')
   await page.getByLabel('Mot de passe', { exact: true }).fill(password)
   await page.getByRole('button', { name: 'Se connecter' }).click()
-  await expect(page.getByRole('heading', { name: 'Bienvenue, bob' })).toBeVisible()
+  await expect(page.locator('.userbar .name', { hasText: 'bob' })).toBeVisible()
 }
 
 const lastID = (out: string) => /\[(\d+)\]|\] (\d+)|#(\d+)/.exec(out)?.slice(1).find(Boolean)
@@ -47,7 +47,7 @@ test('servers: join, rules, messages, replies, reactions, files, unread, kick', 
   const link = /quarel:\/\/\S+/.exec(ctl.run('alice', 'invite', '5'))![0]
 
   // A link whose server ID does not match: the certificate is refused.
-  await page.getByRole('button', { name: 'Rejoindre un serveur' }).click()
+  await page.getByRole('button', { name: 'Ajouter un serveur' }).click()
   const wrong = link.replace(/sid=[a-z2-7]+/, 'sid=' + 'a'.repeat(26))
   await page.getByLabel("Lien d'invitation").fill(wrong)
   await page.getByRole('button', { name: 'Continuer' }).click()
@@ -142,6 +142,6 @@ test('servers: join, rules, messages, replies, reactions, files, unread, kick', 
   ctl.run('alice', 'kick', 'bob', 'test')
   await expect(page.getByText('Vous avez été expulsé de ce serveur.')).toBeVisible()
   await page.getByRole('button', { name: 'Retirer de ma liste' }).click()
-  await expect(page.getByRole('button', { name: 'Rejoindre un serveur' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ajouter un serveur' })).toBeVisible()
   await app.close()
 })

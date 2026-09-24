@@ -49,7 +49,7 @@ test('voice: join, hear, mute, camera, moderation, leave', async () => {
   await page.getByLabel('Mot de passe', { exact: true }).fill(password)
   await page.getByRole('button', { name: 'Se connecter' }).click()
   const link = /quarel:\/\/\S+/.exec(ctl.run('alice', 'invite', '5'))![0]
-  await page.getByRole('button', { name: 'Rejoindre un serveur' }).click()
+  await page.getByRole('button', { name: 'Ajouter un serveur' }).click()
   await page.getByLabel("Lien d'invitation").fill(link)
   await page.getByRole('button', { name: 'Continuer' }).click()
   await page.getByRole('button', { name: 'Rejoindre', exact: true }).click()
