@@ -44,6 +44,12 @@ type Config struct {
 
 	MaxUploadBytes int64 // attachment size limit
 	LinkPreviews   bool  // fetch previews of posted links (the server contacts the linked sites)
+
+	// Phone verification provider: "off" (default), "twilio", or "log" (development: codes in the log).
+	PhoneVerify      string
+	TwilioAccountSID string
+	TwilioAuthToken  string
+	TwilioVerifySID  string // Verify service ("VA…")
 }
 
 // Limits caps request rates (0 disables a limit).
@@ -52,10 +58,13 @@ type Limits struct {
 	Auth     int // login challenges and logins per client IP per minute
 	Messages int // messages sent per member per 10 seconds
 	Uploads  int // attachments uploaded per member per minute
+	Phone    int // phone verification codes sent per member per hour
 }
 
 // DefaultLimits are the production limits.
-func DefaultLimits() Limits { return Limits{Global: 600, Auth: 30, Messages: 10, Uploads: 10} }
+func DefaultLimits() Limits {
+	return Limits{Global: 600, Auth: 30, Messages: 10, Uploads: 10, Phone: 5}
+}
 
 // ConfigFromEnv reads the configuration from QUAREL_* environment variables.
 func ConfigFromEnv() (Config, error) {
@@ -94,6 +103,24 @@ func ConfigFromEnv() (Config, error) {
 	c.MaxUploadBytes = int64(envInt("QUAREL_MAX_UPLOAD_MB", 25)) << 20
 	c.LinkPreviews = env("QUAREL_LINK_PREVIEWS", "on") != "off"
 	c.PublicPort = envInt("QUAREL_PUBLIC_PORT", 0)
+	c.PhoneVerify = env("QUAREL_PHONE_VERIFY", "off")
+	c.TwilioAccountSID = os.Getenv("QUAREL_TWILIO_ACCOUNT_SID")
+	c.TwilioAuthToken = os.Getenv("QUAREL_TWILIO_AUTH_TOKEN")
+	c.TwilioVerifySID = os.Getenv("QUAREL_TWILIO_VERIFY_SID")
+	switch c.PhoneVerify {
+	case "off", "log":
+	case "twilio":
+		if c.TwilioAccountSID == "" || c.TwilioAuthToken == "" || c.TwilioVerifySID == "" {
+			return c, fmt.Errorf("QUAREL_PHONE_VERIFY=twilio needs QUAREL_TWILIO_ACCOUNT_SID, QUAREL_TWILIO_AUTH_TOKEN and QUAREL_TWILIO_VERIFY_SID")
+		}
+	default:
+		return c, fmt.Errorf("QUAREL_PHONE_VERIFY: unknown provider %q (off, twilio, log)", c.PhoneVerify)
+	}
+	for _, iss := range c.TrustedIssuers {
+		if strings.HasPrefix(iss, "#") {
+			return c, fmt.Errorf("QUAREL_TRUSTED_ISSUERS: %q is not a domain", iss)
+		}
+	}
 	return c, nil
 }
 

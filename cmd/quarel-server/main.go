@@ -83,10 +83,10 @@ func run() error {
 		return netdiag.Diagnose(st, ip, ports)
 	})
 
-	go func() { // unsent uploads and orphaned files
+	go func() { // unsent uploads, orphaned files, old audit entries, expired sessions
 		for {
-			if err := srv.CleanupAttachments(ctx); err != nil {
-				slog.Warn("attachment cleanup", "err", err)
+			if err := srv.Housekeeping(ctx); err != nil {
+				slog.Warn("housekeeping", "err", err)
 			}
 			select {
 			case <-ctx.Done():

@@ -163,6 +163,12 @@ Deux types de serveurs :
 | 2026-09-24 | Fils et salons d'annonces = salons textuels marqués (colonnes `thread`, `announcement`) | Changer la contrainte de type de la table aurait imposé de la reconstruire, ce qui supprime les messages en cascade. Un fil hérite des droits de son salon. |
 | 2026-09-24 | Nouvelles permissions : `add_reactions`, `attach_files`, `stream` (données à `@everyone` par défaut), `moderate_members`, `view_audit_log`, `mute_members`, `deafen_members`, `move_members` | Préparées en une migration pour tout le bloc P1. |
 | 2026-09-24 | Réglages de notification stockés par le serveur, appliqués par le client | Le serveur n'envoie pas de notifications push : il synchronise les réglages entre les appareils du membre. |
+| 2026-09-24 | *(à valider par le CP)* Vérification du téléphone via **Twilio Verify** (payé par l'hébergeur), autres fournisseurs ajoutables ; mode `log` pour le développement | Le CP : « ce sera aux serveurs de gérer ça ». Twilio gère l'envoi et la vérification des codes : pas de passerelle SMS à maintenir. |
+| 2026-09-24 | Le serveur ne stocke qu'une **empreinte à clé** (HMAC) du numéro, conservée après un ban | Un banni ne peut pas revenir avec le même numéro sans que le numéro soit lisible dans la base. Limite assumée : l'hébergeur, qui détient la clé, pourrait retrouver un numéro par force brute (les numéros sont peu nombreux). |
+| 2026-09-24 | *(à valider par le CP)* Écran de règles : **seuls les nouveaux membres** doivent accepter (les présents sont dispensés quand les règles apparaissent) ; exigence du téléphone : **tous** les membres sauf propriétaire, administrateurs et bots | Les règles accompagnent l'arrivée ; le téléphone est une mesure de sécurité, qui n'a de sens que pour tous. |
+| 2026-09-24 | Membres restreints (exclusion, règles, téléphone) = **lecture seule** (droit `view_channel` uniquement), avec un code d'erreur explicite | Une seule règle simple, appliquée partout où les permissions sont calculées (vocal compris). |
+| 2026-09-24 | Bots = membres sans compte Identity, jeton `qb_…` propre au serveur, sans expiration, renouvelable | Même API que les clients ; aucune dépendance au service central. |
+| 2026-09-24 | Journal d'audit conservé **90 jours** | Assez pour enquêter, sans historique indéfini (privacy). |
 
 ---
 
@@ -307,4 +313,14 @@ Demande du CP : « on finit la P1 ! ». Découpage annoncé en 7 blocs (messages
 **Validation :** tests d'intégration (réponses, réactions, épingles, pièces jointes y compris droits, taille, types dangereux et nettoyage, aperçus et refus SSRF, recherche et fuite de salons cachés, non-lus, fils, annonces, notifications) ; `make e2e-messages` (18/18) avec les vrais binaires ; détecteur de concurrence. Bugs trouvés et corrigés : mentions dupliquées au rechargement, ordre des réactions instable, sourdine « illimitée » impossible à encoder en JSON (date au-delà de l'an 9999).
 
 **Guide de test du CP :** `docs/tests/p1-bloc-1.md`.
+
+### P1 — Bloc 2 : modération et accès (livré le 2026-09-24)
+
+**Livré :** exclusion temporaire (lecture seule jusqu'à 28 jours, sortie du vocal, fin automatique), journal d'audit (expulsions, bans, exclusions, rôles, salons, droits, réglages, suppressions de messages d'autrui, bots ; filtres et pagination), suppression en masse (par liste, par membre sur une période, ou au bannissement), écran de règles, vérification du téléphone (Twilio Verify ou mode développement, empreinte du numéro, pas de retour d'un banni avec le même numéro), bots (création, jeton, renouvellement, suppression), **documentation publique de l'API** (`docs/api.md`) et bot d'exemple (`examples/pingbot`).
+
+**Validation :** tests d'intégration (exclusion : droits, hiérarchie, administrateurs, vocal, fin automatique ; journal : contenu, filtres, pagination, expiration ; suppressions en masse et purge ; règles ; téléphone : codes, numéro déjà utilisé, numéro d'un banni, numéro d'un ancien membre ; Twilio contre un faux Twilio ; bots : jeton, hiérarchie, renouvellement, suppression) ; `make e2e-moderation` (24/24, avec le bot d'exemple réellement connecté en HTTPS auto-signé) ; détecteur de concurrence.
+
+**Non testé en conditions réelles :** Twilio (nécessite un compte payant de l'hébergeur ; testé contre une imitation de son API).
+
+**Guide de test du CP :** `docs/tests/p1-bloc-2.md`.
 

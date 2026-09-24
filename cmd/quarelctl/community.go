@@ -38,12 +38,16 @@ type channelInfo struct {
 }
 
 type memberInfo struct {
-	ID          string    `json:"id"`
-	Handle      string    `json:"handle"`
-	DisplayName string    `json:"display_name"`
-	Owner       bool      `json:"owner"`
-	Roles       []int64   `json:"roles"`
-	JoinedAt    time.Time `json:"joined_at"`
+	ID            string     `json:"id"`
+	Handle        string     `json:"handle"`
+	DisplayName   string     `json:"display_name"`
+	Owner         bool       `json:"owner"`
+	Roles         []int64    `json:"roles"`
+	JoinedAt      time.Time  `json:"joined_at"`
+	Bot           bool       `json:"bot"`
+	TimeoutUntil  *time.Time `json:"timeout_until"`
+	RulesAccepted bool       `json:"rules_accepted"`
+	PhoneVerified bool       `json:"phone_verified"`
 }
 
 type messageInfo struct {
@@ -83,10 +87,13 @@ type attachmentInfo struct {
 }
 
 type serverInfo struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Access      string `json:"access"`
-	MemberCount int    `json:"member_count"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Access            string `json:"access"`
+	MemberCount       int    `json:"member_count"`
+	Rules             string `json:"rules"`
+	RequirePhone      bool   `json:"require_phone"`
+	PhoneVerification bool   `json:"phone_verification"`
 }
 
 func (c *cli) runCommunity(cmd string, args []string) (bool, error) {
@@ -181,7 +188,7 @@ func (c *cli) runCommunity(cmd string, args []string) (bool, error) {
 			}
 		}
 	default:
-		return c.runRoles(cmd, args)
+		return c.runAccess(cmd, args)
 	}
 	return true, err
 }
@@ -216,6 +223,12 @@ func (c *cli) srvInfo(args []string) error {
 	}
 	access := map[string]string{"private": "privé (sur invitation)", "public": "public"}[info.Access]
 	fmt.Printf("%s\n  adresse : %s\n  id      : %s\n  accès   : %s\n  membres : %d\n", info.Name, base, info.ID, access, info.MemberCount)
+	if info.RequirePhone {
+		fmt.Println("  exige un numéro de téléphone vérifié")
+	}
+	if info.Rules != "" {
+		fmt.Printf("  règles  :\n%s\n", indent(info.Rules))
+	}
 	return nil
 }
 
@@ -296,8 +309,16 @@ func (c *cli) joinCmd(target, invite, claim string) error {
 		fmt.Printf("Reconnexion à « %s ».\n", res.Server.Name)
 	}
 	fmt.Printf("Serveur courant : %s — session valable jusqu'au %s\n", base, res.ExpiresAt.Local().Format("2006-01-02 15:04"))
+	if res.Server.Rules != "" && !res.Member.RulesAccepted {
+		fmt.Printf("\nRègles du serveur, à accepter avant de participer (lecture seule d'ici là) :\n%s\n→ quarelctl accept-rules\n", indent(res.Server.Rules))
+	}
+	if res.Server.RequirePhone && !res.Member.PhoneVerified {
+		fmt.Println("\nCe serveur exige un numéro de téléphone vérifié : quarelctl phone +33612345678, puis quarelctl phone-verify <numéro> <code>")
+	}
 	return c.save()
 }
+
+func indent(s string) string { return "  " + strings.ReplaceAll(s, "\n", "\n  ") }
 
 func (c *cli) current() (string, *community, error) {
 	base := c.community
@@ -368,18 +389,26 @@ func (c *cli) srvSet(args []string) error {
 	if err != nil {
 		return err
 	}
-	body := map[string]string{}
+	body := map[string]any{}
 	for k, v := range kv {
-		if k != "name" && k != "access" {
-			return fmt.Errorf("réglage inconnu %q (name, access)", k)
+		switch k {
+		case "name", "access":
+			body[k] = v
+		case "require_phone", "telephone":
+			body["require_phone"] = v == "true" || v == "oui" || v == "1"
+		default:
+			return fmt.Errorf("réglage inconnu %q (name, access, require_phone)", k)
 		}
-		body[k] = v
 	}
 	var info serverInfo
 	if err := c.cdo("PATCH", "/v1/server", body, &info); err != nil {
 		return err
 	}
-	fmt.Printf("Serveur « %s », accès %s.\n", info.Name, info.Access)
+	phone := ""
+	if info.RequirePhone {
+		phone = ", téléphone vérifié exigé"
+	}
+	fmt.Printf("Serveur « %s », accès %s%s.\n", info.Name, info.Access, phone)
 	return nil
 }
 
@@ -1011,6 +1040,13 @@ func (c *cli) listen() error {
 			for _, e := range m.Embeds {
 				fmt.Printf("         🔗 %s\n", e.Title)
 			}
+		case "MESSAGE_DELETE_BULK":
+			var d struct {
+				ChannelID int64   `json:"channel_id"`
+				IDs       []int64 `json:"ids"`
+			}
+			json.Unmarshal(ev.D, &d)
+			fmt.Printf("%s ✗ %-12s %d message(s) supprimé(s) par la modération\n", now, chanName(d.ChannelID), len(d.IDs))
 		case "MESSAGE_DELETE":
 			var d struct {
 				ID        int64 `json:"id"`
@@ -1042,6 +1078,10 @@ func (c *cli) listen() error {
 				fmt.Printf("%s ✎ %s → %s (nouveau nom affiché)\n", now, old.DisplayName, m.DisplayName)
 			} else if known && fmt.Sprint(old.Roles) != fmt.Sprint(m.Roles) {
 				fmt.Printf("%s ⚙ les rôles de %s ont changé\n", now, m.DisplayName)
+			} else if m.TimeoutUntil != nil && m.TimeoutUntil.After(time.Now()) && (old.TimeoutUntil == nil || !old.TimeoutUntil.Equal(*m.TimeoutUntil)) {
+				fmt.Printf("%s ⏸ exclusion temporaire de %s jusqu'à %s\n", now, m.DisplayName, m.TimeoutUntil.Local().Format("15:04"))
+			} else if known && old.TimeoutUntil != nil && m.TimeoutUntil == nil {
+				fmt.Printf("%s ▶ fin de l'exclusion de %s\n", now, m.DisplayName)
 			}
 		case "MEMBER_LEAVE":
 			var d struct {

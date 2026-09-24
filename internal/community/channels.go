@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -266,6 +267,7 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.broadcastChannel(ctx, "CHANNEL_CREATE", c.ID, c)
+	s.audit(ctx, s.db, memberFrom(r).ID, auditChannelCreate, fmt.Sprint(c.ID), "", map[string]any{"name": c.Name, "type": c.Type})
 	writeJSON(w, http.StatusCreated, c)
 }
 
@@ -334,6 +336,7 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.broadcastChannel(ctx, "CHANNEL_UPDATE", c.ID, c)
+	s.audit(ctx, s.db, memberFrom(r).ID, auditChannelUpdate, fmt.Sprint(c.ID), "", map[string]any{"name": c.Name, "topic": c.Topic, "parent_id": c.ParentID, "position": c.Position})
 	if moved {
 		s.syncPermissions(ctx) // a new category can change who sees the channel
 	}
@@ -359,6 +362,7 @@ func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.hub.Broadcast("CHANNEL_DELETE", map[string]int64{"id": c.ID})
+	s.audit(ctx, s.db, memberFrom(r).ID, auditChannelDelete, fmt.Sprint(c.ID), "", map[string]any{"name": c.Name, "type": c.Type})
 	if c.Type == chanCategory {
 		s.syncPermissions(ctx) // children moved to the top level, without the category's overrides
 	} else {
@@ -483,6 +487,11 @@ func (s *Server) handleSetOverride(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	action := auditOverrideUpdate
+	if r.Method == http.MethodDelete || allow|deny == 0 {
+		action = auditOverrideDelete
+	}
+	s.audit(ctx, s.db, memberFrom(r).ID, action, fmt.Sprint(c.ID), "", map[string]any{"target_type": typ, "target_id": target, "allow": allow.names(), "deny": deny.names()})
 	s.broadcastChannel(ctx, "CHANNEL_UPDATE", c.ID, c)
 	s.syncPermissions(ctx)
 	if r.Method == http.MethodDelete {

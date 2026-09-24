@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -213,6 +214,7 @@ func (s *Server) handleCreateRole(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	s.audit(ctx, s.db, memberFrom(r).ID, auditRoleCreate, fmt.Sprint(id), "", map[string]any{"name": rl.Name, "permissions": rl.perms.names()})
 	writeJSON(w, http.StatusCreated, rl)
 }
 
@@ -329,6 +331,7 @@ func (s *Server) handleUpdateRole(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	s.audit(ctx, s.db, memberFrom(r).ID, auditRoleUpdate, fmt.Sprint(id), "", map[string]any{"name": rl.Name, "permissions": rl.perms.names(), "position": rl.Position})
 	writeJSON(w, http.StatusOK, rl)
 }
 
@@ -386,6 +389,7 @@ func (s *Server) handleDeleteRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.hub.Broadcast("ROLE_DELETE", map[string]int64{"id": id})
+	s.audit(ctx, s.db, memberFrom(r).ID, auditRoleDelete, fmt.Sprint(id), "", nil)
 	s.rolesChanged(ctx)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -435,12 +439,18 @@ func (s *Server) handleMemberRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := `INSERT OR IGNORE INTO member_roles (member_id, role_id) VALUES (?, ?)`
+	action := auditMemberRoleAdd
 	if r.Method == http.MethodDelete {
 		q = `DELETE FROM member_roles WHERE member_id = ? AND role_id = ?`
+		action = auditMemberRoleRemove
 	}
-	if _, err := s.db.ExecContext(ctx, q, target.ID, roleID); err != nil {
+	res, err := s.db.ExecContext(ctx, q, target.ID, roleID)
+	if err != nil {
 		writeErr(w, r, err)
 		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		s.audit(ctx, s.db, memberFrom(r).ID, action, target.ID, "", map[string]any{"role_id": roleID, "role": rl.Name})
 	}
 	view, err := s.memberView(ctx, target)
 	if err != nil {

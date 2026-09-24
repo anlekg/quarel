@@ -207,6 +207,21 @@ CREATE TABLE audit_log (
 	created_at INTEGER NOT NULL
 );
 `,
+	// P1 block 2: rules screen, phone verification, bots, audit log index.
+	// phone_hash is a keyed hash of the number (never the number itself); it
+	// stays on the member row after a ban so the same phone cannot come back.
+	`
+ALTER TABLE members ADD COLUMN rules_accepted_at INTEGER;
+ALTER TABLE members ADD COLUMN phone_hash TEXT;
+CREATE UNIQUE INDEX members_phone ON members (phone_hash) WHERE phone_hash IS NOT NULL;
+ALTER TABLE members ADD COLUMN bot INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE bot_tokens (
+	member_id  TEXT PRIMARY KEY REFERENCES members(id) ON DELETE CASCADE,
+	token_hash TEXT NOT NULL UNIQUE,
+	created_at INTEGER NOT NULL
+);
+CREATE INDEX audit_log_created ON audit_log (created_at);
+`,
 }
 
 // OpenDB opens (creating if needed) the SQLite database at path and applies migrations.

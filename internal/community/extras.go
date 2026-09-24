@@ -203,7 +203,7 @@ func (s *Server) handleReaction(w http.ResponseWriter, r *http.Request) {
 	event := "REACTION_ADD"
 	if r.Method == http.MethodPut {
 		if ps.inChannel(me, c.ID)&permAddReactions == 0 {
-			writeErr(w, r, missing(permAddReactions))
+			writeErr(w, r, ps.deny(me, permAddReactions))
 			return
 		}
 		var distinct int

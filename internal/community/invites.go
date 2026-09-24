@@ -118,6 +118,8 @@ func (s *Server) handleRevokeInvite(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	var creator sql.NullString
+	s.db.QueryRowContext(r.Context(), `SELECT creator_id FROM invites WHERE code = ?`, r.PathValue("code")).Scan(&creator)
 	res, err := s.db.ExecContext(r.Context(), `DELETE FROM invites WHERE code = ? AND (? OR creator_id = ?)`,
 		r.PathValue("code"), all, m.ID)
 	if err != nil {
@@ -127,6 +129,9 @@ func (s *Server) handleRevokeInvite(w http.ResponseWriter, r *http.Request) {
 	if n, _ := res.RowsAffected(); n == 0 {
 		writeErr(w, r, errf(http.StatusNotFound, "not_found", "no such invite (or not yours)"))
 		return
+	}
+	if creator.String != m.ID {
+		s.audit(r.Context(), s.db, m.ID, auditInviteDelete, creator.String, "", map[string]any{"code": r.PathValue("code")})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

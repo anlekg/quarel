@@ -128,9 +128,26 @@ Rôles et permissions
 
 Modération
   kick <membre> [raison]           expulser (peut revenir avec une invitation)
-  ban <membre> [raison]            bannir l'identité (ne peut plus revenir)
+  ban <membre> [--purge=durée|tout] [raison]   bannir l'identité (ne peut plus revenir), en effaçant ses messages récents
   unban <membre>                   lever un bannissement
   bans                             membres bannis
+  timeout <membre> <durée> [raison]   exclusion temporaire : lecture seule (ex. timeout bob 10m ; 28d max)
+  untimeout <membre>
+  purge <membre> <durée|tout> [salon]  effacer les messages récents d'un membre
+  audit [nombre] [action]          journal de modération (droit view_audit_log)
+
+Accès au serveur
+  rules [texte…|-f fichier|--clear]   voir / définir les règles à accepter par les nouveaux membres
+  accept-rules                     accepter les règles
+  srv-set require_phone=true       exiger un numéro de téléphone vérifié (fournisseur configuré par l'hébergeur)
+  phone <+33…>                     recevoir un code par SMS
+  phone-verify <+33…> <code>
+
+Bots
+  bot-create <nom>                 créer un bot et afficher son jeton
+  bots                             lister les bots
+  bot-token <bot>                  renouveler le jeton (l'ancien cesse de fonctionner)
+  bot-delete <bot>
 
 Vocal
   voice                            qui est dans quel salon vocal

@@ -46,8 +46,9 @@ type Server struct {
 	key      ed25519.PrivateKey
 	network  func(ctx context.Context) netdiag.Diagnosis // nil: no diagnosis available
 	proxies  ratelimit.Proxies
-	limit    struct{ global, auth, messages, uploads, typing *ratelimit.Limiter }
-	previews *previewer // nil: link previews disabled
+	limit    struct{ global, auth, messages, uploads, typing, phone *ratelimit.Limiter }
+	previews *previewer    // nil: link previews disabled
+	phone    PhoneVerifier // nil: phone verification unavailable
 }
 
 // ServerID derives the public server identifier from its key.
@@ -93,6 +94,8 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, keys KeySource) *Server
 	s.limit.messages = ratelimit.New(cfg.Limits.Messages, 10*time.Second)
 	s.limit.uploads = ratelimit.New(cfg.Limits.Uploads, time.Minute)
 	s.limit.typing = ratelimit.New(1, 3*time.Second)
+	s.limit.phone = ratelimit.New(cfg.Limits.Phone, time.Hour)
+	s.phone = newPhoneVerifier(cfg)
 	if s.cfg.MaxUploadBytes <= 0 {
 		s.cfg.MaxUploadBytes = 25 << 20
 	}
@@ -240,6 +243,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/members/{id}/roles/{role}", s.authed(s.handleMemberRole))
 	mux.HandleFunc("DELETE /v1/members/{id}/roles/{role}", s.authed(s.handleMemberRole))
 	mux.HandleFunc("POST /v1/members/{id}/kick", s.authed(s.handleKick))
+	mux.HandleFunc("PUT /v1/members/{id}/timeout", s.authed(s.handleTimeout))
+	mux.HandleFunc("DELETE /v1/members/{id}/timeout", s.authed(s.handleTimeout))
+	mux.HandleFunc("POST /v1/members/{id}/purge", s.authed(s.handlePurge))
+	mux.HandleFunc("POST /v1/members/@me/accept-rules", s.authed(s.handleAcceptRules))
+	mux.HandleFunc("POST /v1/members/@me/phone", s.authed(s.handlePhoneStart))
+	mux.HandleFunc("POST /v1/members/@me/phone/verify", s.authed(s.handlePhoneVerify))
+	mux.HandleFunc("GET /v1/audit-log", s.authed(s.handleAuditLog))
+	mux.HandleFunc("GET /v1/bots", s.authed(s.needPerm(permManageServer, s.handleListBots)))
+	mux.HandleFunc("POST /v1/bots", s.authed(s.needPerm(permManageServer, s.handleCreateBot)))
+	mux.HandleFunc("POST /v1/bots/{id}/token", s.authed(s.handleResetBotToken))
+	mux.HandleFunc("DELETE /v1/bots/{id}", s.authed(s.handleDeleteBot))
 
 	mux.HandleFunc("GET /v1/bans", s.authed(s.handleListBans))
 	mux.HandleFunc("PUT /v1/bans/{id}", s.authed(s.handleBan))
@@ -281,6 +295,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/channels/{id}/messages", s.authed(s.handleCreateMessage))
 	mux.HandleFunc("PATCH /v1/channels/{id}/messages/{mid}", s.authed(s.handleEditMessage))
 	mux.HandleFunc("DELETE /v1/channels/{id}/messages/{mid}", s.authed(s.handleDeleteMessage))
+	mux.HandleFunc("POST /v1/channels/{id}/messages/bulk-delete", s.authed(s.handleBulkDelete))
 
 	mux.HandleFunc("POST /v1/channels/{id}/voice/join", s.authed(s.handleVoiceJoin))
 	mux.HandleFunc("GET /v1/voice/states", s.authed(s.handleVoiceStates))
@@ -308,10 +323,14 @@ type serverInfo struct {
 	Name        string `json:"name"`
 	Access      string `json:"access"`
 	MemberCount int    `json:"member_count"`
+	// Shown before joining: what a new member will have to do.
+	Rules             string `json:"rules"` // "" = no rules screen
+	RequirePhone      bool   `json:"require_phone"`
+	PhoneVerification bool   `json:"phone_verification"` // a provider is configured
 }
 
 func (s *Server) info(ctx context.Context) (serverInfo, error) {
-	info := serverInfo{ID: s.id}
+	info := serverInfo{ID: s.id, PhoneVerification: s.phone != nil}
 	var err error
 	if info.Name, err = s.setting(ctx, "name"); err != nil {
 		return info, err
@@ -319,6 +338,14 @@ func (s *Server) info(ctx context.Context) (serverInfo, error) {
 	if info.Access, err = s.setting(ctx, "access"); err != nil {
 		return info, err
 	}
+	if info.Rules, err = s.setting(ctx, "rules"); err != nil {
+		return info, err
+	}
+	phone, err := s.setting(ctx, "require_phone")
+	if err != nil {
+		return info, err
+	}
+	info.RequirePhone = phone == "1"
 	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM members WHERE left_at IS NULL`).Scan(&info.MemberCount)
 	return info, err
 }
@@ -335,14 +362,56 @@ func (s *Server) handleServerInfo(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleServerUpdate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name   *string `json:"name"`
-		Access *string `json:"access"`
+		Name         *string `json:"name"`
+		Access       *string `json:"access"`
+		Rules        *string `json:"rules"` // "" removes the rules screen
+		RequirePhone *bool   `json:"require_phone"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, r, err)
 		return
 	}
 	ctx := r.Context()
+	changes := map[string]any{}
+	if req.Rules != nil {
+		rules := strings.TrimSpace(*req.Rules)
+		if len([]rune(rules)) > maxRulesLength {
+			writeErr(w, r, errf(http.StatusBadRequest, "invalid_rules", "rules must be at most %d characters", maxRulesLength))
+			return
+		}
+		previous, err := s.setting(ctx, "rules")
+		if err != nil {
+			writeErr(w, r, err)
+			return
+		}
+		if err := setSetting(ctx, s.db, "rules", rules); err != nil {
+			writeErr(w, r, err)
+			return
+		}
+		if previous == "" && rules != "" {
+			// A new rules screen is for newcomers: current members are not locked out.
+			if _, err := s.db.ExecContext(ctx, `UPDATE members SET rules_accepted_at = ? WHERE left_at IS NULL AND rules_accepted_at IS NULL`, s.nowMs()); err != nil {
+				writeErr(w, r, err)
+				return
+			}
+		}
+		changes["rules"] = rules
+	}
+	if req.RequirePhone != nil {
+		if *req.RequirePhone && s.phone == nil {
+			writeErr(w, r, errf(http.StatusBadRequest, "phone_verification_unavailable", "configure a phone verification provider first (QUAREL_PHONE_VERIFY)"))
+			return
+		}
+		v := "0"
+		if *req.RequirePhone {
+			v = "1"
+		}
+		if err := setSetting(ctx, s.db, "require_phone", v); err != nil {
+			writeErr(w, r, err)
+			return
+		}
+		changes["require_phone"] = *req.RequirePhone
+	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" || len([]rune(name)) > 100 {
@@ -353,6 +422,7 @@ func (s *Server) handleServerUpdate(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, r, err)
 			return
 		}
+		changes["name"] = name
 	}
 	if req.Access != nil {
 		if *req.Access != accessPrivate && *req.Access != accessPublic {
@@ -363,12 +433,19 @@ func (s *Server) handleServerUpdate(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, r, err)
 			return
 		}
+		changes["access"] = *req.Access
 	}
 	info, err := s.info(ctx)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
+	if len(changes) > 0 {
+		s.audit(ctx, s.db, memberFrom(r).ID, auditServerUpdate, "", "", changes)
+	}
 	s.hub.Broadcast("SERVER_UPDATE", info)
+	if req.Rules != nil || req.RequirePhone != nil {
+		s.syncPermissions(ctx) // members may now be restricted, or no longer
+	}
 	writeJSON(w, http.StatusOK, info)
 }

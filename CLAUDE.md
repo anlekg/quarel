@@ -45,7 +45,8 @@ cmd/quarel-identity/    binaire du service Identity
 cmd/quarel-server/      binaire du serveur communautaire
 cmd/quarelctl/          client de test en ligne de commande (sorties en français, neutres en genre, pour le CP) :
                         main.go (Identity), community.go (serveurs communautaires), messages.go (réponses, réactions,
-                        fichiers, recherche, fils, non-lus), roles.go (rôles, modération),
+                        fichiers, recherche, fils, non-lus), access.go (exclusion, purge, journal, règles, téléphone,
+                        bots), roles.go (rôles, modération),
                         voice.go (vocal), social.go (amis, MP), e2e.go (chiffrement Olm/Megolm côté client),
                         recovery.go (phrase de récupération, sauvegarde), network.go (diagnostic réseau)
 internal/identity/      service Identity : HTTP (server.go), endpoints (handlers.go), SQLite (store.go),
@@ -55,7 +56,8 @@ internal/community/     serveur communautaire : config, clés des Identity (keys
                         membres, invitations, salons + droits par salon (channels.go), messages,
                         permissions (permissions.go), rôles (roles.go), expulsion/bannissement
                         (moderation.go), temps réel (gateway.go), réactions/épingles/fils/non-lus/recherche/
-                        notifications (extras.go), pièces jointes (attachments.go), aperçus de liens (previews.go)
+                        notifications (extras.go), pièces jointes (attachments.go), aperçus de liens (previews.go),
+                        règles/téléphone/restrictions (access.go), journal d'audit (audit.go), bots (bots.go)
                         vocal (voice.go), page de test vocal (voicetest/, embarquée)
 internal/voice/         client LiveKit maison (jetons, API salle, webhooks) + lancement de livekit-server
 internal/realtime/      passerelle WebSocket partagée (authentification 1er message, READY, diffusion filtrée)
@@ -71,7 +73,9 @@ pkg/tlsbind/            certificat auto-signé lié à l'identité du serveur, v
 pkg/recovery/           phrase de récupération (BIP-39 français) et chiffrement des sauvegardes
 docs/tests/             guides de test par jalon, destinés au CP
 test/e2e/               tests de bout en bout : vocal (Playwright), MP chiffrés, sécurité (récupération, HTTPS,
-                        limites), messages P1 (messages.sh), ACME contre Pebble (acmeshim : corrige une différence de Pebble avec Let's Encrypt)
+                        limites), messages P1 (messages.sh), modération P1 (moderation.sh), ACME contre Pebble (acmeshim : corrige une différence de Pebble avec Let's Encrypt)
+examples/pingbot/       bot d'exemple (répond « pong » à « !ping ») : jeton de bot, passerelle, REST
+docs/api.md             documentation publique de l'API des serveurs communautaires (bots, clients)
 Dockerfile.identity     image distroless (~23 Mo), volume /data, port 8080
 Dockerfile.server       image distroless + livekit-server (~141 Mo), volume /data, ports 8090/tcp, 7881/tcp, 7882/udp
 Makefile                commandes de dev (build, test, run-identity, run-server…)
@@ -213,6 +217,16 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 - **« En train d'écrire »** : `POST /v1/channels/{id}/typing` (1 par 3 s) → `TYPING_START {channel_id, member_id, at}` ; le client l'affiche ~8 s.
 - **Réglages de notification** : `channel_id` 0 = tout le serveur ; `level` `default|all|mentions|none` ; `mute_for` en secondes (−1 = indéfiniment → `muted_until` = 9999-12-31). `default` sans sourdine supprime la ligne. Stockés et synchronisés (`NOTIFICATION_SETTINGS_UPDATE`, `notification_settings` dans READY) ; **appliqués par le client**.
 
+### Modération et accès (P1 bloc 2)
+
+- **Restriction** (`ps.restricted`, chargée par `loadRestrictions` dans `loadPerms`) : exclusion temporaire (`timeout_until` futur), règles non acceptées, téléphone non vérifié (dans cet ordre de priorité). Effet : permissions réduites à `permRestricted` (= `view_channel`) partout (`base`, `inChannel`), donc vocal coupé par `reconcileVoice`. **Exemptés** : propriétaire, administrateurs (l'exemption vient de `base`/`inChannel` qui renvoient `permAll` avant la restriction), bots (règles et téléphone seulement). Les refus passent par `ps.deny(member, p)` → code `timed_out` / `rules_not_accepted` / `phone_not_verified` au lieu de `missing_permissions`. `restriction` dans READY et CHANNELS_SYNC. Modifier ses anciens messages est aussi refusé pendant une restriction.
+- **Exclusion temporaire** : `PUT /v1/members/{id}/timeout {duration (s, ≤ 28 j), reason}` / `DELETE`, `moderate_members` + hiérarchie, administrateurs immunisés (`cannot_timeout_admin`). `MEMBER_UPDATE` + `syncPermissions` ; un `time.AfterFunc` resynchronise à l'échéance (perdu au redémarrage : sans effet sur les droits, calculés à chaque requête).
+- **Suppressions en masse** : `deleteMessages` (fichiers compris, un `MESSAGE_DELETE_BULK {channel_id, ids}` par salon) ; `POST …/messages/bulk-delete {ids ≤ 100}` ; `POST /v1/members/{id}/purge {window (s, -1 = tout), channel_id?}` dans les salons où l'on a `manage_messages`, hiérarchie requise ; `PUT /v1/bans/{id} {delete_messages}` purge tous salons.
+- **Journal d'audit** (`audit.go`, table `audit_log`) : `s.audit(ctx, q, actor, action, target, reason, details)` — passer `tx` dans une transaction. Actions : `member_kick|ban|unban|timeout|timeout_remove|role_add|role_remove`, `messages_delete` (d'autrui seulement), `role_create|update|delete`, `channel_create|update|delete`, `override_update|delete`, `server_update`, `invite_delete` (d'autrui), `bot_create|delete|token_reset`, et `voice_*` (bloc 3). `GET /v1/audit-log` (`view_audit_log`, filtres `action`, `actor_id`, `target_id`, `before`, `limit` ≤ 100, du plus récent). **Conservation 90 jours** : `Housekeeping` (toutes les heures : journal, sessions expirées, pièces jointes).
+- **Règles** : réglage `rules` (≤ 4000 caractères, public dans `GET /v1/server`). Quand des règles apparaissent, les membres présents sont marqués comme les ayant acceptées ; les nouveaux doivent `POST /v1/members/@me/accept-rules`.
+- **Téléphone** : réglage `require_phone` (refusé sans fournisseur). `QUAREL_PHONE_VERIFY` = `off` (défaut) | `twilio` (`QUAREL_TWILIO_ACCOUNT_SID`, `QUAREL_TWILIO_AUTH_TOKEN`, `QUAREL_TWILIO_VERIFY_SID` ; API Twilio Verify : `Verifications`, `VerificationCheck`) | `log` (développement : code dans le journal du serveur). Numéros au format international (`+33…`, `0033…` accepté). `POST /v1/members/@me/phone {phone}` (5/h/membre) puis `…/phone/verify {phone, code}`. Stocké : `phone_hash` = HMAC-SHA256 (clé dérivée de la clé du serveur), unique ; numéro d'un banni → `phone_banned`, d'un membre présent → `phone_in_use`, d'un ancien membre → transféré. Les conflits ne sont vérifiés qu'après le code (sinon on pourrait sonder quels numéros sont inscrits).
+- **Bots** (`bots.go`) : membres `bot = 1`, `issuer = "#bot"` (jamais un domaine ; `QUAREL_TRUSTED_ISSUERS` refuse `#…`), `handle` = nom. Jeton `qb_` + 256 bits, SHA-256 dans `bot_tokens`, sans expiration ; `memberForToken` reconnaît le préfixe. `POST/GET /v1/bots`, `POST /v1/bots/{id}/token`, `DELETE /v1/bots/{id}` (`manage_server`, et hiérarchie pour un bot existant : son jeton porte ses droits). Renouvellement → connexions temps réel du bot fermées.
+
 ### Vocal (jalon 4)
 
 - **Architecture** : le média ne passe jamais par notre serveur. LiveKit (SFU, `livekit-server` v1.13.7) tourne à côté, lancé et relancé par `quarel-server` (`internal/voice/embedded.go`) avec une config générée (`$DATA/livekit.yaml`) et des clés propres (`$DATA/livekit.keys`). Signalisation LiveKit en boucle locale (7880), exposée aux clients via le proxy **`/lk/`** du serveur ; média : **7882/udp** (+ **7881/tcp** de secours).
@@ -229,8 +243,8 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 
 1. Client → `{"op":"auth","token":"<session>"}` (premier message, ≤ 10 s). Jamais de cookie : toutes origines acceptées.
 2. Serveur → `{"t":"READY","d":{member, server, channels, members}}`.
-3. Serveur → `{"t":"<EVENT>","d":…}` : `MESSAGE_CREATE|UPDATE|DELETE`, `REACTION_ADD|REMOVE`, `TYPING_START`, `READ_STATE_UPDATE`, `NOTIFICATION_SETTINGS_UPDATE`, `CHANNEL_CREATE|UPDATE|DELETE`, `MEMBER_JOIN|UPDATE`, `MEMBER_LEAVE {id, reason: left|kicked|banned}`, `VOICE_STATE_UPDATE`, `ROLES_UPDATE` (liste complète), `ROLE_DELETE`, `CHANNELS_SYNC {channels, permissions}` (après tout changement de droits : remplace la liste des salons du client), `SERVER_UPDATE`. Les événements peuvent répéter un état déjà dans READY : les appliquer de façon idempotente.
-- READY : `{member, server, roles, members, channels, voice_states, read_states, notification_settings, permissions: {server: [...], channels: {id: [...]}}}` — seulement les salons visibles.
+3. Serveur → `{"t":"<EVENT>","d":…}` : `MESSAGE_CREATE|UPDATE|DELETE`, `MESSAGE_DELETE_BULK`, `REACTION_ADD|REMOVE`, `TYPING_START`, `READ_STATE_UPDATE`, `NOTIFICATION_SETTINGS_UPDATE`, `CHANNEL_CREATE|UPDATE|DELETE`, `MEMBER_JOIN|UPDATE`, `MEMBER_LEAVE {id, reason: left|kicked|banned}`, `VOICE_STATE_UPDATE`, `ROLES_UPDATE` (liste complète), `ROLE_DELETE`, `CHANNELS_SYNC {channels, permissions}` (après tout changement de droits : remplace la liste des salons du client), `SERVER_UPDATE`. Les événements peuvent répéter un état déjà dans READY : les appliquer de façon idempotente.
+- READY : `{member, server, roles, members, channels, voice_states, read_states, notification_settings, restriction, permissions: {server: [...], channels: {id: [...]}}}` — seulement les salons visibles.
 - Les événements de messages et `CHANNEL_CREATE|UPDATE` ne sont envoyés qu'aux membres qui voient le salon (`broadcastChannel`).
 - Fermetures : `4001` session invalide/expirée ; `1008` membre parti, client trop lent (file de 256 événements pleine) ou arrêt du serveur. Ping toutes les 30 s.
 - Les écritures passent par l'API REST ; le gateway ne fait que diffuser.
@@ -239,8 +253,8 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 
 | Méthode | Chemin | Auth | Rôle |
 |---|---|---|---|
-| GET | `/v1/server` | — | Infos publiques `{id, name, access, member_count}` |
-| PATCH | `/v1/server` | `manage_server` | `{name?, access?}` |
+| GET | `/v1/server` | — | Infos publiques `{id, name, access, member_count, rules, require_phone, phone_verification}` |
+| PATCH | `/v1/server` | `manage_server` | `{name?, access?, rules?, require_phone?}` |
 | POST | `/v1/auth/challenge` | — | Défi de connexion |
 | POST | `/v1/auth/login` | — | `{identity_token, nonce, proof, invite?, claim?}` |
 | POST | `/v1/auth/logout` | session | |
@@ -249,8 +263,17 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | GET | `/v1/members/@me/permissions` | session | `{server: [...], channels: {id: [...]}}` |
 | PUT/DELETE | `/v1/members/{id}/roles/{role}` | `manage_roles` + hiérarchie | Donner / retirer un rôle |
 | POST | `/v1/members/{id}/kick` | `kick_members` + hiérarchie | `{reason?}` |
+| PUT/DELETE | `/v1/members/{id}/timeout` | `moderate_members` + hiérarchie | `{duration, reason?}` / lever |
+| POST | `/v1/members/{id}/purge` | `manage_messages` + hiérarchie | `{window, channel_id?, reason?}` → `{deleted}` |
+| POST | `/v1/members/@me/accept-rules` | session | Accepter les règles |
+| POST | `/v1/members/@me/phone` | session | `{phone}` → code envoyé |
+| POST | `/v1/members/@me/phone/verify` | session | `{phone, code}` |
+| GET | `/v1/audit-log` | `view_audit_log` | Journal de modération |
+| GET/POST | `/v1/bots` | `manage_server` | Bots / `{name}` → `{member, token}` |
+| POST | `/v1/bots/{id}/token` | `manage_server` + hiérarchie | Nouveau jeton |
+| DELETE | `/v1/bots/{id}` | `manage_server` + hiérarchie | |
 | GET | `/v1/bans` | `ban_members` | |
-| PUT/DELETE | `/v1/bans/{member_id}` | `ban_members` (+ hiérarchie pour PUT) | `{reason?}` / lever |
+| PUT/DELETE | `/v1/bans/{member_id}` | `ban_members` (+ hiérarchie pour PUT) | `{reason?, delete_messages?}` / lever |
 | GET | `/v1/roles` | session | Du plus haut au plus bas |
 | POST | `/v1/roles` | `manage_roles` | `{name, color?, permissions?, mentionable?}` |
 | PATCH/DELETE | `/v1/roles/{id}` | `manage_roles` + hiérarchie | `{name?, color?, permissions?, mentionable?, position?}` |
@@ -264,6 +287,7 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | POST | `/v1/channels/{id}/messages` | `send_messages` | `{content, reply_to?, mention_reply?, attachments?}` |
 | PATCH | `/v1/channels/{id}/messages/{mid}` | auteur | `{content}` |
 | DELETE | `/v1/channels/{id}/messages/{mid}` | auteur ou `manage_messages` | |
+| POST | `/v1/channels/{id}/messages/bulk-delete` | `manage_messages` | `{ids (≤ 100), reason?}` → `{deleted}` |
 | POST | `/v1/channels/{id}/attachments` | `attach_files` (+ `send_messages`) | Envoi d'un fichier (multipart `file`) |
 | GET | `/v1/attachments/{id}/{nom}` | `view_channel` | Téléchargement |
 | PUT/DELETE | `/v1/channels/{id}/messages/{mid}/reactions/{emoji}` | `add_reactions` / soi | Réagir / retirer sa réaction |
@@ -290,14 +314,14 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 
 Vocal : `QUAREL_VOICE` (`embedded` par défaut, `external`, `off`) ; embarqué : `QUAREL_LIVEKIT_BIN` (`livekit-server`, `/livekit-server` dans l'image), `QUAREL_VOICE_SIGNAL_PORT` (7880, boucle locale), `QUAREL_VOICE_TCP_PORT` (7881), `QUAREL_VOICE_UDP_PORT` (7882), `QUAREL_VOICE_PUBLIC_IP` (vide = adresses locales, `auto` = découverte STUN, ou une IP) ; externe : `QUAREL_LIVEKIT_URL`, `QUAREL_LIVEKIT_API_URL`, `QUAREL_LIVEKIT_KEY`, `QUAREL_LIVEKIT_SECRET`. Sans binaire LiveKit, le serveur démarre avec le vocal désactivé.
 
-Messages : `QUAREL_MAX_UPLOAD_MB` (25), `QUAREL_LINK_PREVIEWS` (`on`). Limites serveur : 10 envois de fichiers/min/membre en plus des précédentes.
+Messages : `QUAREL_MAX_UPLOAD_MB` (25), `QUAREL_LINK_PREVIEWS` (`on`). Limites serveur : 10 envois de fichiers/min/membre, 5 codes SMS/h/membre en plus des précédentes. Téléphone : `QUAREL_PHONE_VERIFY` et `QUAREL_TWILIO_*` (voir « Modération et accès »).
 
 `QUAREL_ADDR` (`:8090`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_SERVER_NAME` (nom au 1er démarrage seulement), `QUAREL_TRUSTED_ISSUERS` (liste séparée par des virgules ; défaut `identity.quarel.app`, instance officielle — domaine `quarel.app` choisi par le CP ; **ce nom ne doit jamais changer**, il fait partie de chaque identité).
 
 ## Commandes
 
 ```sh
-make build            # binaires dans bin/
+make build            # binaires dans bin/ (dont le bot d'exemple pingbot)
 make test             # tests (go test ./...)
 make test-race        # tests avec détecteur de concurrence (gcc requis, installé)
 make vet
@@ -310,6 +334,7 @@ make e2e-dm           # scénario MP chiffrés de bout en bout (16 vérification
 make e2e-security     # récupération, HTTPS lié à l'identité, limites (18 vérifications)
 make e2e-acme         # HTTPS via ACME contre Pebble (Docker)
 make e2e-messages     # réponses, réactions, fichiers, recherche, fils, non-lus (18 vérifications)
+make e2e-moderation   # exclusion, purge, journal, règles, téléphone, bots avec examples/pingbot (24 vérifications)
 ./bin/quarelctl help  # client de test
 ```
 

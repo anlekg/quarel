@@ -82,8 +82,8 @@
 - [x] **P0** Mode d'accès : public ou privé (sur invitation)
 - [x] **P0** Liens d'invitation (expiration, nombre d'utilisations)
 - [x] **P0** Liste des membres, pseudo local (surnom sur le serveur)
-- [ ] **P1** Vérification supplémentaire configurable (ex. téléphone via le fournisseur choisi par le serveur)
-- [ ] **P1** Écran de règles à accepter avant d'entrer
+- [x] **P1** Vérification supplémentaire configurable (ex. téléphone via le fournisseur choisi par le serveur) *(Twilio Verify, ou mode développement)*
+- [x] **P1** Écran de règles à accepter avant d'entrer
 
 ### B3. Salons
 - [x] **P0** Salons texte, salons vocaux *(le vocal lui-même arrive au jalon 4)*
@@ -115,9 +115,9 @@
 
 ### B6. Modération
 - [x] **P0** Expulsion (kick) et bannissement (lié à l'identité portable)
-- [ ] **P1** Exclusion temporaire (timeout)
-- [ ] **P1** Journal d'audit des actions de modération
-- [ ] **P1** Suppression en masse des messages d'un membre
+- [x] **P1** Exclusion temporaire (timeout)
+- [x] **P1** Journal d'audit des actions de modération
+- [x] **P1** Suppression en masse des messages d'un membre
 - [ ] **P2** Filtres automatiques (mots interdits, anti-spam)
 
 ### B7. Voix et vidéo (salons vocaux)
@@ -129,8 +129,8 @@
 - [ ] **P2** Salons « scène » (conférence)
 
 ### B8. Bots et intégrations
-- [ ] **P1** Comptes bot avec jeton propre au serveur
-- [ ] **P1** API publique documentée pour les bots
+- [x] **P1** Comptes bot avec jeton propre au serveur
+- [x] **P1** API publique documentée pour les bots *(`docs/api.md`, bot d'exemple `examples/pingbot`)*
 - [ ] **P2** Webhooks entrants
 - [ ] **P2** Commandes slash
 

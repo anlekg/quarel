@@ -261,6 +261,10 @@ func bearer(r *http.Request) string {
 
 // memberForToken returns the active member owning a session token, and the session expiry.
 func (s *Server) memberForToken(ctx context.Context, token string) (*member, time.Time, error) {
+	if strings.HasPrefix(token, botTokenPrefix) {
+		m, err := s.botForToken(ctx, token)
+		return m, botExpiry, err
+	}
 	var memberID string
 	var expires int64
 	err := s.db.QueryRowContext(ctx, `SELECT member_id, expires_at FROM sessions WHERE token_hash = ? AND expires_at > ?`,

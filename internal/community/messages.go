@@ -94,7 +94,7 @@ func requirePost(ps *permSnapshot, member string, c *channel, extra perm) error 
 		need |= permManageMessages
 	}
 	if have := ps.inChannel(member, c.ID); have&need != need {
-		return missing(need &^ have)
+		return ps.deny(member, need&^have)
 	}
 	return nil
 }
@@ -416,6 +416,10 @@ func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, errf(http.StatusForbidden, "forbidden", "you can only edit your own messages"))
 		return
 	}
+	if reason := ps.restricted[me]; reason != "" {
+		writeErr(w, r, ps.deny(me, permSendMessages)) // no rewriting old messages while restricted
+		return
+	}
 	ctx := r.Context()
 	var attachments int
 	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM attachments WHERE message_id = ?`, msg.ID).Scan(&attachments)
@@ -482,6 +486,9 @@ func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.removeFiles(files)
+	if msg.AuthorID != me {
+		s.audit(ctx, s.db, me, auditMessagesDelete, msg.AuthorID, "", map[string]any{"count": 1, "channel_id": c.ID})
+	}
 	s.broadcastChannel(ctx, "MESSAGE_DELETE", c.ID, map[string]int64{"id": msg.ID, "channel_id": msg.ChannelID})
 	w.WriteHeader(http.StatusNoContent)
 }

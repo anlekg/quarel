@@ -400,12 +400,28 @@ func (c *cli) kick(args []string) error {
 	return nil
 }
 
+// ban <membre> [--purge=durée|tout] [raison…]
 func (c *cli) ban(args []string) error {
 	id, name, err := c.moderate(args)
 	if err != nil {
 		return err
 	}
-	if err := c.cdo("PUT", "/v1/bans/"+id, map[string]string{"reason": strings.Join(args[1:], " ")}, nil); err != nil {
+	body := map[string]any{}
+	reason := args[1:]
+	if len(reason) > 0 && strings.HasPrefix(reason[0], "--purge=") {
+		v := strings.TrimPrefix(reason[0], "--purge=")
+		body["delete_messages"] = -1
+		if v != "tout" && v != "all" {
+			d, err := parseDuration(v)
+			if err != nil || d <= 0 {
+				return fmt.Errorf("durée invalide %q (ex. 1h, 7d, ou « tout »)", v)
+			}
+			body["delete_messages"] = int64(d.Seconds())
+		}
+		reason = reason[1:]
+	}
+	body["reason"] = strings.Join(reason, " ")
+	if err := c.cdo("PUT", "/v1/bans/"+id, body, nil); err != nil {
 		return err
 	}
 	fmt.Printf("Bannissement de %s effectué : cette identité ne pourra plus rejoindre le serveur.\n", name)

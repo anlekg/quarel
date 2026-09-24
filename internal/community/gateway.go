@@ -36,6 +36,7 @@ func (s *Server) memberState(ps *permSnapshot, memberID string) map[string]any {
 		"channels":     ps.visibleChannels(memberID),
 		"voice_states": s.voiceStates(ps, memberID),
 		"permissions":  map[string]any{"server": ps.base(memberID).names(), "channels": ps.channelPerms(memberID)},
+		"restriction":  ps.restricted[memberID], // "", timed_out, rules_not_accepted or phone_not_verified
 	}
 }
 

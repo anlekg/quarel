@@ -22,13 +22,18 @@ type member struct {
 	IsOwner                     bool
 	JoinedAt                    int64
 	LeftAt                      sql.NullInt64
+	TimeoutUntil                sql.NullInt64
+	RulesAcceptedAt             sql.NullInt64
+	PhoneVerified               bool
+	Bot                         bool
 }
 
-const memberCols = `id, issuer, subject, handle, nickname, is_owner, joined_at, left_at`
+const memberCols = `id, issuer, subject, handle, nickname, is_owner, joined_at, left_at, timeout_until, rules_accepted_at, phone_hash IS NOT NULL, bot`
 
 func scanMember(sc interface{ Scan(...any) error }) (*member, error) {
 	var m member
-	err := sc.Scan(&m.ID, &m.Issuer, &m.Subject, &m.Handle, &m.Nickname, &m.IsOwner, &m.JoinedAt, &m.LeftAt)
+	err := sc.Scan(&m.ID, &m.Issuer, &m.Subject, &m.Handle, &m.Nickname, &m.IsOwner, &m.JoinedAt, &m.LeftAt,
+		&m.TimeoutUntil, &m.RulesAcceptedAt, &m.PhoneVerified, &m.Bot)
 	return &m, err
 }
 
@@ -51,10 +56,16 @@ type memberJSON struct {
 	Owner       bool      `json:"owner"`
 	Roles       []int64   `json:"roles"` // role IDs, @everyone implied
 	JoinedAt    time.Time `json:"joined_at"`
+	Bot         bool      `json:"bot"`
+	// TimeoutUntil: reading only until then (compare with the current time).
+	TimeoutUntil  *time.Time `json:"timeout_until"`
+	RulesAccepted bool       `json:"rules_accepted"`
+	PhoneVerified bool       `json:"phone_verified"`
 }
 
 func (m *member) json() memberJSON {
-	j := memberJSON{ID: m.ID, Handle: m.Handle, Issuer: m.Issuer, Subject: m.Subject, Owner: m.IsOwner, Roles: []int64{}, JoinedAt: fromMs(m.JoinedAt)}
+	j := memberJSON{ID: m.ID, Handle: m.Handle, Issuer: m.Issuer, Subject: m.Subject, Owner: m.IsOwner, Roles: []int64{}, JoinedAt: fromMs(m.JoinedAt),
+		Bot: m.Bot, TimeoutUntil: nullTime(m.TimeoutUntil), RulesAccepted: m.RulesAcceptedAt.Valid, PhoneVerified: m.PhoneVerified}
 	j.DisplayName, _, _ = strings.Cut(m.Handle, "@")
 	if m.Nickname.Valid {
 		j.Nickname = &m.Nickname.String

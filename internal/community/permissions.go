@@ -51,8 +51,16 @@ const (
 	permEveryoneDefault perm = permViewChannel | permSendMessages | permCreateInvite | permConnect | permSpeak |
 		permStream | permAddReactions | permAttachFiles
 
-	// permTimedOut is what a timed-out member keeps: reading only.
-	permTimedOut perm = permViewChannel
+	// permRestricted is what a restricted member keeps (timed out, rules not
+	// accepted, phone not verified): reading only.
+	permRestricted perm = permViewChannel
+)
+
+// Restriction reasons, also the API error codes.
+const (
+	restrictTimeout = "timed_out"
+	restrictRules   = "rules_not_accepted"
+	restrictPhone   = "phone_not_verified"
 )
 
 var permNames = []struct {
@@ -124,10 +132,15 @@ type permSnapshot struct {
 	roles       map[int64]*role
 	memberRoles map[string][]int64
 	channels    map[int64]*channel
+	restricted  map[string]string // member → reason; administrators are immune
 }
 
 func (s *Server) loadPerms(ctx context.Context, q querier) (*permSnapshot, error) {
-	ps := &permSnapshot{owners: map[string]bool{}, roles: map[int64]*role{}, memberRoles: map[string][]int64{}, channels: map[int64]*channel{}}
+	ps := &permSnapshot{owners: map[string]bool{}, roles: map[int64]*role{}, memberRoles: map[string][]int64{},
+		channels: map[int64]*channel{}, restricted: map[string]string{}}
+	if err := s.loadRestrictions(ctx, q, ps); err != nil {
+		return nil, err
+	}
 	rows, err := q.QueryContext(ctx, `SELECT id FROM members WHERE is_owner = 1`)
 	if err != nil {
 		return nil, err
@@ -175,6 +188,9 @@ func (ps *permSnapshot) base(memberID string) perm {
 	}
 	if p&permAdministrator != 0 {
 		return permAll
+	}
+	if ps.restricted[memberID] != "" {
+		p &= permRestricted
 	}
 	return p
 }
@@ -243,7 +259,23 @@ func (ps *permSnapshot) inChannel(memberID string, channelID int64) perm {
 	if p&permViewChannel == 0 {
 		return 0
 	}
+	if ps.restricted[memberID] != "" {
+		p &= permRestricted
+	}
 	return p
+}
+
+// deny explains why memberID lacks p: their restriction if it is the cause,
+// otherwise the missing permissions.
+func (ps *permSnapshot) deny(memberID string, p perm) error {
+	if reason := ps.restricted[memberID]; reason != "" && p&^permRestricted != 0 {
+		return errf(http.StatusForbidden, reason, map[string]string{
+			restrictTimeout: "you are timed out: reading only until the timeout ends",
+			restrictRules:   "accept the server rules first (POST /v1/members/@me/accept-rules)",
+			restrictPhone:   "verify a phone number first (POST /v1/members/@me/phone)",
+		}[reason])
+	}
+	return missing(p)
 }
 
 // visibleChannels lists the channels a member can see, in display order.
@@ -290,7 +322,7 @@ func (s *Server) requirePerm(r *http.Request, p perm) (*permSnapshot, error) {
 		return nil, err
 	}
 	if have := ps.base(memberFrom(r).ID); have&p != p {
-		return nil, missing(p &^ have)
+		return nil, ps.deny(memberFrom(r).ID, p&^have)
 	}
 	return ps, nil
 }
@@ -307,7 +339,7 @@ func (s *Server) requireChannelPerm(r *http.Request, c *channel, p perm) (*permS
 		return nil, errf(http.StatusNotFound, "not_found", "no such channel")
 	}
 	if have&p != p {
-		return nil, missing(p &^ have)
+		return nil, ps.deny(memberFrom(r).ID, p&^have)
 	}
 	return ps, nil
 }

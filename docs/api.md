@@ -1,0 +1,153 @@
+# API des serveurs communautaires Quarel
+
+Cette page décrit l'API d'un **serveur communautaire** Quarel, telle que l'utilisent les clients et les **bots**. Elle est stable dans sa version `v1` : des champs et des routes peuvent s'ajouter, rien d'existant n'est retiré ni renommé sans passer à `v2`. Un client doit donc ignorer les champs et les événements qu'il ne connaît pas.
+
+Un exemple complet de bot (~150 lignes de Go) se trouve dans [`examples/pingbot`](../examples/pingbot/main.go).
+
+## 1. Principes
+
+- **Adresse** : chaque serveur est auto-hébergé, par exemple `https://mon-serveur.fr:8090`. Toutes les routes sont sous `/v1/`.
+- **HTTPS** : un serveur a soit un certificat d'une autorité (Let's Encrypt…), soit un **certificat auto-signé lié à son identité**. Dans ce second cas, le certificat contient une preuve signée par la clé du serveur ; le client connaît l'identifiant du serveur (`server_id`, 26 caractères, donné par le lien d'invitation ou `quarelctl bot-create`) et vérifie cette preuve pendant la poignée de main TLS. En Go : `tlsbind.ClientConfig(serverID, nil)` (paquet `github.com/anlekg/quarel/pkg/tlsbind`). Ne désactivez jamais simplement la vérification du certificat.
+- **Format** : JSON en UTF-8 ; corps de requête de 64 Ko au plus (sauf envoi de fichiers) ; champs inconnus refusés (`400 bad_request`).
+- **Dates** : RFC 3339 en UTC (`2026-09-24T09:30:00Z`).
+- **Identifiants** : membres, fichiers : chaînes de 26 caractères ; salons, messages, rôles, entrées du journal : entiers croissants.
+- **Permissions** : toujours échangées par **nom** (voir §6).
+- **Erreurs** : statut HTTP + `{"error": {"code": "missing_permissions", "message": "…"}}`. Le **code est stable** et fait foi ; le message est indicatif (en anglais).
+- **Limites de débit** : dépassement → `429 rate_limited` avec l'en-tête `Retry-After` (secondes). Par défaut : 600 requêtes/min par adresse IP, 10 messages par 10 s et 10 fichiers par minute par membre, 1 « en train d'écrire » par 3 s et par salon. L'hébergeur peut les modifier.
+
+## 2. Authentification
+
+Chaque requête porte `Authorization: Bearer <jeton>`.
+
+### Bots
+Un gestionnaire du serveur (permission `manage_server`) crée le bot : `POST /v1/bots {"name": "Mon bot"}` (ou `quarelctl bot-create`). La réponse contient le **jeton** (`qb_…`), affiché une seule fois : conservez-le comme un mot de passe. Il n'expire pas ; `POST /v1/bots/{id}/token` le remplace (l'ancien cesse immédiatement de fonctionner et ses connexions temps réel sont fermées).
+
+Un bot est un membre comme les autres (`"bot": true`) : il reçoit ses droits par des **rôles** (`PUT /v1/members/{id}/roles/{role}`), sans compte sur un service d'identité. Il n'est pas concerné par l'écran de règles ni par la vérification du téléphone.
+
+### Membres (clients)
+Les personnes se connectent avec leur identité portable : `POST /v1/auth/challenge` → `{server_id, nonce}`, puis `POST /v1/auth/login {identity_token, nonce, proof, invite?}` → `{session_token, expires_at, member, server, joined}`. La session expire avec le jeton d'identité (12 h par défaut) ; le client se reconnecte alors. Ce processus est décrit dans `CLAUDE.md` (jalon 2) ; un bot n'en a pas besoin.
+
+## 3. Temps réel (`GET /v1/gateway`, WebSocket)
+
+1. Ouvrir une connexion WebSocket (`wss://…/v1/gateway`).
+2. Envoyer en premier message, dans les 10 s : `{"op": "auth", "token": "<jeton>"}`.
+3. Recevoir `{"t": "READY", "d": {…}}` : l'état initial.
+4. Recevoir ensuite des événements `{"t": "<TYPE>", "d": {…}}`.
+
+La connexion est en lecture seule : **toutes les actions passent par l'API REST**. Le serveur envoie un ping WebSocket toutes les 30 s. Un événement peut répéter un état déjà connu : appliquez-les de façon idempotente.
+
+**READY** : `{member, server, roles, members, channels, voice_states, permissions: {server: [...], channels: {id: [...]}}, restriction, read_states, notification_settings}`. Seuls les salons visibles par vous sont inclus. `restriction` vaut `""`, ou la raison pour laquelle vous êtes en lecture seule (`timed_out`, `rules_not_accepted`, `phone_not_verified`).
+
+| Événement | Contenu | Quand |
+|---|---|---|
+| `MESSAGE_CREATE`, `MESSAGE_UPDATE` | message | Message écrit, modifié, épinglé, aperçu de lien ajouté, fil créé |
+| `MESSAGE_DELETE` | `{id, channel_id}` | Message supprimé |
+| `MESSAGE_DELETE_BULK` | `{channel_id, ids}` | Suppression en masse (modération) |
+| `REACTION_ADD`, `REACTION_REMOVE` | `{channel_id, message_id, emoji, member_id}` | |
+| `TYPING_START` | `{channel_id, member_id, at}` | À afficher ~8 s |
+| `CHANNEL_CREATE`, `CHANNEL_UPDATE` | salon | |
+| `CHANNEL_DELETE` | `{id}` | |
+| `CHANNELS_SYNC` | `{channels, permissions, voice_states, restriction}` | Vos droits ont changé : remplace votre liste de salons |
+| `MEMBER_JOIN`, `MEMBER_UPDATE` | membre | Arrivée, surnom, rôles, exclusion temporaire… |
+| `MEMBER_LEAVE` | `{id, reason: left\|kicked\|banned}` | |
+| `ROLES_UPDATE` | liste complète des rôles | |
+| `ROLE_DELETE` | `{id}` | |
+| `SERVER_UPDATE` | infos du serveur | |
+| `VOICE_STATE_UPDATE` | état vocal (`channel_id: null` = départ) | |
+| `READ_STATE_UPDATE` | état de lecture | Vos autres connexions ont lu un salon |
+| `NOTIFICATION_SETTINGS_UPDATE` | liste des réglages | |
+
+Les événements d'un salon ne sont envoyés qu'à ceux qui le voient. **Fermetures** : `4001` jeton invalide ou expiré (ne pas se reconnecter avec le même jeton) ; `1008` membre parti, client trop lent (plus de 256 événements en attente) ou arrêt du serveur. En cas de coupure, reconnectez-vous avec un délai croissant : le nouveau READY redonne l'état complet.
+
+## 4. Objets
+
+**Membre** : `{id, handle, issuer, subject, nickname?, display_name, owner, roles: [ids], joined_at, bot, timeout_until, rules_accepted, phone_verified}`. L'identité stable d'une personne est `(issuer, subject)` ; `handle` (`pseudo@service`) peut changer. `timeout_until` : lecture seule jusqu'à cette date si elle est future.
+
+**Salon** : `{id, type, name, topic, parent_id, position, thread_starter?, overrides}`. Types : `text`, `voice`, `category`, `announcement` (écrire exige aussi `manage_messages`), `thread` (fil : `parent_id` = salon textuel, mêmes droits que lui). La liste est plate, triée par `(position, id)` ; l'arbre se reconstruit avec `parent_id`.
+
+**Message** : `{id, channel_id, author_id, content, mentions: [member ids], mention_roles, mention_everyone, reply_to, referenced?: {id, author_id, content}, attachments, embeds, reactions: [{emoji, count, me}], pinned_at, thread_id, created_at, edited_at}`. Contenu : 0 à 4000 caractères (vide seulement avec un fichier). Mentions dans le texte : `<@member_id>`, `<@&role_id>`, `@everyone`.
+
+**Fichier** : `{id, filename, content_type, size, url}` ; `url` est relative au serveur et exige le jeton.
+
+**Rôle** : `{id, name, color, position, permissions, mentionable, hoist}`. `@everyone` a l'id 1 et la position 0.
+
+## 5. Routes REST
+
+Légende : 🔑 = permission requise.
+
+### Serveur
+| | | |
+|---|---|---|
+| `GET /v1/server` | public | `{id, name, access, member_count, rules, require_phone, phone_verification}` |
+| `PATCH /v1/server` | 🔑 `manage_server` | `{name?, access?: private\|public, rules?, require_phone?}` |
+
+### Membres
+| | | |
+|---|---|---|
+| `GET /v1/members` | | Membres présents |
+| `GET/PATCH/DELETE /v1/members/@me` | | Soi / `{nickname}` / quitter |
+| `GET /v1/members/@me/permissions` | | `{server, channels}` |
+| `POST /v1/members/@me/accept-rules` | | Accepter les règles |
+| `POST /v1/members/@me/phone` | | `{phone}` (format international) → code par SMS |
+| `POST /v1/members/@me/phone/verify` | | `{phone, code}` |
+| `PUT/DELETE /v1/members/{id}/roles/{role}` | 🔑 `manage_roles` | Rôle strictement sous le vôtre |
+
+### Rôles
+`GET /v1/roles` (du plus haut au plus bas) ; `POST /v1/roles {name, color?, permissions?, mentionable?, hoist?}` ; `PATCH /v1/roles/{id} {…, position?}` ; `DELETE /v1/roles/{id}` — 🔑 `manage_roles`, sur des rôles sous le vôtre, en n'accordant que des permissions que vous avez.
+
+### Salons
+| | | |
+|---|---|---|
+| `GET /v1/channels` | | Salons visibles |
+| `POST /v1/channels` | 🔑 `manage_channels` | `{type, name, topic?, parent_id?, position?}` |
+| `PATCH/DELETE /v1/channels/{id}` | 🔑 `manage_channels` | |
+| `PUT/DELETE /v1/channels/{id}/overrides/{role\|member}/{id}` | 🔑 `manage_roles` | `{allow: [...], deny: [...]}` |
+
+### Messages
+| | | |
+|---|---|---|
+| `GET /v1/channels/{id}/messages` | 🔑 `view_channel` | `?limit=` (≤ 100) `&before=` ou `&after=` ; ordre chronologique |
+| `POST /v1/channels/{id}/messages` | 🔑 `send_messages` | `{content, reply_to?, mention_reply?, attachments?: [ids]}` |
+| `PATCH /v1/channels/{id}/messages/{mid}` | auteur | `{content}` |
+| `DELETE /v1/channels/{id}/messages/{mid}` | auteur ou 🔑 `manage_messages` | |
+| `POST /v1/channels/{id}/messages/bulk-delete` | 🔑 `manage_messages` | `{ids (≤ 100), reason?}` → `{deleted}` |
+| `POST /v1/channels/{id}/attachments` | 🔑 `attach_files` | multipart, champ `file` → fichier, à citer ensuite dans `attachments` |
+| `GET /v1/attachments/{id}/{nom}` | 🔑 `view_channel` | Téléchargement |
+| `PUT/DELETE /v1/channels/{id}/messages/{mid}/reactions/{emoji}` | 🔑 `add_reactions` | Emoji encodé dans l'URL |
+| `DELETE …/reactions/{emoji}/{member}` | 🔑 `manage_messages` | |
+| `GET /v1/channels/{id}/pins` ; `PUT/DELETE /v1/channels/{id}/pins/{mid}` | 🔑 `manage_messages` pour modifier | |
+| `POST /v1/channels/{id}/messages/{mid}/threads` | 🔑 `send_messages` | `{name?}` → salon `thread` |
+| `POST /v1/channels/{id}/typing` | 🔑 `send_messages` | |
+| `POST /v1/channels/{id}/ack` | | `{message_id?}` : marquer lu |
+| `GET /v1/read-states` | | Non-lus et mentions par salon |
+| `GET /v1/notification-settings` ; `PUT /v1/notification-settings/{salon\|0}` | | `{level: default\|all\|mentions\|none, mute_for?: secondes, -1 = toujours}` |
+| `GET /v1/search` | | `?q=&channel_id=&author_id=&before=&limit=` (≤ 50) |
+
+### Modération
+| | | |
+|---|---|---|
+| `POST /v1/members/{id}/kick` | 🔑 `kick_members` | `{reason?}` |
+| `GET /v1/bans` ; `PUT /v1/bans/{id}` ; `DELETE /v1/bans/{id}` | 🔑 `ban_members` | PUT : `{reason?, delete_messages?: secondes, -1 = tout}` |
+| `PUT /v1/members/{id}/timeout` ; `DELETE …` | 🔑 `moderate_members` | `{duration: secondes (≤ 28 j), reason?}` |
+| `POST /v1/members/{id}/purge` | 🔑 `manage_messages` | `{window: secondes ou -1, channel_id?, reason?}` → `{deleted}` |
+| `GET /v1/audit-log` | 🔑 `view_audit_log` | `?limit=&before=&action=&actor_id=&target_id=` ; conservé 90 jours |
+
+On n'agit que sur un membre dont le rôle le plus haut est **strictement sous** le vôtre ; le propriétaire est intouchable, les administrateurs ne peuvent pas être exclus temporairement.
+
+### Invitations, bots, vocal
+- `GET /v1/invites`, `POST /v1/invites {max_uses?, expires_in?}` (🔑 `create_invite`), `DELETE /v1/invites/{code}`.
+- `GET /v1/bots`, `POST /v1/bots {name}`, `POST /v1/bots/{id}/token`, `DELETE /v1/bots/{id}` — 🔑 `manage_server`.
+- `POST /v1/channels/{id}/voice/join` (🔑 `connect`) → `{url, token, room, can_speak}` pour se connecter au serveur média LiveKit ; `GET /v1/voice/states`, `PATCH /v1/voice/state {self_mute?, self_deaf?}`, `POST /v1/voice/leave`.
+
+## 6. Permissions
+
+`view_channel`, `send_messages`, `manage_messages`, `mention_everyone`, `create_invite`, `manage_channels`, `manage_roles`, `kick_members`, `ban_members`, `manage_server`, `connect`, `speak`, `stream`, `add_reactions`, `attach_files`, `moderate_members`, `view_audit_log`, `mute_members`, `deafen_members`, `move_members`, `administrator`.
+
+Calcul dans un salon : permissions de `@everyone` + union de vos rôles → surcharges de la catégorie → surcharges du salon (à chaque niveau : `@everyone`, puis vos rôles, puis vous). Sans `view_channel`, le salon n'existe pas pour vous (`404`). `administrator` et le propriétaire ont tout. Un membre **restreint** (exclusion temporaire, règles non acceptées, téléphone non vérifié) garde seulement `view_channel` ; ses refus portent le code de la restriction plutôt que `missing_permissions`.
+
+## 7. Bonnes pratiques pour les bots
+
+- Ne répondez jamais à vos propres messages ni, sauf besoin, à ceux des autres bots (`author_id` = votre id, ou membre `bot: true`).
+- Respectez `Retry-After` sur les `429`.
+- Reconnectez-vous avec un délai croissant (1 s, 2 s, 4 s… jusqu'à 1 min).
+- Donnez à votre bot un rôle avec **le strict nécessaire** : son jeton porte toutes ses permissions.
