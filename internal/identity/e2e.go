@@ -77,19 +77,11 @@ func (s *Server) userDevices(ctx context.Context, userID string) ([]deviceKeysJS
 // devicesChanged tells the user's devices and friends that their device list changed
 // (senders must then share new message keys with the right devices only).
 func (s *Server) devicesChanged(ctx context.Context, userID string) {
-	audience := map[string]bool{userID: true}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT CASE WHEN user_a = ? THEN user_b ELSE user_a END FROM friendships
-		WHERE (user_a = ? OR user_b = ?) AND status = 'accepted'`, userID, userID, userID)
-	if err == nil {
-		for rows.Next() {
-			var id string
-			if rows.Scan(&id) == nil {
-				audience[id] = true
-			}
-		}
-		rows.Close()
+	audience, err := s.contacts(ctx, userID)
+	if err != nil {
+		audience = map[string]bool{}
 	}
+	audience[userID] = true
 	s.hub.BroadcastTo("DEVICES_UPDATE", map[string]string{"user_id": userID}, func(_, group string) bool { return audience[group] })
 }
 
@@ -357,7 +349,7 @@ func (s *Server) handleClaimKeys(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, r, err)
 			return
 		}
-		if err := s.requireFriendOrSelf(ctx, me, owner); err != nil {
+		if err := s.requireContact(ctx, me, owner); err != nil {
 			writeErr(w, r, err)
 			return
 		}
@@ -391,7 +383,7 @@ func (s *Server) handleUserKeys(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	if err := s.requireFriendOrSelf(ctx, me.ID, other.ID); err != nil {
+	if err := s.requireContact(ctx, me.ID, other.ID); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -467,7 +459,7 @@ func (s *Server) handleSendToDevice(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, r, err)
 			return
 		}
-		if err := s.requireFriendOrSelf(ctx, sess.UserID, owner); err != nil {
+		if err := s.requireContact(ctx, sess.UserID, owner); err != nil {
 			writeErr(w, r, err)
 			return
 		}
@@ -497,8 +489,9 @@ func (s *Server) handleSendToDevice(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleSendDM fans a Megolm-encrypted message out to every device of both
-// participants (except the sending device).
+// handleSendDM fans a Megolm-encrypted message out to every device of every
+// member of the conversation (the sender's other devices included). In a
+// direct conversation, both must still be friends.
 func (s *Server) handleSendDM(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Payload string `json:"payload"`
@@ -509,23 +502,35 @@ func (s *Server) handleSendDM(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	sess := sessionFrom(r)
-	dmID := r.PathValue("id")
-	a, b, err := s.dmMembers(ctx, dmID, sess.UserID)
+	convID := r.PathValue("id")
+	c, err := s.conversation(ctx, convID, sess.UserID)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	other := a
-	if other == sess.UserID {
-		other = b
+	others := map[string]bool{}
+	for _, m := range c.Members {
+		if m.ID != sess.UserID {
+			others[m.ID] = true
+		}
 	}
-	if err := s.requireFriendOrSelf(ctx, sess.UserID, other); err != nil {
-		writeErr(w, r, err)
-		return
+	if c.Kind == convKindDirect {
+		if c.User == nil {
+			writeErr(w, r, errf(http.StatusGone, "conversation_closed", "the other participant deleted their account"))
+			return
+		}
+		if err := s.requireFriendOrSelf(ctx, sess.UserID, c.User.ID); err != nil {
+			writeErr(w, r, err)
+			return
+		}
 	}
 	if req.Payload == "" {
 		writeErr(w, r, errf(http.StatusBadRequest, "empty_payload", "payload is required"))
 		return
+	}
+	members := []any{sess.UserID}
+	for id := range others {
+		members = append(members, id)
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -533,14 +538,15 @@ func (s *Server) handleSendDM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	res, err := tx.ExecContext(ctx, `INSERT INTO dm_events (dm_id, sender_user, sender_device, created_at) VALUES (?, ?, ?, ?)`,
-		dmID, sess.UserID, sess.ID, s.now().Unix())
+	res, err := tx.ExecContext(ctx, `INSERT INTO conv_events (conversation_id, sender_user, sender_device, created_at) VALUES (?, ?, ?, ?)`,
+		convID, sess.UserID, sess.ID, s.now().Unix())
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
 	eventID, _ := res.LastInsertId()
-	rows, err := tx.QueryContext(ctx, `SELECT session_id, user_id FROM device_keys WHERE user_id IN (?, ?) AND session_id != ?`, a, b, sess.ID)
+	rows, err := tx.QueryContext(ctx, `SELECT session_id, user_id FROM device_keys WHERE user_id IN (?`+strings.Repeat(",?", len(members)-1)+`) AND session_id != ?`,
+		append(members, sess.ID)...)
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -555,21 +561,21 @@ func (s *Server) handleSendDM(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		devices = append(devices, id)
-		if owner == other {
+		if others[owner] {
 			recipientDevices++
 		}
 	}
 	rows.Close()
 	if recipientDevices == 0 {
 		// Nothing will ever acknowledge it: no delivery receipt to track.
-		if _, err := tx.ExecContext(ctx, `DELETE FROM dm_events WHERE id = ?`, eventID); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM conv_events WHERE id = ?`, eventID); err != nil {
 			writeErr(w, r, err)
 			return
 		}
 	}
 	pushes := map[string][]inboxItem{}
 	for _, dev := range devices {
-		it, err := s.deliver(ctx, tx, dev, inboxItem{Kind: "dm", SenderUser: sess.UserID, SenderDevice: sess.ID, DMID: &dmID, EventID: &eventID, Payload: req.Payload})
+		it, err := s.deliver(ctx, tx, dev, inboxItem{Kind: "dm", SenderUser: sess.UserID, SenderDevice: sess.ID, DMID: &convID, EventID: &eventID, Payload: req.Payload})
 		if err != nil {
 			writeErr(w, r, err)
 			return
@@ -664,10 +670,10 @@ func (s *Server) handleAckInbox(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkDelivered sends a delivery receipt to the sender's devices once every
-// device of the recipient has acknowledged a DM, then forgets the event.
+// device of the other members has acknowledged a message, then forgets the event.
 func (s *Server) checkDelivered(ctx context.Context, eventID int64) {
 	var dmID, sender, senderDevice string
-	err := s.db.QueryRowContext(ctx, `SELECT dm_id, sender_user, sender_device FROM dm_events WHERE id = ?`, eventID).Scan(&dmID, &sender, &senderDevice)
+	err := s.db.QueryRowContext(ctx, `SELECT conversation_id, sender_user, sender_device FROM conv_events WHERE id = ?`, eventID).Scan(&dmID, &sender, &senderDevice)
 	if err != nil {
 		return
 	}
@@ -696,5 +702,5 @@ func (s *Server) checkDelivered(ctx context.Context, eventID int64) {
 			s.push(dev, []inboxItem{it})
 		}
 	}
-	s.db.ExecContext(ctx, `DELETE FROM dm_events WHERE id = ?`, eventID)
+	s.db.ExecContext(ctx, `DELETE FROM conv_events WHERE id = ?`, eventID)
 }

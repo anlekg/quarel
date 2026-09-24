@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // Friendship statuses as seen by one of the two users.
@@ -261,98 +260,4 @@ func (s *Server) handleRemoveFriend(w http.ResponseWriter, r *http.Request) {
 	}
 	s.friendsChanged(ctx, me, other)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// --- direct message conversations ---
-
-type dmJSON struct {
-	ID        string     `json:"id"`
-	User      publicUser `json:"user"` // the other participant
-	CreatedAt time.Time  `json:"created_at"`
-}
-
-// handleOpenDM returns the conversation with a friend, creating it on first use.
-func (s *Server) handleOpenDM(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		UserID string `json:"user_id"`
-	}
-	if err := decode(r, &req); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	ctx := r.Context()
-	me := sessionFrom(r).UserID
-	other, err := s.userBy(ctx, "id", req.UserID)
-	if err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	if other == nil || other.ID == me {
-		writeErr(w, r, errf(http.StatusNotFound, "not_found", "no such user"))
-		return
-	}
-	if err := s.requireFriendOrSelf(ctx, me, other.ID); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	a, b := pair(me, other.ID)
-	now := s.now().Unix()
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO dms (id, user_a, user_b, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (user_a, user_b) DO NOTHING`,
-		newID(), a, b, now); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	var dm dmJSON
-	var created int64
-	if err := s.db.QueryRowContext(ctx, `SELECT id, created_at FROM dms WHERE user_a = ? AND user_b = ?`, a, b).Scan(&dm.ID, &created); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	dm.User, dm.CreatedAt = s.publicUser(other), time.Unix(created, 0).UTC()
-	writeJSON(w, http.StatusOK, dm)
-}
-
-func (s *Server) handleListDMs(w http.ResponseWriter, r *http.Request) {
-	me := sessionFrom(r).UserID
-	rows, err := s.db.QueryContext(r.Context(), `
-		SELECT id, CASE WHEN user_a = ? THEN user_b ELSE user_a END, created_at
-		FROM dms WHERE user_a = ? OR user_b = ? ORDER BY created_at`, me, me, me)
-	if err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	type row struct {
-		id, other string
-		created   int64
-	}
-	var list []row
-	for rows.Next() {
-		var x row
-		if err := rows.Scan(&x.id, &x.other, &x.created); err != nil {
-			rows.Close()
-			writeErr(w, r, err)
-			return
-		}
-		list = append(list, x)
-	}
-	rows.Close()
-	out := []dmJSON{}
-	for _, x := range list {
-		u, err := s.userBy(r.Context(), "id", x.other)
-		if err != nil || u == nil {
-			continue
-		}
-		out = append(out, dmJSON{ID: x.id, User: s.publicUser(u), CreatedAt: time.Unix(x.created, 0).UTC()})
-	}
-	writeJSON(w, http.StatusOK, out)
-}
-
-// dmMembers returns the two users of a DM the requester belongs to.
-func (s *Server) dmMembers(ctx context.Context, dmID, me string) (string, string, error) {
-	var a, b string
-	err := s.db.QueryRowContext(ctx, `SELECT user_a, user_b FROM dms WHERE id = ?`, dmID).Scan(&a, &b)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && me != a && me != b {
-		return "", "", errf(http.StatusNotFound, "not_found", "no such conversation")
-	}
-	return a, b, err
 }

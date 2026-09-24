@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# P1 scenario, advanced private messages: groups (members who are not friends
+# with each other, arrivals and departures with key renewal), edits and
+# deletions, end-to-end encrypted files, typing indicators and read receipts.
+# Run from the repo: make e2e-dm-groups
+set -uo pipefail
+REPO=$(cd "$(dirname "$0")/../.." && pwd); B=$REPO/bin
+D=$(mktemp -d); PIDS=()
+trap 'kill "${PIDS[@]}" 2>/dev/null; rm -rf "$D"' EXIT
+export XDG_CONFIG_HOME=$D/cfg QUAREL_PASSWORD=motdepasse-solide
+QUAREL_RATE_LIMITS=off QUAREL_ADDR=127.0.0.1:18080 QUAREL_ISSUER=localhost:18080 QUAREL_DATA_DIR=$D/id $B/quarel-identity > $D/id.log 2>&1 & PIDS+=($!)
+sleep 0.5
+Q() { local p=$1; shift; (cd $D && $B/quarelctl -s http://127.0.0.1:18080 -p "$p" "$@" 2>&1); }
+FAIL=0
+expect() { # expect "<description>" "<output>" "<text that must appear>"
+  if grep -qF -- "$3" <<<"$2"; then echo "✔ $1"; else echo "✘ $1 — attendu : $3"; echo "$2" | sed 's/^/    /'; FAIL=1; fi
+}
+refuse() { # refuse "<description>" "<output>" "<text that must NOT appear>"
+  if grep -qF -- "$3" <<<"$2"; then echo "✘ $1 — ne devrait pas contenir : $3"; FAIL=1; else echo "✔ $1"; fi
+}
+for u in alice bob carol dave; do
+  Q $u register $u@example.com $u >/dev/null
+  Q $u verify-email $u@example.com "$(grep -o 'Quarel : [0-9]*' $D/id.log | tail -1 | grep -o '[0-9]*$')" >/dev/null
+  Q $u login $u "pc-$u" >/dev/null
+  Q $u e2e >/dev/null
+done
+for f in bob carol dave; do Q alice friend-add $f >/dev/null; Q $f friend-accept alice >/dev/null; done
+
+echo "## Groupe"
+expect "groupe créé entre amis" "$(Q alice dm-group Tarot bob carol)" "Groupe « Tarot » créé avec 3 membres"
+expect "message chiffré pour tout le groupe" "$(Q alice dm Tarot 'Rendez-vous jeudi 20 h')" "envoyé à 2 appareil(s)"
+expect "bob le lit" "$(Q bob dm-history Tarot)" "Rendez-vous jeudi 20 h"
+expect "carol aussi (sans être amie avec bob)" "$(Q carol dm-history Tarot)" "Rendez-vous jeudi 20 h"
+Q bob dm Tarot "J'apporte les cartes" >/dev/null
+expect "carol lit bob, qui n'est pas son ami" "$(Q carol dm-history Tarot)" "bob : J'apporte les cartes"
+Q alice dm-sync >/dev/null   # the last member to receive it
+expect "accusé : distribué à tous les autres membres" "$(Q bob dm-history Tarot)" "J'apporte les cartes  ✓"
+Q alice dm-add Tarot dave >/dev/null
+Q alice dm Tarot "Bienvenue dave" >/dev/null
+H=$(Q dave dm-history Tarot)
+expect "le nouveau membre lit les messages suivants" "$H" "Bienvenue dave"
+refuse "…mais pas les anciens" "$H" "Rendez-vous jeudi"
+Q alice dm-kick Tarot carol >/dev/null
+Q alice dm Tarot "Message après le départ de carol" >/dev/null
+refuse "le membre retiré ne reçoit plus rien" "$(Q carol dm-history alice; Q carol dms)" "Message après le départ"
+expect "les autres oui (nouvelle clé)" "$(Q bob dm-history Tarot)" "Message après le départ de carol"
+
+echo "## Modifier, supprimer"
+N=$(Q bob dm Tarot "Je serai là à 20 h" | grep -o '#[0-9]*' | head -1 | tr -d '#')
+Q bob dm-edit Tarot $N "Je serai là à 21 h" >/dev/null
+expect "modification vue par les autres" "$(Q alice dm-history Tarot)" "Je serai là à 21 h (modifié)"
+expect "on ne modifie que ses propres messages" "$(Q alice dm-edit Tarot $N 'piraté')" "n'est pas un de vos messages"
+Q bob dm-delete Tarot $N >/dev/null
+refuse "suppression chez tout le monde" "$(Q dave dm-history Tarot)" "Je serai là"
+
+echo "## Fichiers chiffrés"
+head -c 3000 /dev/urandom > $D/photo.bin; printf 'SECRET-DANS-LE-FICHIER' >> $D/photo.bin
+M=$(Q alice dm-file Tarot $D/photo.bin "la photo" | grep -o '#[0-9]*' | head -1 | tr -d '#')
+expect "fichier annoncé dans la conversation" "$(Q bob dm-history Tarot)" "📎 photo.bin"
+Q bob dm-download Tarot $M copie.bin >/dev/null
+cmp -s $D/photo.bin $D/copie.bin && echo "✔ fichier déchiffré à l'identique" || { echo "✘ fichier différent"; FAIL=1; }
+grep -rqa "SECRET-DANS-LE-FICHIER" $D/id/ && { echo "✘ contenu du fichier lisible sur le serveur"; FAIL=1; } || echo "✔ le serveur ne stocke que du chiffré"
+expect "un non-membre ne peut pas le télécharger" "$(Q carol dm-download Tarot $M)" "ni un groupe ni un ami"
+
+echo "## En train d'écrire, accusés de lecture"
+Q bob dm-listen > $D/bob.log & PIDS+=($!); sleep 0.8
+Q alice dm-typing Tarot >/dev/null
+Q alice dm-read Tarot >/dev/null; sleep 0.4
+L=$(cat $D/bob.log)
+expect "« alice écrit » reçu en direct" "$L" "… alice écrit"
+expect "accusé de lecture reçu" "$L" "👁 vu par alice"
+Q alice privacy typing=off receipts=off >/dev/null
+Q dave dm-typing Tarot >/dev/null; sleep 1
+Q alice dm-typing Tarot >/dev/null; Q alice dm-read Tarot >/dev/null; sleep 0.4
+L=$(cat $D/bob.log)
+expect "dave toujours visible" "$L" "… dave écrit"
+[ "$(grep -c 'alice écrit' <<<"$L")" = 1 ] && [ "$(grep -c 'vu par alice' <<<"$L")" = 1 ] && echo "✔ désactivés : plus rien d'alice" || { echo "✘ alice partage encore"; FAIL=1; }
+for w in "Rendez-vous jeudi" "Bienvenue dave" "21 h"; do
+  if cat $D/id/identity.db* | grep -aqF "$w"; then echo "✘ « $w » en clair dans la base"; FAIL=1; fi
+done
+echo "✔ aucun message en clair dans la base du serveur"
+exit $FAIL

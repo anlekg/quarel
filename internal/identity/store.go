@@ -186,6 +186,61 @@ CREATE TABLE admin_log (
 	created_at INTEGER NOT NULL
 );
 `,
+	// P1 block 5: group conversations. The 1-to-1 "dms" become conversations
+	// with members (same ids); their events keep their ids so pending
+	// delivery receipts still work.
+	`
+CREATE TABLE conversations (
+	id         TEXT PRIMARY KEY,
+	kind       TEXT NOT NULL CHECK (kind IN ('direct', 'group')),
+	name       TEXT NOT NULL DEFAULT '',
+	owner_id   TEXT,
+	created_at INTEGER NOT NULL
+);
+CREATE TABLE conversation_members (
+	conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+	user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	joined_at       INTEGER NOT NULL,
+	PRIMARY KEY (conversation_id, user_id)
+);
+CREATE INDEX conversation_members_user ON conversation_members(user_id);
+-- One direct conversation per pair of users (user_a < user_b).
+CREATE TABLE direct_pairs (
+	user_a          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	user_b          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+	PRIMARY KEY (user_a, user_b)
+);
+CREATE TABLE conv_events (
+	id              INTEGER PRIMARY KEY AUTOINCREMENT,
+	conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+	sender_user     TEXT NOT NULL,
+	sender_device   TEXT NOT NULL,
+	created_at      INTEGER NOT NULL
+);
+
+INSERT INTO conversations (id, kind, created_at) SELECT id, 'direct', created_at FROM dms;
+INSERT INTO conversation_members (conversation_id, user_id, joined_at)
+	SELECT id, user_a, created_at FROM dms UNION ALL SELECT id, user_b, created_at FROM dms;
+INSERT INTO direct_pairs (user_a, user_b, conversation_id) SELECT user_a, user_b, id FROM dms;
+INSERT INTO conv_events (id, conversation_id, sender_user, sender_device, created_at)
+	SELECT id, dm_id, sender_user, sender_device, created_at FROM dm_events;
+DROP TABLE dm_events;
+DROP TABLE dms;
+
+-- Encrypted files of conversations: ciphertext on disk, opaque to the server.
+CREATE TABLE conv_attachments (
+	id              TEXT PRIMARY KEY,
+	conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+	uploader_id     TEXT NOT NULL,
+	size            INTEGER NOT NULL,
+	created_at      INTEGER NOT NULL
+);
+
+-- Privacy settings.
+ALTER TABLE users ADD COLUMN share_typing INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE users ADD COLUMN share_read_receipts INTEGER NOT NULL DEFAULT 1;
+`,
 }
 
 // OpenDB opens (creating if needed) the SQLite database at path and applies migrations.

@@ -47,12 +47,13 @@ cmd/quarelctl/          client de test en ligne de commande (sorties en françai
                         main.go (Identity), account.go (compte, profil, blocage, présence), community.go (serveurs communautaires), messages.go (réponses, réactions,
                         fichiers, recherche, fils, non-lus), access.go (exclusion, purge, journal, règles, téléphone,
                         bots), roles.go (rôles, modération),
-                        voice.go (vocal), social.go (amis, MP), e2e.go (chiffrement Olm/Megolm côté client),
+                        voice.go (vocal), social.go (amis, MP), dms.go (groupes, fichiers, lecture), e2e.go (chiffrement Olm/Megolm côté client),
                         recovery.go (phrase de récupération, sauvegarde), network.go (diagnostic réseau)
 internal/identity/      service Identity : HTTP (server.go), endpoints (handlers.go), SQLite (store.go),
                         argon2id (crypto.go), TOTP (totp.go), emails (mail.go), anti-bruteforce (lockout.go),
                         amis et conversations (social.go), clés E2E et boîtes aux lettres (e2e.go), temps réel (gateway.go),
-                        gestion du compte (account.go), profil/blocage/présence (profile.go), opérateur et rotation de clé (admin.go)
+                        gestion du compte (account.go), profil/blocage/présence (profile.go), opérateur et rotation de clé (admin.go),
+                        conversations et groupes (conversations.go), fichiers chiffrés, frappe, lecture (convextras.go)
 internal/community/     serveur communautaire : config, clés des Identity (keys.go), auth (auth.go),
                         membres, invitations, salons + droits par salon (channels.go), messages,
                         permissions (permissions.go), rôles (roles.go), expulsion/bannissement
@@ -94,11 +95,20 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 
 - **Choix validés par le CP** : protocole **Olm/Megolm** (celui de Matrix) ; **historique sur les appareils** (le serveur efface chaque message dès que tous les appareils du destinataire l'ont acquitté).
 - **Le serveur ne déchiffre rien** : il stocke des clés publiques, vérifie leurs signatures (les clients les revérifient) et relaie des blobs opaques. Seul `quarelctl` importe la crypto (`maunium.net/go/mautrix/crypto/goolm`, Go pur, MPL-2.0, appel explicite à `goolm.Register()`) ; le futur client utilisera vodozemac (Rust), même protocole.
-- **Amis** (`friendships`, une ligne par paire, `user_a < user_b`) : demande par pseudo, demande croisée = acceptation, refus/annulation/retrait = `DELETE`. Événement `FRIENDS_UPDATE`. MP, annuaire de clés, clés à usage unique et messages entre appareils : **amis ou soi-même uniquement** (`requireFriendOrSelf`).
+- **Amis** (`friendships`, une ligne par paire, `user_a < user_b`) : demande par pseudo, demande croisée = acceptation, refus/annulation/retrait = `DELETE`. Événement `FRIENDS_UPDATE`. Conversation directe et création/ajout dans un groupe : **amis uniquement** (`requireFriendOrSelf`). Annuaire de clés, clés à usage unique, messages entre appareils : **contacts** = amis ou membres d'une conversation commune (`requireContact` ; `DEVICES_UPDATE` va aussi aux co-membres).
 - **Appareil = session Identity.** Chaque appareil publie ses clés Olm (curve25519, ed25519) signées par lui-même (`e2ekeys.DeviceKeys`). **Clé maîtresse** Ed25519 du compte : créée par le 1er appareil, qui se certifie (`e2ekeys.DeviceCert`) → validé d'office. Un nouvel appareil reste non validé jusqu'à ce qu'un appareil détenant la clé maîtresse le certifie (`POST /v1/keys/certify`) après comparaison du **code de vérification** (`e2ekeys.VerificationCode` : 80 bits du hachage de sa clé ed25519, `XXXX-XXXX-XXXX-XXXX`), puis lui envoie la graine maîtresse et l'historique par Olm.
 - **Confiance côté client** : un appareil est de confiance si sa signature propre et son certificat vérifient avec la clé maîtresse **épinglée au premier contact** (changement → envoi refusé, avertissement). Les clés de conversation ne sont partagées qu'avec des appareils de confiance ; les secrets reçus ne sont acceptés que d'appareils de confiance.
 - **Olm** (par paire d'appareils) transporte : `room_key` (clé Megolm d'une conversation), `device_approval` (graine maîtresse), `history` (historique + sessions Megolm exportées). Le clair lie expéditeur et destinataire (`olmPlain`), vérifié à la réception. Clés à usage unique signées (`e2ekeys.OneTimeKey`), 20 maintenues sur le serveur ; clé de secours acceptée par l'API (pas encore générée par le client).
-- **Megolm** (par conversation et appareil émetteur) chiffre les MP ; renouvelé après 100 messages, 7 jours, ou si un appareil destinataire disparaît. Le clair contient `dm_id`, expéditeur, date, vérifiés contre l'enveloppe ; protection contre le rejeu par (session, index).
+- **Megolm** (par conversation et appareil émetteur) chiffre les MP ; renouvelé après 100 messages, 7 jours, ou si un appareil destinataire disparaît (donc aussi quand un membre quitte un groupe). Le clair contient `dm_id`, expéditeur, date, vérifiés contre l'enveloppe ; protection contre le rejeu par (session, index).
+
+### Conversations avancées (P1 bloc 5)
+
+- **Conversations** (migration 6) : `conversations` (`direct` | `group`, `name`, `owner_id`), `conversation_members`, `direct_pairs` (une conversation directe par paire), `conv_events` (ex-`dm_events`, mêmes ids : les accusés en attente survivent à la migration ; les anciennes tables `dms`/`dm_events` sont supprimées). L'API garde le chemin `/v1/dms`. Événements `DM_UPDATE` (conversation vue par chaque membre) et `DM_REMOVED` (au membre retiré).
+- **Groupes** : créés entre amis (`POST /v1/dms {user_ids, name}`), **10 membres max**, chacun peut renommer et **ajouter ses propres amis** ; seul le créateur retire quelqu'un ; qui part s'en va (`DELETE …/members/@me`), le créateur qui part transmet le groupe au plus ancien membre, le dernier qui part le supprime. Les membres d'un groupe n'ont pas besoin d'être amis entre eux. Un nouveau membre ne lit **que les messages envoyés après son arrivée** (il reçoit la clé Megolm à son index courant).
+- **Envoi** : `POST /v1/dms/{id}/messages` distribue à tous les appareils de tous les membres (et aux autres appareils de l'expéditeur) ; conversation directe : encore amis requis. **Accusé de distribution** quand tous les appareils des autres membres ont acquitté.
+- **Modifier / supprimer** : événements chiffrés comme les autres (`megolmPlain.type` = `edit` | `delete`, `target` = n° de l'événement). **Le serveur ne sait pas que c'est une modification.** Le client n'applique une modification/suppression que si son expéditeur est l'auteur du message visé (`e2e.apply`).
+- **Fichiers chiffrés** : le client chiffre (XChaCha20-Poly1305, clé aléatoire, données associées = id de la conversation), envoie le chiffré (`POST /v1/dms/{id}/files`, corps brut, `QUAREL_DM_FILE_MAX_MB` = 25, 60/h/utilisateur), puis un événement `type: file` avec `{id, name, mime, size, key, nonce}` : la clé ne voyage que dans le message chiffré. Téléchargement réservé aux membres ; suppression par l'expéditeur ; **conservés `QUAREL_DM_FILE_TTL` (30 jours)** puis effacés (`CleanupFiles`, toutes les heures) : l'historique vit sur les appareils. Dossier `data/dm-files`.
+- **« En train d'écrire » et accusés de lecture** : `POST /v1/dms/{id}/typing` (1 par 3 s) → `DM_TYPING {dm_id, user_id}` ; `POST /v1/dms/{id}/read {event_id}` → `DM_READ {dm_id, user_id, event_id}`. **Relayés en direct aux appareils connectés, jamais stockés.** Désactivables : `GET/PATCH /v1/me/privacy {typing, read_receipts}` ; désactivé, le serveur ne relaie rien (la lecture reste synchronisée entre ses propres appareils).
 - **Boîte aux lettres** (`inbox`, une ligne par appareil destinataire) : `to_device`, `dm`, `receipt`. `GET /v1/inbox` puis `POST /v1/inbox/ack` (suppression). Accusé de distribution (`receipt`) quand tous les appareils du destinataire ont acquitté. Poussée en direct : événement `INBOX` sur la passerelle Identity (une connexion par appareil). Révocation d'une session → clés, clés à usage unique et boîte supprimées, `DEVICES_UPDATE` aux amis.
 - **Client de test** : état E2E dans `<profil>.e2e.json` (0600, non chiffré — le vrai client utilisera le trousseau du système), protégé par un **verrou de fichier** (`withE2E`) car plusieurs `quarelctl` peuvent tourner sur le même profil (`dm-listen` + `dm`).
 
@@ -114,12 +124,17 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | POST | `/v1/keys/one-time` | `{keys: [{id, key, signature}], fallback?}` → `{one_time_keys}` |
 | POST | `/v1/keys/claim` | `{device_ids}` → une clé par appareil |
 | GET | `/v1/users/{id}/keys` | `{user, master_key, devices}` (amis/soi) |
-| GET/POST | `/v1/dms` | Conversations / ouvrir `{user_id}` (amis) |
+| GET/POST | `/v1/dms` | Conversations / ouvrir `{user_id}` (ami) ou créer un groupe `{user_ids, name}` |
+| PATCH | `/v1/dms/{id}` | Renommer un groupe `{name}` |
+| PUT/DELETE | `/v1/dms/{id}/members/{user\|@me}` | Ajouter un ami / retirer (créateur) ou partir |
 | POST | `/v1/dms/{id}/messages` | `{payload}` chiffré → `{event_id, recipient_devices}` |
+| POST | `/v1/dms/{id}/typing`, `/v1/dms/{id}/read` | Éphémères : `DM_TYPING`, `DM_READ {event_id}` |
+| POST/GET/DELETE | `/v1/dms/{id}/files[/{file}]` | Fichier chiffré (corps brut) → `{id, size, expires_at}` |
+| GET/PATCH | `/v1/me/privacy` | `{typing, read_receipts}` |
 | POST | `/v1/to-device` | `{messages: [{device_id, payload}]}` (8 Mo max) |
 | GET | `/v1/inbox` | Éléments en attente pour cet appareil |
 | POST | `/v1/inbox/ack` | `{ids}` |
-| GET | `/v1/gateway` | WebSocket : READY, INBOX, FRIENDS_UPDATE, DEVICES_UPDATE, PRESENCE_UPDATE, PRESENCE_SETTING, USER_UPDATE |
+| GET | `/v1/gateway` | WebSocket : READY, INBOX, FRIENDS_UPDATE, DEVICES_UPDATE, PRESENCE_UPDATE, PRESENCE_SETTING, USER_UPDATE, DM_UPDATE, DM_REMOVED, DM_TYPING, DM_READ |
 
 ## Mise en ligne (jalon 6) : HTTPS, UPnP, limites, récupération
 
@@ -207,7 +222,7 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 
 ### Configuration (variables d'environnement)
 
-`QUAREL_ADDR` (`:8080`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_ISSUER` (`localhost:8080` — **doit être le domaine public en production**), `QUAREL_TOKEN_TTL` (`12h`), `QUAREL_SMTP_HOST/PORT/USER/PASSWORD/FROM` (sans `QUAREL_SMTP_HOST`, les emails sont écrits dans le log : mode dev).
+`QUAREL_ADDR` (`:8080`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_ISSUER` (`localhost:8080` — **doit être le domaine public en production**), `QUAREL_TOKEN_TTL` (`12h`), `QUAREL_DM_FILE_MAX_MB` (25), `QUAREL_DM_FILE_TTL` (`720h`), `QUAREL_SMTP_HOST/PORT/USER/PASSWORD/FROM` (sans `QUAREL_SMTP_HOST`, les emails sont écrits dans le log : mode dev).
 
 ## Serveur communautaire (jalon 2)
 
@@ -372,6 +387,7 @@ make e2e-security     # récupération, HTTPS lié à l'identité, limites (18 v
 make e2e-acme         # HTTPS via ACME contre Pebble (Docker)
 make e2e-messages     # réponses, réactions, fichiers, recherche, fils, non-lus (18 vérifications)
 make e2e-moderation   # exclusion, purge, journal, règles, téléphone, bots avec examples/pingbot (24 vérifications)
+make e2e-dm-groups    # groupes, modification/suppression, fichiers chiffrés, frappe, lecture (22 vérifications)
 make e2e-accounts     # comptes : mots de passe, email, pseudo, profil, blocage, présence, suppression, outil opérateur (30 vérifications)
 ./bin/quarelctl help  # client de test
 ```

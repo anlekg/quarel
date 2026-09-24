@@ -43,11 +43,11 @@ func (c *cli) runSocial(cmd string, args []string) (bool, error) {
 			err = c.deviceApprove(args[0], strings.Join(args[1:], ""))
 		}
 	case "dm":
-		if err = need(args, 2, "<pseudo> <texte…>"); err == nil {
+		if err = need(args, 2, "<pseudo|groupe> <texte…>"); err == nil {
 			err = c.dmSend(args[0], strings.Join(args[1:], " "))
 		}
 	case "dm-history":
-		if err = need(args, 1, "<pseudo>"); err == nil {
+		if err = need(args, 1, "<pseudo|groupe>"); err == nil {
 			err = c.dmHistory(args[0])
 		}
 	case "dm-sync":
@@ -55,7 +55,7 @@ func (c *cli) runSocial(cmd string, args []string) (bool, error) {
 	case "dm-listen":
 		err = c.dmListen()
 	default:
-		return c.runAccount(cmd, args)
+		return c.runDMs(cmd, args)
 	}
 	return true, err
 }
@@ -205,69 +205,63 @@ func (c *cli) deviceApprove(target, code string) error {
 
 func printLine(s string) { fmt.Println(s) }
 
-func (c *cli) openDM(e *e2e, pseudo string) (string, *publicUser, error) {
-	u, rel, err := c.findUser(pseudo)
-	if err != nil {
-		return "", nil, err
-	}
-	if rel != "friends" {
-		return "", nil, fmt.Errorf("%s n'est pas (encore) votre ami : les messages privés sont réservés aux amis", u.Pseudo)
-	}
-	e.st.Names[u.ID] = u.Pseudo
-	var dm struct {
-		ID string `json:"id"`
-	}
-	if err := c.do("POST", "/v1/dms", map[string]string{"user_id": u.ID}, &dm); err != nil {
-		return "", nil, err
-	}
-	return dm.ID, u, nil
+func (c *cli) dmSend(target, text string) error {
+	return c.withE2E(func(e *e2e) error { return c.dmSendWith(e, target, text) })
 }
 
-func (c *cli) dmSend(pseudo, text string) error {
-	return c.withE2E(func(e *e2e) error { return c.dmSendWith(e, pseudo, text) })
-}
-
-func (c *cli) dmSendWith(e *e2e, pseudo, text string) error {
+func (c *cli) dmSendWith(e *e2e, target, text string) error {
 	if err := e.sync(printLine); err != nil {
 		return err
 	}
-	dmID, u, err := c.openDM(e, pseudo)
+	conv, err := c.resolveConv(e, target)
 	if err != nil {
 		return err
 	}
-	m, devices, err := e.sendDM(dmID, u.ID, text)
+	return c.sendEvent(e, conv, megolmPlain{Text: text})
+}
+
+// sendEvent sends an encrypted event and reports where it went.
+func (c *cli) sendEvent(e *e2e, conv *convInfo, content megolmPlain) error {
+	m, devices, err := e.sendDM(conv.ID, conv.others(e.st.UserID), content)
 	if err != nil {
 		return err
 	}
-	fmt.Println(e.format(*m))
+	switch content.Type {
+	case "edit":
+		fmt.Printf("Message %d modifié.\n", content.Target)
+	case "delete":
+		fmt.Printf("Message %d supprimé chez tout le monde.\n", content.Target)
+	default:
+		fmt.Println(e.format(*m))
+	}
 	if devices == 0 {
-		fmt.Printf("(⚠ %s n'a encore aucun appareil capable de recevoir des messages chiffrés : ce message ne lui parviendra pas)\n", u.Pseudo)
+		fmt.Printf("(⚠ personne dans %s n'a encore d'appareil capable de recevoir des messages chiffrés)\n", conv.label())
 	} else {
-		fmt.Printf("(chiffré de bout en bout, envoyé à %d appareil(s) de %s)\n", devices, u.Pseudo)
+		fmt.Printf("(chiffré de bout en bout, envoyé à %d appareil(s) dans %s)\n", devices, conv.label())
 	}
 	return nil
 }
 
-func (c *cli) dmHistory(pseudo string) error {
-	return c.withE2E(func(e *e2e) error { return c.dmHistoryWith(e, pseudo) })
+func (c *cli) dmHistory(target string) error {
+	return c.withE2E(func(e *e2e) error { return c.dmHistoryWith(e, target) })
 }
 
-func (c *cli) dmHistoryWith(e *e2e, pseudo string) error {
+func (c *cli) dmHistoryWith(e *e2e, target string) error {
 	if err := e.sync(func(string) {}); err != nil {
 		return err
 	}
-	dmID, u, err := c.openDM(e, pseudo)
+	conv, err := c.resolveConv(e, target)
 	if err != nil {
 		return err
 	}
-	msgs := e.st.History[dmID]
-	fmt.Printf("Conversation avec %s — %d message(s), chiffrée de bout en bout\n", u.Pseudo, len(msgs))
+	msgs := e.st.History[conv.ID]
+	fmt.Printf("Conversation %s — %d message(s), chiffrée de bout en bout\n", conv.label(), len(msgs))
 	for _, m := range msgs {
 		fmt.Println(e.format(m))
 	}
 	pending := 0
 	for _, it := range e.st.Undecrypted {
-		if it.DMID != nil && *it.DMID == dmID {
+		if it.DMID != nil && *it.DMID == conv.ID {
 			pending++
 		}
 	}
@@ -357,6 +351,33 @@ func (c *cli) dmListen() error {
 			var p profileInfo
 			json.Unmarshal(ev.D, &p)
 			out(fmt.Sprintf("✎ profil mis à jour : %s", p.Handle))
+		case "DM_TYPING":
+			var d struct {
+				UserID string `json:"user_id"`
+			}
+			json.Unmarshal(ev.D, &d)
+			out(fmt.Sprintf("… %s écrit", c.nameOf(d.UserID)))
+		case "DM_READ":
+			var d struct {
+				UserID  string `json:"user_id"`
+				EventID int64  `json:"event_id"`
+			}
+			json.Unmarshal(ev.D, &d)
+			if d.UserID != me {
+				out(fmt.Sprintf("👁 vu par %s (jusqu'au message %d)", c.nameOf(d.UserID), d.EventID))
+			}
+		case "DM_UPDATE":
+			var ci convInfo
+			json.Unmarshal(ev.D, &ci)
+			if ci.Kind == "group" {
+				names := []string{}
+				for _, m := range ci.Members {
+					names = append(names, m.Pseudo)
+				}
+				out(fmt.Sprintf("👥 groupe %s : %s", ci.label(), strings.Join(names, ", ")))
+			}
+		case "DM_REMOVED":
+			out("👥 vous ne faites plus partie d'un groupe")
 		case "DEVICES_UPDATE":
 			var d struct {
 				UserID string `json:"user_id"`

@@ -45,10 +45,10 @@
 - [x] **P0** MP 1-à-1 chiffrés (Olm/Megolm, choisi par le CP)
 - [x] **P0** Boîte aux lettres : le service stocke uniquement des messages chiffrés, jusqu'à livraison sur tous les appareils
 - [x] **P0** Temps réel (WebSocket) : réception, accusé de livraison
-- [ ] **P1** Groupes de MP (plusieurs participants)
-- [ ] **P1** Pièces jointes chiffrées
-- [ ] **P1** Édition / suppression de ses messages
-- [ ] **P1** Indicateur « en train d'écrire », accusés de lecture (désactivables)
+- [x] **P1** Groupes de MP (plusieurs participants)
+- [x] **P1** Pièces jointes chiffrées
+- [x] **P1** Édition / suppression de ses messages
+- [x] **P1** Indicateur « en train d'écrire », accusés de lecture (désactivables)
 - [ ] **P2** Messages éphémères
 
 ### A6. Appels entre amis (P2P)

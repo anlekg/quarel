@@ -44,6 +44,8 @@ type histMsg struct {
 	Text      string    `json:"text"`
 	At        time.Time `json:"at"`
 	Delivered bool      `json:"delivered,omitempty"`
+	Edited    bool      `json:"edited,omitempty"`
+	File      *fileRef  `json:"file,omitempty"`
 }
 
 type outboundState struct {
@@ -579,12 +581,28 @@ type megolmEnvelope struct {
 	Body      string `json:"body"`
 }
 
+// megolmPlain is the decrypted content of a conversation event. Edits and
+// deletions are events too: the server cannot tell them from messages.
 type megolmPlain struct {
 	DMID         string    `json:"dm_id"`
+	Type         string    `json:"type,omitempty"`   // "" (text), "file", "edit", "delete"
+	Target       int64     `json:"target,omitempty"` // edit/delete: event id of the message
 	Text         string    `json:"text"`
+	File         *fileRef  `json:"file,omitempty"`
 	SenderUser   string    `json:"sender_user"`
 	SenderDevice string    `json:"sender_device"`
 	SentAt       time.Time `json:"sent_at"`
+}
+
+// fileRef points to an encrypted file stored by the Identity service; the
+// key only travels inside the encrypted event.
+type fileRef struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Mime  string `json:"mime"`
+	Size  int64  `json:"size"`
+	Key   string `json:"key"`   // XChaCha20-Poly1305, base64
+	Nonce string `json:"nonce"` // base64
 }
 
 type roomKey struct {
@@ -593,15 +611,16 @@ type roomKey struct {
 	SessionKey string `json:"session_key"`
 }
 
-// sendDM encrypts text for a conversation and sends it. The conversation key
-// goes to every verified device of both participants that lacks it; it is
-// renewed after megolmMaxMessages, megolmMaxAge, or when a device leaves.
-func (e *e2e) sendDM(dmID, otherUser, text string) (*histMsg, int, error) {
+// sendDM encrypts an event for a conversation and sends it. The conversation
+// key goes to every verified device of every member that lacks it; it is
+// renewed after megolmMaxMessages, megolmMaxAge, or when a device leaves
+// (including when a member leaves the group).
+func (e *e2e) sendDM(dmID string, members []string, content megolmPlain) (*histMsg, int, error) {
 	if e.st.MasterSeed == "" {
 		return nil, 0, errors.New("cet appareil n'est pas encore validé : approuvez-le depuis un appareil déjà validé (quarelctl devices)")
 	}
 	var targets []deviceInfo
-	for _, u := range []string{otherUser, e.st.UserID} {
+	for _, u := range append(members, e.st.UserID) {
 		devs, err := e.trusted(u)
 		if err != nil {
 			return nil, 0, err
@@ -612,10 +631,17 @@ func (e *e2e) sendDM(dmID, otherUser, text string) (*histMsg, int, error) {
 			}
 		}
 	}
+	seenDev := map[string]bool{}
 	current := map[string]bool{}
+	var unique []deviceInfo
 	for _, d := range targets {
+		if !seenDev[d.DeviceID] {
+			seenDev[d.DeviceID] = true
+			unique = append(unique, d)
+		}
 		current[d.DeviceID] = true
 	}
+	targets = unique
 	ob := e.st.Outbound[dmID]
 	rotate := ob == nil || ob.Sent >= megolmMaxMessages || time.Since(ob.Created) > megolmMaxAge
 	if ob != nil {
@@ -647,7 +673,8 @@ func (e *e2e) sendDM(dmID, otherUser, text string) (*histMsg, int, error) {
 		ob.SharedWith[d.DeviceID] = true
 	}
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	plain, _ := json.Marshal(megolmPlain{DMID: dmID, Text: text, SenderUser: e.st.UserID, SenderDevice: e.st.DeviceID, SentAt: now})
+	content.DMID, content.SenderUser, content.SenderDevice, content.SentAt = dmID, e.st.UserID, e.st.DeviceID, now
+	plain, _ := json.Marshal(content)
 	ct, err := og.Encrypt(plain)
 	if err != nil {
 		return nil, 0, err
@@ -671,17 +698,46 @@ func (e *e2e) sendDM(dmID, otherUser, text string) (*histMsg, int, error) {
 	if err := e.c.do("POST", "/v1/dms/"+dmID+"/messages", map[string]string{"payload": string(env)}, &res); err != nil {
 		return nil, 0, err
 	}
-	m := histMsg{EventID: res.EventID, From: e.st.UserID, Text: text, At: now}
-	e.addHistory(dmID, m)
+	m, _ := e.apply(res.EventID, content)
 	if err := e.backup(false); err != nil {
 		fmt.Println("⚠ sauvegarde non mise à jour : " + err.Error())
 	}
-	return &m, res.RecipientDevices, e.save()
+	return m, res.RecipientDevices, e.save()
+}
+
+// apply records a decrypted event in the history. Edits and deletions only
+// apply to messages of their own sender. It returns the resulting message (nil
+// for a deletion) and a line describing it ("" if nothing changed).
+func (e *e2e) apply(eventID int64, p megolmPlain) (*histMsg, string) {
+	switch p.Type {
+	case "edit", "delete":
+		list := e.st.History[p.DMID]
+		for i, h := range list {
+			if h.EventID != p.Target {
+				continue
+			}
+			if h.From != p.SenderUser {
+				return nil, fmt.Sprintf("⚠ %s a tenté de modifier le message %d d'une autre personne : ignoré", e.name(p.SenderUser), p.Target)
+			}
+			if p.Type == "delete" {
+				e.st.History[p.DMID] = append(list[:i:i], list[i+1:]...)
+				return nil, fmt.Sprintf("✗ %s a supprimé son message %d", e.name(p.SenderUser), p.Target)
+			}
+			list[i].Text, list[i].Edited = p.Text, true
+			return &list[i], "✎ " + e.format(list[i])
+		}
+		return nil, ""
+	}
+	m := histMsg{EventID: eventID, From: p.SenderUser, Text: p.Text, At: p.SentAt, File: p.File}
+	if e.addHistory(p.DMID, m) {
+		return &m, e.format(m)
+	}
+	return &m, ""
 }
 
 var errNoKey = errors.New("clé de conversation pas encore reçue")
 
-func (e *e2e) openDM(it inboxItem) (*histMsg, error) {
+func (e *e2e) openDM(it inboxItem) (*megolmPlain, error) {
 	var env megolmEnvelope
 	if err := json.Unmarshal([]byte(it.Payload), &env); err != nil || env.Algorithm != "megolm.v1" || it.DMID == nil {
 		return nil, errors.New("format inconnu")
@@ -713,7 +769,7 @@ func (e *e2e) openDM(it inboxItem) (*histMsg, error) {
 		return nil, errors.New("contenu incohérent avec l'enveloppe : rejeté")
 	}
 	e.st.Seen[seen] = true
-	return &histMsg{EventID: *it.EventID, From: plain.SenderUser, Text: plain.Text, At: plain.SentAt}, nil
+	return &plain, nil
 }
 
 func (e *e2e) addHistory(dmID string, m histMsg) bool {
@@ -779,7 +835,7 @@ func (e *e2e) process(it inboxItem, out func(string)) {
 		}
 		e.handleSecret(plain, sender, master, out)
 	case "dm":
-		m, err := e.openDM(it)
+		p, err := e.openDM(it)
 		if errors.Is(err, errNoKey) {
 			e.st.Undecrypted = append(e.st.Undecrypted, it)
 			return
@@ -788,8 +844,8 @@ func (e *e2e) process(it inboxItem, out func(string)) {
 			out(fmt.Sprintf("⚠ message de %s rejeté : %v", e.name(it.SenderUser), err))
 			return
 		}
-		if e.addHistory(*it.DMID, *m) {
-			out(e.format(*m))
+		if _, line := e.apply(*it.EventID, *p); line != "" {
+			out(line)
 		}
 	case "receipt":
 		var r struct {
@@ -874,15 +930,15 @@ func (e *e2e) handleSecret(plain *olmPlain, sender *deviceInfo, master string, o
 func (e *e2e) retryUndecrypted(out func(string)) {
 	var still []inboxItem
 	for _, it := range e.st.Undecrypted {
-		m, err := e.openDM(it)
+		p, err := e.openDM(it)
 		switch {
 		case errors.Is(err, errNoKey):
 			still = append(still, it)
 		case err != nil:
 			out(fmt.Sprintf("⚠ message de %s rejeté : %v", e.name(it.SenderUser), err))
 		default:
-			if e.addHistory(*it.DMID, *m) {
-				out(e.format(*m))
+			if _, line := e.apply(*it.EventID, *p); line != "" {
+				out(line)
 			}
 		}
 	}
@@ -891,10 +947,17 @@ func (e *e2e) retryUndecrypted(out func(string)) {
 
 func (e *e2e) format(m histMsg) string {
 	mark := ""
-	if m.From == e.st.UserID && m.Delivered {
-		mark = "  ✓"
+	if m.Edited {
+		mark += " (modifié)"
 	}
-	return fmt.Sprintf("[%s] %s : %s%s", m.At.Local().Format("01-02 15:04"), e.name(m.From), m.Text, mark)
+	if m.From == e.st.UserID && m.Delivered {
+		mark += "  ✓"
+	}
+	text := m.Text
+	if m.File != nil {
+		text = strings.TrimSpace(fmt.Sprintf("📎 %s (%s) %s", m.File.Name, humanSize(m.File.Size), m.Text))
+	}
+	return fmt.Sprintf("[%s] #%-4d %s : %s%s", m.At.Local().Format("01-02 15:04"), m.EventID, e.name(m.From), text, mark)
 }
 
 // --- device approval ---

@@ -179,6 +179,11 @@ Deux types de serveurs :
 | 2026-09-24 | Présence visible **des amis seulement** ; « invisible » = hors ligne | Privacy. Les serveurs communautaires ne reçoivent aucune présence du service central. |
 | 2026-09-24 | Désactivation : outil **local** de l'opérateur (pas d'API réseau), raison et nom obligatoires, journalisée ; liste publique des identifiants désactivés lue par les serveurs toutes les 10 min | Aucune surface d'attaque réseau pour une action aussi grave ; traçabilité ; effet rapide sur les serveurs. |
 | 2026-09-24 | Rotation de clé : l'ancienne clé privée est détruite, sa clé publique reste publiée le temps de vie des jetons | Pas de coupure pour les membres connectés, et une clé compromise ne peut plus rien signer. |
+| 2026-09-24 | *(à valider par le CP)* Groupes de MP : **10 membres max**, créés entre amis, chaque membre ajoute ses propres amis, seul le créateur retire | Proche de Discord ; les membres d'un groupe peuvent échanger des clés sans être amis entre eux. |
+| 2026-09-24 | Un nouveau membre de groupe **ne lit pas les messages d'avant son arrivée** | Propriété de Megolm (clé partagée à l'index courant) : cohérent avec « historique sur les appareils ». |
+| 2026-09-24 | Modification et suppression = événements chiffrés, appliqués par les clients (l'auteur seulement) | Le serveur ne distingue pas un message d'une modification : aucune métadonnée de plus. |
+| 2026-09-24 | *(à valider par le CP)* Fichiers chiffrés conservés **30 jours** sur le service central, 25 Mo max | Le service ne peut pas savoir quand tous les appareils les ont téléchargés ; ensuite, ils ne vivent que sur les appareils. |
+| 2026-09-24 | « En train d'écrire » et accusés de lecture relayés en direct, **jamais stockés**, désactivables séparément | Privacy ; qui les désactive ne partage plus rien (les siens restent synchronisés entre ses appareils). |
 
 ---
 
@@ -351,4 +356,12 @@ Demande du CP : « on finit la P1 ! ». Découpage annoncé en 7 blocs (messages
 **Non testé en conditions réelles :** Let's Encrypt avec le vrai domaine `identity.quarel.app` (nécessite le DNS) ; envoi d'emails par un vrai serveur SMTP.
 
 **Guide de test du CP :** `docs/tests/p1-bloc-4.md` ; déploiement : `docs/deploiement-identity.md`.
+
+### P1 — Bloc 5 : messages privés avancés (livré le 2026-09-24)
+
+**Livré :** groupes de MP (création entre amis, ajout, retrait, départ, renommage, transmission du groupe), modification et suppression de ses messages (chiffrées, appliquées chez tout le monde), fichiers chiffrés de bout en bout, « en train d'écrire » et accusés de lecture désactivables. Les conversations existantes sont migrées sans perte (accusés de distribution en attente compris).
+
+**Validation :** tests d'intégration (migration d'une base contenant des MP, groupes et règles d'ajout/retrait, échange de clés entre co-membres non amis, frappe et lecture avec et sans partage, fichiers : droits, taille, expiration) ; test du client : une modification/suppression forgée par un autre membre est ignorée ; `make e2e-dm-groups` (22/22 : lecture par un membre non ami, nouveau membre sans l'historique antérieur, membre retiré coupé, nouvelle clé, modification/suppression, fichier déchiffré à l'identique et illisible côté serveur, frappe et accusés en direct puis désactivés, aucun clair en base) ; `make e2e-dm` inchangé (16/16). Bug trouvé et corrigé : membres arrivés dans la même seconde classés au hasard, donc groupe transmis à un membre quelconque au départ du créateur (désormais : ordre d'arrivée).
+
+**Guide de test du CP :** `docs/tests/p1-bloc-5.md`.
 

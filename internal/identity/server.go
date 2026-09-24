@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +33,9 @@ type Config struct {
 	// TrustedProxies are reverse proxies whose X-Forwarded-For is believed.
 	TrustedProxies ratelimit.Proxies
 	TLS            tlsconf.Config
+
+	DMFileMaxBytes int64         // size limit of an encrypted conversation file
+	DMFileTTL      time.Duration // how long the server keeps conversation files
 }
 
 // Limits caps request rates (0 disables a limit).
@@ -41,13 +45,14 @@ type Limits struct {
 	Login             int // login attempts per client IP per 10 minutes
 	Email             int // email verification requests per client IP per hour
 	FriendRequests    int // friend requests per user per hour
+	Files             int // encrypted conversation files uploaded per user per hour
 	AuthFailuresPerIP int // failed passwords/2FA codes per account and IP per hour → lockout
 	AuthFailuresTotal int // failed passwords/2FA codes per account per hour, all IPs → lockout
 }
 
 // DefaultLimits are the production limits.
 func DefaultLimits() Limits {
-	return Limits{Global: 300, Register: 5, Login: 20, Email: 20, FriendRequests: 30,
+	return Limits{Global: 300, Register: 5, Login: 20, Email: 20, FriendRequests: 30, Files: 60,
 		AuthFailuresPerIP: maxAuthFailures, AuthFailuresTotal: maxAuthFailuresAll}
 }
 
@@ -82,10 +87,21 @@ func ConfigFromEnv() (Config, error) {
 		return c, fmt.Errorf("QUAREL_TOKEN_TTL: invalid duration")
 	}
 	c.TokenTTL = ttl
+	c.DMFileMaxBytes = int64(envInt("QUAREL_DM_FILE_MAX_MB", 25)) << 20
+	if c.DMFileTTL, err = time.ParseDuration(env("QUAREL_DM_FILE_TTL", "720h")); err != nil || c.DMFileTTL < time.Hour {
+		return c, fmt.Errorf("QUAREL_DM_FILE_TTL: invalid duration (at least 1h)")
+	}
 	if c.SMTP.Host != "" && c.SMTP.From == "" {
 		return c, fmt.Errorf("QUAREL_SMTP_FROM is required when QUAREL_SMTP_HOST is set")
 	}
 	return c, nil
+}
+
+func envInt(key string, def int) int {
+	if v, err := strconv.Atoi(os.Getenv(key)); err == nil && v > 0 {
+		return v
+	}
+	return def
 }
 
 func env(key, def string) string {
@@ -105,7 +121,7 @@ type Server struct {
 	now    func() time.Time
 
 	proxies ratelimit.Proxies
-	limit   struct{ global, register, login, email, friends *ratelimit.Limiter }
+	limit   struct{ global, register, login, email, friends, files, typing *ratelimit.Limiter }
 }
 
 // Open prepares the data directory, database and signing key.
@@ -152,6 +168,14 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer, retired 
 	s.limit.login = ratelimit.New(cfg.Limits.Login, 10*time.Minute)
 	s.limit.email = ratelimit.New(cfg.Limits.Email, time.Hour)
 	s.limit.friends = ratelimit.New(cfg.Limits.FriendRequests, time.Hour)
+	s.limit.files = ratelimit.New(cfg.Limits.Files, time.Hour)
+	s.limit.typing = ratelimit.New(1, 3*time.Second)
+	if s.cfg.DMFileMaxBytes <= 0 {
+		s.cfg.DMFileMaxBytes = 25 << 20
+	}
+	if s.cfg.DMFileTTL <= 0 {
+		s.cfg.DMFileTTL = 30 * 24 * time.Hour
+	}
 	return s
 }
 
@@ -227,6 +251,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/dms", s.authed(s.handleListDMs))
 	mux.HandleFunc("POST /v1/dms", s.authed(s.handleOpenDM))
 	mux.HandleFunc("POST /v1/dms/{id}/messages", s.authed(s.handleSendDM))
+	mux.HandleFunc("PATCH /v1/dms/{id}", s.authed(s.handleRenameGroup))
+	mux.HandleFunc("PUT /v1/dms/{id}/members/{user}", s.authed(s.handleAddGroupMember))
+	mux.HandleFunc("DELETE /v1/dms/{id}/members/{user}", s.authed(s.handleRemoveGroupMember))
+	mux.HandleFunc("POST /v1/dms/{id}/typing", s.authed(s.handleTyping))
+	mux.HandleFunc("POST /v1/dms/{id}/read", s.authed(s.handleRead))
+	mux.HandleFunc("POST /v1/dms/{id}/files", s.authed(s.handleUploadFile))
+	mux.HandleFunc("GET /v1/dms/{id}/files/{file}", s.authed(s.handleDownloadFile))
+	mux.HandleFunc("DELETE /v1/dms/{id}/files/{file}", s.authed(s.handleDeleteFile))
+	mux.HandleFunc("GET /v1/me/privacy", s.authed(s.handlePrivacy))
+	mux.HandleFunc("PATCH /v1/me/privacy", s.authed(s.handlePrivacy))
 	mux.HandleFunc("POST /v1/to-device", s.authed(s.handleSendToDevice))
 	mux.HandleFunc("GET /v1/inbox", s.authed(s.handleInbox))
 	mux.HandleFunc("POST /v1/inbox/ack", s.authed(s.handleAckInbox))

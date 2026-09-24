@@ -115,10 +115,11 @@ func TestDeleteAccount(t *testing.T) {
 	e.expect(401, "unauthorized", e.call("GET", "/v1/me", alice.SessionToken, nil, nil))
 
 	// Nothing is left of alice.
-	for _, table := range []string{"users", "sessions", "friendships", "dms"} {
+	for _, table := range []string{"users", "sessions", "friendships", "conversation_members", "direct_pairs"} {
 		var n int
 		e.srv.db.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE `+map[string]string{
-			"users": "id = ?", "sessions": "user_id = ?", "friendships": "user_a = ?1 OR user_b = ?1", "dms": "user_a = ?1 OR user_b = ?1"}[table],
+			"users": "id = ?", "sessions": "user_id = ?", "friendships": "user_a = ?1 OR user_b = ?1",
+			"conversation_members": "user_id = ?", "direct_pairs": "user_a = ?1 OR user_b = ?1"}[table],
 			alice.User.ID).Scan(&n)
 		if n != 0 {
 			t.Fatalf("%d row(s) of alice left in %s", n, table)

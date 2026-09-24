@@ -75,10 +75,19 @@ Messages privés (chiffrés de bout en bout, entre amis)
   e2e                              état du chiffrement de cet appareil et son code de vérification
   devices                          mes appareils et leur statut de validation
   device-approve <appareil> <code> valider un nouvel appareil (il reçoit la clé du compte et l'historique)
-  dm <pseudo> <texte…>             envoyer un message privé
-  dm-history <pseudo>              afficher la conversation
+  dm <pseudo|groupe> <texte…>      envoyer un message privé (à un ami ou à un groupe)
+  dm-history <pseudo|groupe>       afficher la conversation (#n = numéro du message)
   dm-sync                          récupérer les messages en attente
   dm-listen                        messages privés en direct (Ctrl+C pour quitter)
+  dm-edit <cible> <n°> <texte…>    modifier un de ses messages (chez tout le monde)
+  dm-delete <cible> <n°>           supprimer un de ses messages (chez tout le monde)
+  dm-file <cible> <fichier> [texte…]   envoyer un fichier chiffré de bout en bout
+  dm-download <cible> <n°> [destination]   récupérer et déchiffrer un fichier reçu
+  dm-typing <cible> / dm-read <cible>      signaler « en train d'écrire » / marquer comme lu
+  privacy [typing=on|off] [receipts=on|off]   partager ou non ces deux informations
+  dms                              conversations et groupes
+  dm-group <nom> <pseudo> [pseudo…]   créer un groupe avec des amis (10 membres max)
+  dm-add|dm-kick <groupe> <pseudo> / dm-leave <groupe> / dm-rename <groupe> <nom…>
 
 Phrase de récupération (si tous vos appareils sont perdus)
   recovery-setup [--replace]       créer la phrase de 12 mots et la sauvegarde chiffrée (appareil validé)

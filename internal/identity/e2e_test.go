@@ -228,9 +228,9 @@ func TestDirectMessages(t *testing.T) {
 
 	e.expect(403, "not_friends", e.call("POST", "/v1/dms", aliceLR.SessionToken, map[string]string{"user_id": bobLR.User.ID}, nil))
 	e.befriend(aliceLR, bobLR, "bob")
-	var dm dmJSON
+	var dm convJSON
 	e.expect(200, "", e.call("POST", "/v1/dms", alice1.token(), map[string]string{"user_id": bobLR.User.ID}, &dm))
-	var again dmJSON
+	var again convJSON
 	e.expect(200, "", e.call("POST", "/v1/dms", bob1.token(), map[string]string{"user_id": aliceLR.User.ID}, &again))
 	if again.ID != dm.ID || dm.User.ID != bobLR.User.ID {
 		t.Fatalf("dm = %+v, again = %+v", dm, again)

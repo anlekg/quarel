@@ -62,6 +62,18 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go srv.WatchDisabled(ctx, 15*time.Second) // accounts disabled by "quarel-identity admin" lose their live connections
+	go func() {                               // expired conversation files
+		for {
+			if err := srv.CleanupFiles(ctx); err != nil {
+				slog.Warn("conversation files cleanup", "err", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Hour):
+			}
+		}
+	}()
 	go func() {
 		<-ctx.Done()
 		srv.DisconnectAll() // Shutdown does not wait for WebSocket (hijacked) connections
