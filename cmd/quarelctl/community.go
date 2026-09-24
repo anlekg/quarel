@@ -1157,6 +1157,12 @@ func (c *cli) listen() error {
 			fmt.Printf("%s ✓ %s lu (sur un de vos appareils), %d non lu(s)\n", now, chanName(d.ChannelID), d.Unread)
 		case "NOTIFICATION_SETTINGS_UPDATE":
 			fmt.Printf("%s ⚙ vos réglages de notification ont changé\n", now)
+		case "VOICE_MOVE":
+			var d struct {
+				ChannelID int64 `json:"channel_id"`
+			}
+			json.Unmarshal(ev.D, &d)
+			fmt.Printf("%s 🔊 la modération vous déplace vers %s (le client rejoint ce salon)\n", now, chanName(d.ChannelID))
 		case "SERVER_UPDATE":
 			var s serverInfo
 			json.Unmarshal(ev.D, &s)

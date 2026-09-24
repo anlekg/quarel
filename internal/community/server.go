@@ -301,6 +301,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/voice/states", s.authed(s.handleVoiceStates))
 	mux.HandleFunc("PATCH /v1/voice/state", s.authed(s.handleVoiceSelfState))
 	mux.HandleFunc("POST /v1/voice/leave", s.authed(s.handleVoiceLeave))
+	mux.HandleFunc("PATCH /v1/voice/states/{member}", s.authed(s.handleVoiceModerate))
+	mux.HandleFunc("DELETE /v1/voice/states/{member}", s.authed(s.handleVoiceKick))
 	if s.voiceOpts != nil && s.voiceOpts.Proxy != nil {
 		mux.Handle("/lk/", s.voiceOpts.Proxy)
 	}

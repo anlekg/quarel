@@ -18,12 +18,13 @@ import (
 // fakeVoice records calls instead of talking to LiveKit.
 type fakeVoice struct {
 	mu        sync.Mutex
-	removed   []string // "room/identity"
-	published map[string]bool
+	removed   []string        // "room/identity"
+	published map[string]bool // microphone allowed, by "room/identity"
+	grants    map[string]voice.Grant
 }
 
-func (f *fakeVoice) JoinToken(room, identity, name string, canPublish bool, ttl time.Duration) (string, error) {
-	return fmt.Sprintf("%s|%s|%s|%v", room, identity, name, canPublish), nil
+func (f *fakeVoice) JoinToken(room, identity, name string, g voice.Grant, ttl time.Duration) (string, error) {
+	return fmt.Sprintf("%s|%s|%s|%v", room, identity, name, g.Microphone), nil
 }
 
 func (f *fakeVoice) RemoveParticipant(_ context.Context, room, identity string) error {
@@ -33,11 +34,19 @@ func (f *fakeVoice) RemoveParticipant(_ context.Context, room, identity string) 
 	return nil
 }
 
-func (f *fakeVoice) SetCanPublish(_ context.Context, room, identity string, can bool) error {
+func (f *fakeVoice) SetPermissions(_ context.Context, room, identity string, g voice.Grant) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.published[room+"/"+identity] = can
+	f.published[room+"/"+identity] = g.Microphone
+	f.grants[room+"/"+identity] = g
 	return nil
+}
+
+func (f *fakeVoice) grant(room, identity string) (voice.Grant, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	g, ok := f.grants[room+"/"+identity]
+	return g, ok
 }
 
 func (f *fakeVoice) Participants(context.Context) (map[string][]string, error) { return nil, nil }
@@ -57,7 +66,7 @@ func (f *fakeVoice) wasRemoved(room, identity string) bool {
 }
 
 func newVoiceCommunity(t *testing.T, pseudos ...string) (*community, *fakeVoice) {
-	fv := &fakeVoice{published: map[string]bool{}}
+	fv := &fakeVoice{published: map[string]bool{}, grants: map[string]voice.Grant{}}
 	c := newCommunity(t, pseudos...)
 	c.srv.EnableVoice(VoiceOptions{Backend: fv})
 	mux := http.NewServeMux() // routes depend on voice being enabled; webhooks live on the internal handler

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,17 +16,26 @@ import (
 
 func TestJoinToken(t *testing.T) {
 	l := NewLiveKit("http://unused", "APIkey", "secret-secret-secret")
-	tok, err := l.JoinToken("channel-4", "member1", "Alice", false, time.Hour)
-	if err != nil {
-		t.Fatal(err)
+	parse := func(g Grant) claims {
+		tok, err := l.JoinToken("channel-4", "member1", "Alice", g, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var c claims
+		if _, err := jwt.ParseWithClaims(tok, &c, func(*jwt.Token) (any, error) { return []byte("secret-secret-secret"), nil }); err != nil {
+			t.Fatal(err)
+		}
+		return c
 	}
-	var c claims
-	if _, err := jwt.ParseWithClaims(tok, &c, func(*jwt.Token) (any, error) { return []byte("secret-secret-secret"), nil }); err != nil {
-		t.Fatal(err)
-	}
+	// Listening only: no publishing at all (an empty source list would mean "any source").
+	c := parse(Grant{Listen: true})
 	if c.Issuer != "APIkey" || c.Subject != "member1" || c.Name != "Alice" || !c.Video.RoomJoin || c.Video.Room != "channel-4" ||
 		c.Video.CanPublish == nil || *c.Video.CanPublish || c.Video.CanSubscribe == nil || !*c.Video.CanSubscribe {
 		t.Fatalf("claims = %+v", c)
+	}
+	c = parse(Grant{Microphone: true, Screen: true})
+	if !*c.Video.CanPublish || *c.Video.CanSubscribe || fmt.Sprint(c.Video.CanPublishSources) != "[microphone screen_share screen_share_audio]" {
+		t.Fatalf("claims = %+v", c.Video)
 	}
 }
 
@@ -44,6 +54,11 @@ func webhookRequest(t *testing.T, key, secret string, body []byte) *http.Request
 
 func TestReceiveWebhook(t *testing.T) {
 	l := NewLiveKit("http://unused", "APIkey", "s3cret")
+	track, _ := json.Marshal(map[string]any{"event": "track_published", "room": map[string]string{"name": "channel-4"},
+		"participant": map[string]string{"identity": "m1"}, "track": map[string]any{"sid": "TR_x", "source": "SCREEN_SHARE"}})
+	if ev, err := l.ReceiveWebhook(webhookRequest(t, "APIkey", "s3cret", track)); err != nil || ev.Source != SourceScreen {
+		t.Fatalf("track event = %+v, %v", ev, err)
+	}
 	body, _ := json.Marshal(map[string]any{"event": "participant_joined", "room": map[string]string{"name": "channel-4"},
 		"participant": map[string]string{"identity": "m1"}})
 
@@ -65,6 +80,7 @@ func TestReceiveWebhook(t *testing.T) {
 
 func TestRoomServiceCalls(t *testing.T) {
 	var got []string
+	var perm map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var c claims
 		_, err := jwt.ParseWithClaims(r.Header.Get("Authorization")[len("Bearer "):], &c, func(*jwt.Token) (any, error) { return []byte("s"), nil })
@@ -76,6 +92,9 @@ func TestRoomServiceCalls(t *testing.T) {
 		json.NewDecoder(r.Body).Decode(&in)
 		got = append(got, r.URL.Path)
 		switch r.URL.Path {
+		case "/twirp/livekit.RoomService/UpdateParticipant":
+			perm = in["permission"].(map[string]any)
+			w.Write([]byte(`{}`))
 		case "/twirp/livekit.RoomService/ListRooms":
 			w.Write([]byte(`{"rooms":[{"name":"channel-4"}]}`))
 		case "/twirp/livekit.RoomService/ListParticipants":
@@ -94,8 +113,11 @@ func TestRoomServiceCalls(t *testing.T) {
 	if err != nil || len(ps["channel-4"]) != 2 {
 		t.Fatalf("participants = %v, %v", ps, err)
 	}
-	if err := l.SetCanPublish(ctx, "channel-4", "m1", false); err != nil {
+	if err := l.SetPermissions(ctx, "channel-4", "m1", Grant{Microphone: true, Camera: true}); err != nil {
 		t.Fatal(err)
+	}
+	if fmt.Sprint(perm["can_publish_sources"]) != "[MICROPHONE CAMERA]" || perm["can_publish"] != true || perm["can_subscribe"] != false {
+		t.Fatalf("permission sent = %v", perm)
 	}
 	if err := l.RemoveParticipant(ctx, "channel-4", "gone"); err != ErrNotFound {
 		t.Fatalf("remove missing participant: %v", err)

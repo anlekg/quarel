@@ -123,9 +123,9 @@
 ### B7. Voix et vidéo (salons vocaux)
 - [x] **P0** Audio de groupe dans les salons vocaux (SFU LiveKit intégré à l'image)
 - [x] **P0** Muet / sourdine, liste des participants
-- [ ] **P1** Vidéo et partage d'écran
+- [x] **P1** Vidéo et partage d'écran
 - [x] **P1** Permissions vocales `connect` / `speak`, appliquées en direct *(avancé au jalon 4)*
-- [ ] **P1** Modération vocale : déplacer / rendre muet un membre, permission de streamer
+- [x] **P1** Modération vocale : déplacer / rendre muet un membre, permission de streamer *(+ sourdine imposée, déconnexion)*
 - [ ] **P2** Salons « scène » (conférence)
 
 ### B8. Bots et intégrations

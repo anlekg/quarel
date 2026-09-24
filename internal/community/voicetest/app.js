@@ -18,6 +18,8 @@ const state = {
   speaking: new Set(),
   muted: false,
   deaf: false,
+  camera: false,
+  screen: false,
 };
 
 function log(msg, isErr) {
@@ -60,9 +62,13 @@ function render() {
       if (v.channel_id !== ch.id) continue;
       const li = document.createElement("li");
       let flags = "";
-      if (v.self_deaf) flags += " 🔇 sourdine";
-      else if (v.self_mute) flags += " 🎙️ micro coupé";
-      if (!v.can_speak) flags += " (ne peut pas parler)";
+      if (v.server_deaf) flags += " 🔇 son coupé par la modération";
+      else if (v.self_deaf) flags += " 🔇 sourdine";
+      if (v.server_mute) flags += " 🎙️ micro coupé par la modération";
+      else if (v.self_mute && !v.self_deaf) flags += " 🎙️ micro coupé";
+      if (!v.can_speak && !v.server_mute) flags += " (ne peut pas parler)";
+      if (v.video) flags += " 📷 caméra";
+      if (v.screen) flags += " 🖥️ partage d'écran";
       li.textContent = name(v.member_id) + flags;
       if (state.speaking.has(v.member_id)) li.classList.add("speaking");
       people.append(li);
@@ -78,12 +84,57 @@ function render() {
   }
   const inVoice = qt.room !== null;
   $("mute").disabled = $("deaf").disabled = $("leave").disabled = !inVoice;
+  const perms = inVoice && qt.room.localParticipant.permissions;
+  const canStream = !!(perms && perms.canPublish && streamAllowed(perms));
+  $("camera").disabled = $("screen").disabled = !inVoice || !canStream;
+  $("camera").textContent = state.camera ? "Couper la caméra" : "Activer la caméra";
+  $("camera").classList.toggle("on", state.camera);
+  $("screen").textContent = state.screen ? "Arrêter le partage" : "Partager l'écran";
+  $("screen").classList.toggle("on", state.screen);
   $("mute").textContent = state.muted ? "Réactiver le micro" : "Couper le micro";
   $("mute").classList.toggle("on", state.muted);
   $("deaf").textContent = state.deaf ? "Réactiver le son" : "Sourdine";
   $("deaf").classList.toggle("on", state.deaf);
   const ch = state.channels.find((c) => c.id === qt.joinedChannel);
   $("status").textContent = inVoice && ch ? "Dans 🔊 " + ch.name : "Hors d'un salon vocal";
+}
+
+// streamAllowed: LiveKit lists allowed sources (as enum numbers); an empty list means all.
+function streamAllowed(perms) {
+  const src = perms.canPublishSources || [];
+  return src.length === 0 || src.includes(1) || src.includes("CAMERA") || src.includes("camera");
+}
+
+function addVideo(track, identity, label, sid) {
+  removeVideo(sid);
+  const tile = document.createElement("div");
+  tile.className = "tile";
+  tile.dataset.sid = sid;
+  tile.dataset.identity = identity;
+  const el = track.attach();
+  el.muted = true;
+  el.playsInline = true;
+  const tag = document.createElement("span");
+  tag.textContent = label;
+  tile.append(el, tag);
+  $("videos").append(tile);
+}
+
+function removeVideo(sid) {
+  document.querySelectorAll(".tile").forEach((t) => { if (t.dataset.sid === sid) t.remove(); });
+}
+
+// dropTrack removes the elements of a track we no longer receive.
+function dropTrack(sid) {
+  removeVideo(sid);
+  document.querySelectorAll("audio[data-quarel]").forEach((el) => { if (el.dataset.sid === sid) el.remove(); });
+}
+
+function syncLocalShares() {
+  if (!qt.room) return;
+  const lp = qt.room.localParticipant;
+  state.camera = lp.isCameraEnabled;
+  state.screen = lp.isScreenShareEnabled;
 }
 
 function applyAudioMute() {
@@ -96,22 +147,52 @@ async function join(ch) {
   const room = new LK.Room({ adaptiveStream: true, dynacast: true });
   room
     .on(LK.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+      if (track.kind === "video") {
+        const what = pub.source === LK.Track.Source.ScreenShare ? "écran" : "caméra";
+        addVideo(track, participant.identity, name(participant.identity) + " — " + what, pub.trackSid);
+        log("Vidéo reçue de " + name(participant.identity) + " (" + what + ")");
+        return;
+      }
       if (track.kind !== "audio") return;
       const el = track.attach();
       el.dataset.quarel = participant.identity;
+      el.dataset.sid = pub.trackSid;
       el.muted = state.deaf;
       document.body.append(el);
       log("Audio reçu de " + name(participant.identity));
     })
-    .on(LK.RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((el) => el.remove()))
+    .on(LK.RoomEvent.TrackUnsubscribed, (track, pub) => {
+      dropTrack(pub.trackSid);
+      track.detach().forEach((el) => el.remove());
+    })
+    .on(LK.RoomEvent.TrackUnpublished, (pub) => dropTrack(pub.trackSid))
+    .on(LK.RoomEvent.TrackSubscriptionStatusChanged, (pub, status) => {
+      if (status !== "subscribed") dropTrack(pub.trackSid);
+    })
+    .on(LK.RoomEvent.LocalTrackPublished, (pub) => {
+      if (pub.track && pub.track.kind === "video") addVideo(pub.track, "local", pub.source === LK.Track.Source.ScreenShare ? "Votre écran" : "Vous", pub.trackSid);
+      syncLocalShares();
+      render();
+    })
+    .on(LK.RoomEvent.LocalTrackUnpublished, (pub) => {
+      removeVideo(pub.trackSid);
+      syncLocalShares();
+      render();
+    })
     .on(LK.RoomEvent.ActiveSpeakersChanged, (speakers) => {
       state.speaking = new Set(speakers.map((p) => p.identity));
       render();
     })
     .on(LK.RoomEvent.ParticipantPermissionsChanged, (_prev, participant) => {
       if (participant && participant.isLocal) {
-        const can = participant.permissions && participant.permissions.canPublish;
-        log(can ? "Vous pouvez de nouveau parler." : "Vous n'avez plus le droit de parler.");
+        const p = participant.permissions || {};
+        const src = p.canPublishSources || [];
+        const mic = p.canPublish && (src.length === 0 || src.includes(2) || src.includes("MICROPHONE"));
+        log(mic ? "Micro autorisé." : "Micro non autorisé (permission ou modération).");
+        log(p.canPublish && streamAllowed(p) ? "Caméra et partage d'écran autorisés." : "Caméra et partage d'écran non autorisés.");
+        if (p.canSubscribe === false) log("Son coupé par la modération : vous n'entendez plus les autres.");
+        syncLocalShares();
+        render();
       }
     })
     .on(LK.RoomEvent.Disconnected, (reason) => {
@@ -135,6 +216,8 @@ async function join(ch) {
 
 function cleanup() {
   document.querySelectorAll("audio[data-quarel]").forEach((el) => el.remove());
+  $("videos").replaceChildren();
+  state.camera = state.screen = false;
   qt.room = null;
   qt.joinedChannel = null;
   state.speaking.clear();
@@ -149,6 +232,18 @@ async function leave() {
 }
 
 $("leave").onclick = () => leave();
+$("camera").onclick = async () => {
+  if (!qt.room) return;
+  await qt.room.localParticipant.setCameraEnabled(!state.camera).catch((e) => log("Caméra : " + e.message, true));
+  syncLocalShares();
+  render();
+};
+$("screen").onclick = async () => {
+  if (!qt.room) return;
+  await qt.room.localParticipant.setScreenShareEnabled(!state.screen, { audio: true }).catch((e) => log("Partage d'écran : " + e.message, true));
+  syncLocalShares();
+  render();
+};
 $("mute").onclick = async () => {
   state.muted = !state.muted;
   if (!state.muted && state.deaf) state.deaf = false;
@@ -190,6 +285,14 @@ function connectGateway() {
       case "CHANNELS_SYNC":
         applyChannels(d.channels, d.voice_states);
         break;
+      case "VOICE_MOVE": {
+        const ch = state.channels.find((c) => c.id === d.channel_id);
+        if (ch) {
+          log("Déplacement par la modération vers 🔊 " + ch.name);
+          join(ch).catch((e) => log("Échec : " + e.message, true));
+        }
+        break;
+      }
       case "VOICE_STATE_UPDATE":
         if (d.channel_id === null) delete state.voice[d.member_id];
         else state.voice[d.member_id] = d;

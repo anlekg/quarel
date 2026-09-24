@@ -222,6 +222,11 @@ CREATE TABLE bot_tokens (
 );
 CREATE INDEX audit_log_created ON audit_log (created_at);
 `,
+	// P1 block 3: server mute and deafen, kept across voice sessions.
+	`
+ALTER TABLE members ADD COLUMN voice_mute INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE members ADD COLUMN voice_deaf INTEGER NOT NULL DEFAULT 0;
+`,
 }
 
 // OpenDB opens (creating if needed) the SQLite database at path and applies migrations.

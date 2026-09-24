@@ -169,6 +169,9 @@ Deux types de serveurs :
 | 2026-09-24 | Membres restreints (exclusion, règles, téléphone) = **lecture seule** (droit `view_channel` uniquement), avec un code d'erreur explicite | Une seule règle simple, appliquée partout où les permissions sont calculées (vocal compris). |
 | 2026-09-24 | Bots = membres sans compte Identity, jeton `qb_…` propre au serveur, sans expiration, renouvelable | Même API que les clients ; aucune dépendance au service central. |
 | 2026-09-24 | Journal d'audit conservé **90 jours** | Assez pour enquêter, sans historique indéfini (privacy). |
+| 2026-09-24 | *(à valider par le CP)* Micro et son coupés par la modération **persistants** jusqu'à levée (même après reconnexion) | Sinon il suffirait de se reconnecter pour contourner la sanction. |
+| 2026-09-24 | Déplacement vocal = éjection de la salle + consigne `VOICE_MOVE` au client | Le déplacement natif de LiveKit n'est pas garanti hors de son offre cloud ; l'éjection, elle, est garantie par le serveur. |
+| 2026-09-24 | Caméra et partage d'écran sous une seule permission `stream` | Simple à comprendre pour les administrateurs ; séparable plus tard sans casser l'API. |
 
 ---
 
@@ -323,4 +326,12 @@ Demande du CP : « on finit la P1 ! ». Découpage annoncé en 7 blocs (messages
 **Non testé en conditions réelles :** Twilio (nécessite un compte payant de l'hébergeur ; testé contre une imitation de son API).
 
 **Guide de test du CP :** `docs/tests/p1-bloc-2.md`.
+
+### P1 — Bloc 3 : vocal avancé (livré le 2026-09-24)
+
+**Livré :** caméra et partage d'écran (avec le son de l'écran) dans les salons vocaux, soumis à la permission `stream` ; micro coupé et son coupé par la modération (persistants), déplacement vers un autre salon vocal, déconnexion ; état vocal enrichi (caméra, écran, modération) ; page de test vocal avec vidéo ; commandes `voice-mute`, `voice-deafen`, `voice-move`, `voice-kick`.
+
+**Validation :** tests d'intégration (droits LiveKit selon `speak`/`stream`/modération, persistance, hiérarchie, déplacement et événement `VOICE_MOVE`, déconnexion, journal) ; `make e2e-voice` passe de 10 à **18 vérifications** avec deux navigateurs réels : vidéo de caméra et partage d'écran reçus, retrait de `stream` → LiveKit coupe caméra et écran, micro coupé par la modération, sourdine imposée (plus d'audio reçu) puis levée (audio de retour sans reconnexion), déplacement suivi par la page. Bugs trouvés et corrigés : tuiles vidéo et éléments audio restant affichés après un retrait par LiveKit.
+
+**Guide de test du CP :** `docs/tests/p1-bloc-3.md`.
 

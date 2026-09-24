@@ -152,6 +152,10 @@ Bots
 Vocal
   voice                            qui est dans quel salon vocal
   voice-test                       adresse de la page de test vocal (navigateur)
+  voice-mute <membre> [off] [raison]    couper son micro (modération, persiste jusqu'à levée)
+  voice-deafen <membre> [off] [raison]  couper son son
+  voice-move <membre> <salon vocal>     déplacer vers un autre salon vocal
+  voice-kick <membre> [raison]          déconnecter du vocal
 
 Options
   -s URL      adresse du service Identity (défaut : celle du profil, sinon http://localhost:8080)

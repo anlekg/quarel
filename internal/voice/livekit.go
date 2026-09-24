@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -36,13 +37,44 @@ func NewLiveKit(apiURL, key, secret string) *LiveKit {
 
 // grant is LiveKit's "video" claim.
 type grant struct {
-	RoomJoin       bool   `json:"roomJoin,omitempty"`
-	RoomAdmin      bool   `json:"roomAdmin,omitempty"`
-	RoomList       bool   `json:"roomList,omitempty"`
-	Room           string `json:"room,omitempty"`
-	CanPublish     *bool  `json:"canPublish,omitempty"`
-	CanSubscribe   *bool  `json:"canSubscribe,omitempty"`
-	CanPublishData *bool  `json:"canPublishData,omitempty"`
+	RoomJoin          bool     `json:"roomJoin,omitempty"`
+	RoomAdmin         bool     `json:"roomAdmin,omitempty"`
+	RoomList          bool     `json:"roomList,omitempty"`
+	Room              string   `json:"room,omitempty"`
+	CanPublish        *bool    `json:"canPublish,omitempty"`
+	CanSubscribe      *bool    `json:"canSubscribe,omitempty"`
+	CanPublishData    *bool    `json:"canPublishData,omitempty"`
+	CanPublishSources []string `json:"canPublishSources,omitempty"`
+}
+
+// Grant is what a participant may do in a room.
+type Grant struct {
+	Microphone bool // speak
+	Camera     bool // share their camera
+	Screen     bool // share their screen (with its sound)
+	Listen     bool // receive the others' audio and video
+}
+
+// Track sources, as named in LiveKit tokens (lower case) and in its API (upper case).
+const (
+	SourceCamera      = "camera"
+	SourceMicrophone  = "microphone"
+	SourceScreen      = "screen_share"
+	SourceScreenAudio = "screen_share_audio"
+)
+
+func (g Grant) sources() []string {
+	var out []string
+	if g.Microphone {
+		out = append(out, SourceMicrophone)
+	}
+	if g.Camera {
+		out = append(out, SourceCamera)
+	}
+	if g.Screen {
+		out = append(out, SourceScreen, SourceScreenAudio)
+	}
+	return out
 }
 
 type claims struct {
@@ -62,10 +94,15 @@ func (l *LiveKit) sign(identity, name string, g grant, ttl time.Duration) (strin
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString([]byte(l.secret))
 }
 
-// JoinToken lets identity join room; canPublish controls whether they may speak.
-func (l *LiveKit) JoinToken(room, identity, name string, canPublish bool, ttl time.Duration) (string, error) {
-	yes, no := true, false
-	return l.sign(identity, name, grant{RoomJoin: true, Room: room, CanPublish: &canPublish, CanSubscribe: &yes, CanPublishData: &no}, ttl)
+// JoinToken lets identity join room with the rights in g. An empty source
+// list would mean "every source" to LiveKit, so publishing is off entirely
+// when g allows none.
+func (l *LiveKit) JoinToken(room, identity, name string, g Grant, ttl time.Duration) (string, error) {
+	no := false
+	sources := g.sources()
+	canPublish := len(sources) > 0
+	return l.sign(identity, name, grant{RoomJoin: true, Room: room, CanPublish: &canPublish, CanPublishSources: sources,
+		CanSubscribe: &g.Listen, CanPublishData: &no}, ttl)
 }
 
 // call invokes a RoomService method through Twirp's JSON protocol.
@@ -113,12 +150,18 @@ func (l *LiveKit) RemoveParticipant(ctx context.Context, room, identity string) 
 		map[string]string{"room": room, "identity": identity}, nil)
 }
 
-// SetCanPublish grants or revokes identity's right to speak in room.
-func (l *LiveKit) SetCanPublish(ctx context.Context, room, identity string, canPublish bool) error {
+// SetPermissions changes identity's rights in room while connected; LiveKit
+// unpublishes the tracks no longer allowed.
+func (l *LiveKit) SetPermissions(ctx context.Context, room, identity string, g Grant) error {
+	sources := []string{}
+	for _, s := range g.sources() {
+		sources = append(sources, strings.ToUpper(s))
+	}
 	return l.call(ctx, "UpdateParticipant", grant{RoomAdmin: true, Room: room}, map[string]any{
-		"room":       room,
-		"identity":   identity,
-		"permission": map[string]bool{"can_subscribe": true, "can_publish": canPublish, "can_publish_data": false},
+		"room":     room,
+		"identity": identity,
+		"permission": map[string]any{"can_subscribe": g.Listen, "can_publish": len(sources) > 0,
+			"can_publish_sources": sources, "can_publish_data": false},
 	}, nil)
 }
 
@@ -147,9 +190,18 @@ func (l *LiveKit) Participants(ctx context.Context) (map[string][]string, error)
 
 // Event is the part of a LiveKit webhook the server uses.
 type Event struct {
-	Type     string // participant_joined, participant_left, room_finished…
+	Type     string // participant_joined, participant_left, room_finished, track_published, track_unpublished…
 	Room     string
 	Identity string
+	Source   string // track events: SourceCamera, SourceMicrophone, SourceScreen or SourceScreenAudio
+}
+
+// trackSources maps LiveKit's TrackSource enum (by name or number) to our names.
+var trackSources = map[string]string{
+	"CAMERA": SourceCamera, "1": SourceCamera,
+	"MICROPHONE": SourceMicrophone, "2": SourceMicrophone,
+	"SCREEN_SHARE": SourceScreen, "3": SourceScreen,
+	"SCREEN_SHARE_AUDIO": SourceScreenAudio, "4": SourceScreenAudio,
 }
 
 // ReceiveWebhook verifies and decodes a LiveKit webhook request: the
@@ -177,9 +229,13 @@ func (l *LiveKit) ReceiveWebhook(r *http.Request) (Event, error) {
 		Event       string `json:"event"`
 		Room        struct{ Name string }
 		Participant struct{ Identity string }
+		Track       struct {
+			Source json.RawMessage `json:"source"`
+		}
 	}
 	if err := json.Unmarshal(body, &ev); err != nil {
 		return Event{}, err
 	}
-	return Event{Type: ev.Event, Room: ev.Room.Name, Identity: ev.Participant.Identity}, nil
+	return Event{Type: ev.Event, Room: ev.Room.Name, Identity: ev.Participant.Identity,
+		Source: trackSources[strings.Trim(string(ev.Track.Source), `"`)]}, nil
 }

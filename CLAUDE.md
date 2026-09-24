@@ -232,18 +232,21 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 - **Architecture** : le média ne passe jamais par notre serveur. LiveKit (SFU, `livekit-server` v1.13.7) tourne à côté, lancé et relancé par `quarel-server` (`internal/voice/embedded.go`) avec une config générée (`$DATA/livekit.yaml`) et des clés propres (`$DATA/livekit.keys`). Signalisation LiveKit en boucle locale (7880), exposée aux clients via le proxy **`/lk/`** du serveur ; média : **7882/udp** (+ **7881/tcp** de secours).
 - **Pas de SDK LiveKit Go** (il embarque une pile WebRTC) : `internal/voice/livekit.go` signe les jetons (JWT HS256, claim `video`), appelle l'API Twirp JSON (`RemoveParticipant`, `UpdateParticipant`, `ListRooms`, `ListParticipants`) et vérifie les webhooks (JWT + SHA-256 du corps).
 - **Salles** : salon vocal `id` = salle LiveKit `channel-<id>`, identité LiveKit = `member_id`, nom = nom affiché.
-- **Rejoindre** : `POST /v1/channels/{id}/voice/join` (salon `voice`, `view_channel` + `connect`) → `{url, token, room, can_speak}` ; `canPublish` = `speak`. Jeton valable 1 h (connexion seulement).
+- **Rejoindre** : `POST /v1/channels/{id}/voice/join` (salon `voice`, `view_channel` + `connect`) → `{url, token, room, can_speak, can_stream, server_mute, server_deaf}`. Jeton valable 1 h (connexion seulement).
+- **Droits LiveKit** (`voice.Grant{Microphone, Camera, Screen, Listen}`, calculé par `voiceGrant`) : micro = `speak` et pas coupé par la modération ; caméra et écran (+ son de l'écran) = `stream` ; écoute = pas en sourdine imposée. Traduit en `canPublishSources` (jeton : `microphone`, `camera`, `screen_share`, `screen_share_audio` ; API : en majuscules) et `canSubscribe`. **Une liste de sources vide veut dire « toutes » pour LiveKit** : sans aucune source, `canPublish` est mis à faux. Vérifié en navigateur : LiveKit dépublie les pistes retirées, désabonne quand `canSubscribe` passe à faux et réabonne quand il revient.
 - **État vocal** en mémoire (`voiceRegistry`), alimenté par les webhooks LiveKit (`participant_joined|left`, `room_finished`) sur `POST /internal/livekit/webhook` ; reconstruit depuis LiveKit au démarrage (`SyncVoice`). Un membre n'est que dans un salon à la fois (l'arrivée ailleurs le retire du précédent). À l'arrivée, les droits sont revérifiés (jeton périmé → éjection).
-- **Respect des permissions** (`reconcileVoice`, appelé après tout changement de droits, expulsion/ban/départ, suppression de salon) : perte de `connect` → éjection ; changement de `speak` → `UpdateParticipant` (micro coupé côté serveur).
+- **Respect des permissions** (`reconcileVoice`, appelé après tout changement de droits, restriction, expulsion/ban/départ, suppression de salon, modération vocale) : perte de `connect` → éjection ; tout changement du `Grant` → `UpdateParticipant` (`SetPermissions`).
+- **Caméra / écran** : connus par les webhooks `track_published|unpublished` (source `CAMERA` / `SCREEN_SHARE`) → `video`, `screen` dans l'état vocal (ignorés sans le droit `stream`).
+- **Modération vocale** : `PATCH /v1/voice/states/{member} {mute?, deaf?, channel_id?, reason?}` — `mute_members` / `deafen_members` / `move_members` vérifiés dans le salon vocal actuel du membre (ou au niveau serveur s'il n'est pas en vocal), puis hiérarchie (`checkVoiceRank` ; soi-même permis). **Micro/son coupés par la modération persistants** (`members.voice_mute|voice_deaf`, migration 5) jusqu'à levée, même après reconnexion. **Déplacement** : LiveKit auto-hébergé ne sait pas déplacer un participant entre salles → le serveur l'éjecte de la salle actuelle puis envoie `VOICE_MOVE {channel_id, from_channel_id}` à ses connexions ; le client rejoint le salon indiqué (la cible doit avoir `connect` : sinon `target_cannot_connect`). `DELETE /v1/voice/states/{member}` = déconnexion (`move_members`). Tout est journalisé (`voice_mute|deafen|move|disconnect`).
 - **Micro/sourdine** : décidés par le client (`PATCH /v1/voice/state {self_mute, self_deaf}`, sourdine ⇒ micro coupé), informatifs pour les autres. Événement `VOICE_STATE_UPDATE` (`channel_id: null` = départ), filtré par visibilité du salon ; `voice_states` dans READY et CHANNELS_SYNC.
-- **Page de test** `/voice-test/` (HTML/JS embarqués, `livekit-client` 2.22.3 vendu dans le dépôt, licence Apache-2.0) : jeton de session dans le fragment d'URL (`quarelctl voice-test`). Outil de test, pas le futur client.
+- **Page de test** `/voice-test/` (HTML/JS embarqués, `livekit-client` 2.22.3 vendu dans le dépôt, licence Apache-2.0) : jeton de session dans le fragment d'URL (`quarelctl voice-test`). Micro, sourdine, caméra, partage d'écran, tuiles vidéo, états de modération, suit `VOICE_MOVE`. Outil de test, pas le futur client. Les éléments audio/vidéo sont retirés par identifiant de piste (`dropTrack`) : `track.detach()` ne suffit pas quand LiveKit retire la piste lui-même.
 - **Micro dans un navigateur** : uniquement sur `localhost` ou en HTTPS.
 
 ### Temps réel (`GET /v1/gateway`, WebSocket)
 
 1. Client → `{"op":"auth","token":"<session>"}` (premier message, ≤ 10 s). Jamais de cookie : toutes origines acceptées.
 2. Serveur → `{"t":"READY","d":{member, server, channels, members}}`.
-3. Serveur → `{"t":"<EVENT>","d":…}` : `MESSAGE_CREATE|UPDATE|DELETE`, `MESSAGE_DELETE_BULK`, `REACTION_ADD|REMOVE`, `TYPING_START`, `READ_STATE_UPDATE`, `NOTIFICATION_SETTINGS_UPDATE`, `CHANNEL_CREATE|UPDATE|DELETE`, `MEMBER_JOIN|UPDATE`, `MEMBER_LEAVE {id, reason: left|kicked|banned}`, `VOICE_STATE_UPDATE`, `ROLES_UPDATE` (liste complète), `ROLE_DELETE`, `CHANNELS_SYNC {channels, permissions}` (après tout changement de droits : remplace la liste des salons du client), `SERVER_UPDATE`. Les événements peuvent répéter un état déjà dans READY : les appliquer de façon idempotente.
+3. Serveur → `{"t":"<EVENT>","d":…}` : `MESSAGE_CREATE|UPDATE|DELETE`, `MESSAGE_DELETE_BULK`, `REACTION_ADD|REMOVE`, `TYPING_START`, `READ_STATE_UPDATE`, `NOTIFICATION_SETTINGS_UPDATE`, `CHANNEL_CREATE|UPDATE|DELETE`, `MEMBER_JOIN|UPDATE`, `MEMBER_LEAVE {id, reason: left|kicked|banned}`, `VOICE_STATE_UPDATE`, `VOICE_MOVE` (au membre déplacé seulement), `ROLES_UPDATE` (liste complète), `ROLE_DELETE`, `CHANNELS_SYNC {channels, permissions}` (après tout changement de droits : remplace la liste des salons du client), `SERVER_UPDATE`. Les événements peuvent répéter un état déjà dans READY : les appliquer de façon idempotente.
 - READY : `{member, server, roles, members, channels, voice_states, read_states, notification_settings, restriction, permissions: {server: [...], channels: {id: [...]}}}` — seulement les salons visibles.
 - Les événements de messages et `CHANNEL_CREATE|UPDATE` ne sont envoyés qu'aux membres qui voient le salon (`broadcastChannel`).
 - Fermetures : `4001` session invalide/expirée ; `1008` membre parti, client trop lent (file de 256 événements pleine) ou arrêt du serveur. Ping toutes les 30 s.
@@ -301,10 +304,12 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | GET | `/v1/notification-settings` | session | Réglages du membre |
 | PUT | `/v1/notification-settings/{id\|0}` | session | `{level, mute_for?}` |
 | GET | `/v1/search` | session | `?q=&channel_id=&author_id=&before=&limit=` |
-| POST | `/v1/channels/{id}/voice/join` | `connect` | Jeton LiveKit `{url, token, room, can_speak}` |
+| POST | `/v1/channels/{id}/voice/join` | `connect` | Jeton LiveKit `{url, token, room, can_speak, can_stream, server_mute, server_deaf}` |
 | GET | `/v1/voice/states` | session | Qui est dans quel salon vocal (salons visibles) |
 | PATCH | `/v1/voice/state` | session (en vocal) | `{self_mute?, self_deaf?}` |
 | POST | `/v1/voice/leave` | session | Quitter le vocal |
+| PATCH | `/v1/voice/states/{member}` | `mute_members` / `deafen_members` / `move_members` + hiérarchie | `{mute?, deaf?, channel_id?, reason?}` |
+| DELETE | `/v1/voice/states/{member}` | `move_members` + hiérarchie | Déconnecter du vocal |
 | POST | `/internal/livekit/webhook` | signature LiveKit | Événements de salle |
 | * | `/lk/…` | — | Proxy vers la signalisation LiveKit embarquée |
 | GET | `/voice-test/` | jeton dans le fragment | Page de test vocal |
@@ -329,7 +334,7 @@ make run-identity     # service Identity local sur :8080, données dans ./data/i
 make run-server       # serveur communautaire local sur https://localhost:8090 (auto-signé, UPnP off), données dans ./data/server
 make docker-identity  # image quarel-identity
 make docker-server    # image quarel-server
-make e2e-voice        # test vocal de bout en bout avec navigateurs
+make e2e-voice        # vocal de bout en bout avec 2 navigateurs : audio, caméra, écran, droits, modération (18 vérifications)
 make e2e-dm           # scénario MP chiffrés de bout en bout (16 vérifications)
 make e2e-security     # récupération, HTTPS lié à l'identité, limites (18 vérifications)
 make e2e-acme         # HTTPS via ACME contre Pebble (Docker)

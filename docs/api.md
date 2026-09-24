@@ -54,6 +54,7 @@ La connexion est en lecture seule : **toutes les actions passent par l'API REST*
 | `ROLE_DELETE` | `{id}` | |
 | `SERVER_UPDATE` | infos du serveur | |
 | `VOICE_STATE_UPDATE` | état vocal (`channel_id: null` = départ) | |
+| `VOICE_MOVE` | `{channel_id, from_channel_id}` | La modération vous déplace : rejoignez ce salon |
 | `READ_STATE_UPDATE` | état de lecture | Vos autres connexions ont lu un salon |
 | `NOTIFICATION_SETTINGS_UPDATE` | liste des réglages | |
 
@@ -137,7 +138,8 @@ On n'agit que sur un membre dont le rôle le plus haut est **strictement sous** 
 ### Invitations, bots, vocal
 - `GET /v1/invites`, `POST /v1/invites {max_uses?, expires_in?}` (🔑 `create_invite`), `DELETE /v1/invites/{code}`.
 - `GET /v1/bots`, `POST /v1/bots {name}`, `POST /v1/bots/{id}/token`, `DELETE /v1/bots/{id}` — 🔑 `manage_server`.
-- `POST /v1/channels/{id}/voice/join` (🔑 `connect`) → `{url, token, room, can_speak}` pour se connecter au serveur média LiveKit ; `GET /v1/voice/states`, `PATCH /v1/voice/state {self_mute?, self_deaf?}`, `POST /v1/voice/leave`.
+- **Vocal et vidéo** : `POST /v1/channels/{id}/voice/join` (🔑 `connect`) → `{url, token, room, can_speak, can_stream, server_mute, server_deaf}` pour se connecter au serveur média LiveKit (SDK `livekit-client` ou équivalent) ; micro = 🔑 `speak`, caméra et partage d'écran = 🔑 `stream`. `GET /v1/voice/states` → `[{member_id, channel_id, self_mute, self_deaf, server_mute, server_deaf, can_speak, can_stream, video, screen, joined_at}]`, `PATCH /v1/voice/state {self_mute?, self_deaf?}`, `POST /v1/voice/leave`.
+- **Modération vocale** : `PATCH /v1/voice/states/{member} {mute?, deaf?, channel_id?, reason?}` (🔑 `mute_members`, `deafen_members`, `move_members`) ; micro et son coupés par la modération persistent jusqu'à levée. Un client déplacé par la modération reçoit `VOICE_MOVE {channel_id, from_channel_id}` et doit rejoindre ce salon (il a déjà été retiré de l'ancien). `DELETE /v1/voice/states/{member}` (🔑 `move_members`) le déconnecte.
 
 ## 6. Permissions
 

@@ -24,6 +24,11 @@
   #controls { display:flex; gap:8px; flex-wrap:wrap; }
   #log { font: 13px/1.5 ui-monospace, monospace; color:var(--muted); max-height: 220px; overflow:auto; white-space: pre-wrap; }
   .err { color: var(--warn); }
+  #videos { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:8px; margin-top:10px; }
+  #videos:empty::before { content: "Aucune vidéo pour l'instant."; color: var(--muted); font-size:14px; }
+  .tile { position:relative; background:#000; border-radius:8px; overflow:hidden; aspect-ratio: 16/9; }
+  .tile video { width:100%; height:100%; object-fit:contain; display:block; }
+  .tile span { position:absolute; left:6px; bottom:6px; background:rgba(0,0,0,.6); color:#fff; font-size:12px; padding:2px 6px; border-radius:4px; }
 </style>
 </head>
 <body>
@@ -46,9 +51,13 @@
     <div id="controls" style="margin-top:10px">
       <button id="mute" disabled>Couper le micro</button>
       <button id="deaf" disabled>Sourdine</button>
+      <button id="camera" disabled>Activer la caméra</button>
+      <button id="screen" disabled>Partager l'écran</button>
       <button id="leave" disabled>Quitter</button>
     </div>
   </div>
+
+  <div class="card"><strong>Vidéo</strong><div id="videos"></div></div>
 
   <div class="card"><strong>Journal</strong><div id="log"></div></div>
 </main>

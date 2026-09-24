@@ -165,6 +165,9 @@ func (c *cli) auditLog(args []string) error {
 		if label == "" {
 			label = e.Action
 		}
+		if e.Details["enabled"] == false {
+			label = map[string]string{"voice_mute": "micro rétabli (modération)", "voice_deafen": "son rétabli (modération)"}[e.Action]
+		}
 		line := fmt.Sprintf("[%s] %s — %s", e.CreatedAt.Local().Format("01-02 15:04"), name(e.ActorID), label)
 		if e.TargetID != nil {
 			line += " → " + name(e.TargetID)
