@@ -37,7 +37,7 @@ Alternative à Discord **auto-hébergeable** : chaque serveur tourne chez son pr
 - **Base de données :** SQLite embarquée via `modernc.org/sqlite` (pur Go, sans cgo → compilation croisée `.exe` triviale).
 - **Voix / vidéo :** LiveKit (SFU) intégré à l'image du serveur communautaire.
 - **UPnP :** `github.com/huin/goupnp`.
-- **Client :** décidé en phase finale (piste : Tauri + cœur Rust pour la crypto E2E).
+- **Client :** **Electron** + interface web (choix du CP, 2026-09-24 : voix/vidéo identiques partout grâce au Chromium embarqué) ; chiffrement E2E avec vodozemac (WebAssembly) ; la même interface servira au client web. Maquettes en cours de validation.
 
 ## Arborescence
 
