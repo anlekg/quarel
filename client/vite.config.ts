@@ -6,7 +6,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: './',
-  build: { outDir: 'dist', emptyOutDir: true },
+  // Assets stay separate files: the page's CSP only allows fonts from itself.
+  build: { outDir: 'dist', emptyOutDir: true, assetsInlineLimit: 0 },
   server: { port: 5190 }, // next free port if taken
   test: { environment: 'node', include: ['src/**/*.test.ts', 'electron/**/*.test.ts'] },
 })
