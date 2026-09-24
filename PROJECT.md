@@ -466,3 +466,15 @@ Ordre : **A.** interfaces d'administration (les deux serveurs, Docker) → **B.*
 | 2026-09-24 | Couleur d'icône par service : **vert d'eau** (communautaire), **violet** (identité) | Distinguer les deux s'ils tournent sur la même machine. |
 
 **Livré (2026-09-24)** : inscriptions ouvertes / sur invitation / fermées, domaines d'email, plafond de comptes, invitations de l'opérateur et des utilisateurs (quota) ; liste noire de serveurs (appliquée par l'application et par le service) ; mode « serveurs approuvés » avec jetons chiffrés HPKE pour le serveur, demande d'approbation signée depuis la page du serveur communautaire, approbation depuis celle du service d'identité. Tests : `internal/identity` (règles d'inscription, invitations et quota, liste noire, approbation, jeton chiffré lisible par le seul serveur approuvé), `internal/community` (jeton chiffré accepté, jeton d'un autre serveur refusé), `pkg/idtoken` ; `make e2e-client` : scénario complet avec les vraies pages d'administration (4 scénarios). `deploy/identity/.env.example` : `QUAREL_REGISTRATION=invite` pour `identity.quarel.app`.
+
+### Mise en ligne de l'instance de test quarel.app (2026-09-24)
+
+Choix du CP : **cette machine**, accord pour ouvrir des ports sur la box, DNS chez **Cloudflare**, **pas encore de fournisseur d'emails**. Le CP utilise déjà un **tunnel Cloudflare** et **Nginx Proxy Manager** pour ses autres sites : même infrastructure (détails : `docs/deploiement-quarel-app.md`).
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-09-24 | Web par le tunnel Cloudflare → Nginx Proxy Manager → services en HTTP ; HTTPS par Cloudflare | Infrastructure existante du CP ; certificat reconnu partout (le client web fonctionne aussi). |
+| 2026-09-24 | Vocal en direct : **seuls 7881/tcp et 7882/udp** ouverts par UPnP (accord du CP) ; derrière un proxy, l'UPnP n'ouvre plus le port web (correctif `5f53055`) | Un tunnel Cloudflare ne transporte pas l'UDP ; ouvrir le 443 par UPnP aurait pris le port de Nginx Proxy Manager. |
+| 2026-09-24 | Relais d'appels (TURN) **désactivé** pour l'instant | UDP hors tunnel ; à décider avec l'étape « appels » du client. |
+| 2026-09-24 | Emails **plus tard** : codes lisibles dans le journal pendant la phase sur invitation | Choix du CP. `quarel.app` a déjà des MX chez OVH : piste possible pour l'envoi. |
+| 2026-09-24 | Cloudflare voit le trafic web (messages des salons) | Accepté pour la phase de test ; les MP restent chiffrés de bout en bout. À rediscuter pour la production. |
