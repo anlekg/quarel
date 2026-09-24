@@ -135,7 +135,7 @@
 - [ ] **P2** Commandes slash
 
 ### B9. Notifications
-- [ ] **P1** Réglages de notification par salon (tout, mentions, rien)
+- [x] **P1** Réglages de notification par salon (tout, mentions, rien) *(livré au bloc 1 : réglages stockés et synchronisés, appliqués par le client)*
 - [ ] **P2** Notifications push mobiles (fonctionnement à définir sans fuite de données vers un tiers)
 
 ---
