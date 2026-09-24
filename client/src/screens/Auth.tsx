@@ -438,7 +438,7 @@ function IdentityPicker({ current, onPick, onClose }: {
         s.run(async () => {
           let base: string
           try {
-            base = identityBaseURL(value)
+            base = identityBaseURL(value, import.meta.env.DEV)
           } catch (err) {
             const m = (err as Error).message
             throw new ApiError(0, m === 'insecure' ? 'insecure_address' : 'bad_address', '')
