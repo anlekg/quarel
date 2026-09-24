@@ -93,6 +93,7 @@ func RunEmbedded(ctx context.Context, c EmbeddedConfig, k Keys, ready chan<- str
 		start := time.Now()
 		cmd := exec.CommandContext(ctx, bin, "--config", cfgPath)
 		cmd.WaitDelay = 5 * time.Second
+		hideWindow(cmd)
 		out, _ := cmd.StdoutPipe()
 		cmd.Stderr = cmd.Stdout
 		if err := cmd.Start(); err != nil {

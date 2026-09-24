@@ -1,6 +1,6 @@
 export PATH := $(HOME)/.local/go/bin:$(HOME)/.local/bin:$(PATH)
 
-.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages e2e-moderation e2e-accounts e2e-dm-groups e2e-calls e2e-ops client-install client-dev client-build client-test e2e-client clean
+.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages e2e-moderation e2e-accounts e2e-dm-groups e2e-calls e2e-ops windows client-install client-dev client-build client-test e2e-client clean
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/anlekg/quarel/internal/backup.Release=$(VERSION)
@@ -77,6 +77,10 @@ e2e-ops: build
 # HTTPS through ACME (Let's Encrypt protocol) against Pebble in Docker.
 e2e-acme: build
 	test/e2e/acme.sh
+
+# Windows installers of both servers (needs NSIS: apt install nsis) → dist/windows/
+windows:
+	packaging/windows/build.sh $(VERSION)
 
 # --- desktop client (Electron + web UI, in client/) ---
 

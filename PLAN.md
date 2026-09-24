@@ -75,8 +75,8 @@
 - [x] **P1** HTTPS : certificat automatique (Let's Encrypt) ou auto-signé épinglé
 - [x] **P1** Sauvegarde / restauration (export des données)
 - [x] **P1** Mise à jour sans perte de données
-- [ ] **P1** Interface d'administration web des deux serveurs (Docker : réseau local + mot de passe) *(priorité du CP, 2026-09-24)*
-- [ ] **P1** Version Windows des deux serveurs : installateur, icône près de l'horloge, démarrage avec Windows *(priorité du CP, 2026-09-24)*
+- [x] **P1** Interface d'administration web des deux serveurs (Docker : réseau local + mot de passe) *(priorité du CP, livrée le 2026-09-24)*
+- [x] **P1** Version Windows des deux serveurs : installateur, icône près de l'horloge, démarrage avec Windows *(priorité du CP, livrée le 2026-09-24 ; à valider sur un vrai Windows)*
 
 ### B2. Accès et membres
 - [x] **P0** Connexion avec un jeton d'identité (vérifié hors ligne)

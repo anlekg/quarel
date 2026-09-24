@@ -17,6 +17,10 @@ import (
 // It is part of every official identity: never change it.
 const DefaultIssuer = "identity.quarel.app"
 
+// DefaultLiveKitBin is the voice server program when QUAREL_LIVEKIT_BIN is
+// not set (the Windows build points to the copy installed next to it).
+var DefaultLiveKitBin = "livekit-server"
+
 // Config holds the community server settings.
 type Config struct {
 	Addr    string
@@ -89,7 +93,7 @@ func ConfigFromEnv() (Config, error) {
 		Name:    env("QUAREL_SERVER_NAME", "Serveur Quarel"),
 	}
 	c.Voice = env("QUAREL_VOICE", "embedded")
-	c.LiveKitBin = env("QUAREL_LIVEKIT_BIN", "livekit-server")
+	c.LiveKitBin = env("QUAREL_LIVEKIT_BIN", DefaultLiveKitBin)
 	c.VoiceSignalPort = envInt("QUAREL_VOICE_SIGNAL_PORT", 7880)
 	c.VoiceTCPPort = envInt("QUAREL_VOICE_TCP_PORT", 7881)
 	c.VoiceUDPPort = envInt("QUAREL_VOICE_UDP_PORT", 7882)

@@ -40,6 +40,10 @@ Au premier passage, choisissez le mot de passe administrateur. On y trouve :
 
 Pour que des serveurs communautaires acceptent vos comptes, leurs hébergeurs ajoutent votre domaine : `QUAREL_TRUSTED_ISSUERS=identity.quarel.app,identity.mon-asso.fr`.
 
+### Sous Windows
+
+`Quarel-Identite-Setup-<version>.exe` installe le service avec une icône (violette) près de l'horloge et sa page d'administration sur `http://127.0.0.1:8081` (données dans `%LOCALAPPDATA%\Quarel\Identite`). Les prérequis restent les mêmes : nom de domaine, port 443 vers la machine (Let's Encrypt, à choisir dans les réglages), SMTP. Convient à une petite instance (association, famille) sur un PC allumé en permanence.
+
 ## Relais d'appels
 
 Les appels entre amis sont pair à pair : le son ne passe par aucun serveur Quarel. Quand aucun chemin direct n'existe (NAT stricts), le relais TURN intégré au service transmet le flux, **toujours chiffré de bout en bout** (il ne peut pas l'écouter). Les identifiants du relais sont temporaires et propres à chaque compte ; il refuse de relayer vers des adresses privées ou locales (il ne peut pas servir à atteindre votre réseau). Chaque utilisateur peut refuser le relais dans son client.

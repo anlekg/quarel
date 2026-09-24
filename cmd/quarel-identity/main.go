@@ -10,9 +10,8 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
+	"sync/atomic"
 	"time"
 
 	"github.com/anlekg/quarel/internal/adminui"
@@ -64,17 +63,19 @@ func main() {
 	}
 }
 
-// run starts the administration interface, then runs the service under a
-// supervisor that restarts it when its settings change.
-func run() error {
+// currentUI is the administration interface once started (tray status).
+var currentUI atomic.Pointer[adminui.UI]
+
+// runService starts the administration interface, then runs the service under
+// a supervisor that restarts it when its settings change, until ctx ends.
+func runService(ctx context.Context, console io.Writer) error {
 	logs := adminui.NewLogs(2000)
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, logs), nil)))
+	out := io.MultiWriter(console, logs)
+	slog.SetDefault(slog.New(slog.NewTextHandler(out, nil)))
 	dir := settings.DataDir()
 	if err := settings.Load(dir); err != nil {
 		slog.Error("settings file", "err", err)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	sup := adminui.NewSupervisor()
 	state := &live{restart: sup.Restart}
@@ -95,7 +96,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	adminui.Serve(ctx, ui, adminAddr(), os.Stderr)
+	currentUI.Store(ui)
+	adminui.Serve(ctx, ui, adminAddr(), out)
 	sup.Run(ctx, ui, func(ctx context.Context, ready func()) error { return serve(ctx, ready, state) })
 	return nil
 }

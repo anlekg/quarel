@@ -455,3 +455,12 @@ Ordre : **A.** interfaces d'administration (les deux serveurs, Docker) → **B.*
 | 2026-09-24 | Page d'administration en **HTTP** sur le réseau local | Pas d'avertissement de certificat pour l'hébergeur. Risque accepté : le mot de passe circule en clair sur le réseau local (Wi-Fi chiffré en pratique). À revoir si le CP le souhaite. |
 | 2026-09-24 | Identity en Docker : page publiée sur **127.0.0.1** seulement, accès par tunnel SSH | Un service d'identité tourne en général sur un serveur loué, sans réseau local. |
 | 2026-09-24 | **Lien propriétaire** `quarel://…?sid=…&claim=1` affiché dans la page | L'hébergeur devient propriétaire depuis l'application en collant un lien, sans ligne de commande. |
+
+**Bloc B livré (2026-09-24)** : version Windows des deux serveurs. Icône près de l'horloge (menu : ouvrir l'administration, état, lancer au démarrage de Windows, quitter), instance unique, page ouverte au premier lancement, journal dans un fichier, LiveKit pour Windows inclus et lancé sans console. Installateurs NSIS construits depuis Linux (`make windows`) : Program Files, pare-feu, démarrage avec la session, désinstallation qui garde les données. Vérifié sous Wine (installation, démarrage, administration, service HTTPS) ; **à vérifier sur un vrai Windows** : icône et menu, vocal, pare-feu, avertissement SmartScreen. Le lien propriétaire est testé dans l'application (`make e2e-client`, 3 scénarios).
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-09-24 | Windows : installation dans Program Files **avec droits administrateur** (pare-feu), programme lancé ensuite **en tant qu'utilisateur**, données dans `%LOCALAPPDATA%` | Le pare-feu doit laisser entrer les membres ; aucune élévation au quotidien. |
+| 2026-09-24 | Windows : page d'administration sur **cette machine seulement** (127.0.0.1) | Un PC Windows a un écran : l'icône ouvre la page ; rien d'exposé sur le réseau. |
+| 2026-09-24 | Installateurs **non signés** pour l'instant | Un certificat de signature de code est payant (≈ 100-300 €/an) ; SmartScreen avertit en attendant. **À décider par le CP** avant une diffusion publique. |
+| 2026-09-24 | Couleur d'icône par service : **vert d'eau** (communautaire), **violet** (identité) | Distinguer les deux s'ils tournent sur la même machine. |

@@ -14,7 +14,16 @@ docker compose logs server     # affiche l'adresse de l'administration et le cod
 
 (Sans Compose : `docker build -f Dockerfile.server -t quarel-server .` puis `docker run -d --name quarel --restart unless-stopped --network host -v quarel-data:/data quarel-server`.)
 
-Une version **Windows** (installateur, icône près de l'horloge) est en préparation.
+### Sous Windows
+
+1. Lancez **`Quarel-Serveur-Setup-<version>.exe`** (Windows 10 ou 11, 64 bits). Windows demande l'autorisation d'administrateur : l'installateur place le programme dans `Program Files`, autorise le serveur et le vocal dans le pare-feu, et le fait démarrer avec votre session.
+   > Les installateurs ne sont pas encore signés : Windows SmartScreen affiche « Windows a protégé votre ordinateur » ; cliquez sur « Informations complémentaires » puis « Exécuter quand même ».
+2. À la fin, la **page d'administration** s'ouvre dans votre navigateur (`http://127.0.0.1:8091`) : choisissez son mot de passe, puis suivez la page comme ci-dessous.
+3. Une **icône Quarel** (verte) reste près de l'horloge : clic → page d'administration ; clic droit → état du serveur, « Lancer au démarrage de Windows », « Quitter ».
+
+Sous Windows, la page d'administration n'est ouverte que sur l'ordinateur lui-même. Les données (base, clés, réglages, journal `quarel-server.log`) sont dans `%LOCALAPPDATA%\Quarel\Serveur` ; la désinstallation (Paramètres → Applications) les conserve.
+
+Pour reconstruire l'installateur depuis les sources (Linux ou macOS, avec Go et NSIS) : `make windows`.
 
 ### Page d'administration
 

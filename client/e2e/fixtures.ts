@@ -121,6 +121,7 @@ export class Community {
         QUAREL_VOICE: 'off',
         QUAREL_RATE_LIMITS: 'off',
         QUAREL_LINK_PREVIEWS: 'off',
+        QUAREL_ADMIN_ADDR: 'off',
       },
     })
     this.proc.stdout!.on('data', (d) => (this.log += d))

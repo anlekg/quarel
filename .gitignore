@@ -8,3 +8,6 @@ node_modules/
 /client/dist-electron/
 /client/test-results/
 /client/playwright-report/
+/packaging/windows/cache/
+/dist/
+rsrc_windows_*.syso

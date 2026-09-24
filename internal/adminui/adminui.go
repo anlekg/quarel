@@ -118,6 +118,24 @@ func (u *UI) SetState(s State, err error) {
 	}
 }
 
+// StateText describes the service state in French (tray menu).
+func (u *UI) StateText() string {
+	st, _, _ := u.current()
+	switch st {
+	case Running:
+		return "en marche"
+	case Starting:
+		return "démarrage…"
+	case Failed:
+		return "arrêté, réglages à corriger"
+	default:
+		return "arrêté"
+	}
+}
+
+// FirstRun reports whether the admin password is still to be chosen.
+func (u *UI) FirstRun() bool { return u.auth.needsSetup() }
+
 func (u *UI) current() (State, string, time.Time) {
 	u.mu.Lock()
 	defer u.mu.Unlock()

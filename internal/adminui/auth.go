@@ -199,3 +199,10 @@ func verifyPassword(password, encoded string) bool {
 	got := argon2.IDKey([]byte(password), salt, t, memory, threads, uint32(len(want)))
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
+
+// PendingSetup reports, before starting, whether the admin password of dir is
+// still to be chosen (the Windows tray opens the page on first run).
+func PendingSetup(dir string) (string, bool) {
+	_, err := os.Stat(filepath.Join(dir, adminFile))
+	return filepath.Join(dir, adminFile), errors.Is(err, fs.ErrNotExist)
+}

@@ -87,6 +87,8 @@ examples/pingbot/       bot d'exemple (répond « pong » à « !ping ») : jeto
 deploy/identity/        déploiement Docker Compose du service Identity (Let's Encrypt ou derrière un proxy)
 deploy/server/          déploiement Docker Compose du serveur communautaire (réseau hôte, tout se règle dans la page d'administration)
 docs/heberger-un-serveur.md   guide de l'hébergeur d'un serveur communautaire (installation, sauvegarde, restauration, mises à jour)
+packaging/windows/      installateurs Windows (NSIS), icônes, build.sh
+internal/desktop/       application d'icône Windows (menu, démarrage avec Windows, instance unique, journal fichier)
 docs/api.md             documentation publique de l'API des serveurs communautaires (bots, clients)
 Dockerfile.identity     image distroless (~25 Mo), volume /data, ports 8080/tcp, 8081/tcp (administration) et 3478/udp (relais d'appels)
 Dockerfile.server       image distroless + livekit-server (~141 Mo), volume /data, ports 8090/tcp, 8091/tcp (administration), 7881/tcp, 7882/udp
@@ -435,6 +437,13 @@ Messages : `QUAREL_MAX_UPLOAD_MB` (25), `QUAREL_LINK_PREVIEWS` (`on`). Limites s
 - **Version** : `backup.Release` fixé à la construction (`make build`, `--build-arg VERSION` pour Docker), sinon révision Git.
 - Les **messages d'erreur de configuration sont en français** (affichés dans la page).
 
+## Version Windows des serveurs
+
+- **Application d'icône** (`internal/desktop`, Windows seulement, `fyne.io/systray` Apache-2.0, sans cgo) : `cmd/*/platform_windows.go` remplace `run()` : icône près de l'horloge (clic → page d'administration ; menu : état, « Lancer au démarrage de Windows » = clé `HKCU\…\Run`, « Quitter »), **instance unique** (mutex nommé ; un second lancement ouvre juste la page), page ouverte automatiquement au premier lancement (pas encore de `admin.json`). Programme graphique (`-H=windowsgui`) : journal dans le dossier de données (`quarel-server.log` / `quarel-identity.log`, 10 Mo puis `.old`).
+- **Différences Windows** : données dans `%LOCALAPPDATA%\Quarel\Serveur|Identite` (`settings.Default`) ; page d'administration sur **127.0.0.1** (`:8091` / `:8081`) ; LiveKit = `livekit-server.exe` à côté du programme (`community.DefaultLiveKitBin`), lancé **sans fenêtre de console** (`voice.hideWindow`). Les autres plateformes gardent `platform_other.go` (signaux, console).
+- **Installateurs** (`packaging/windows/`) : `make windows` (= `build.sh [version]`) → `dist/windows/Quarel-Serveur-Setup-<v>.exe` (~18 Mo, avec le `livekit-server.exe` officiel téléchargé une fois et **vérifié par empreinte SHA-256**) et `Quarel-Identite-Setup-<v>.exe` (~5 Mo). Icône et informations de version par `go-winres` (outil de construction, `.syso` générés puis supprimés), icônes produites par `make-icons.sh` depuis les SVG (vert d'eau : communautaire ; violet : identité). NSIS (`installer.nsi`) : droits administrateur, `Program Files\Quarel\…`, règles de pare-feu entrantes pour les programmes serveurs (et LiveKit), démarrage avec la session, menu Démarrer, désinstallation propre qui **garde les données**, lancement final sans élévation (via l'Explorateur). Mise à jour = relancer un installateur plus récent (le programme en cours est arrêté).
+- **Non signés** pour l'instant (avertissement SmartScreen). Testés sous Wine : installation silencieuse (`/S`), démarrage, page d'administration, service HTTPS, clé de démarrage ; le vocal (LiveKit) ne tourne pas sous Wine (sockets UDP) : à vérifier sur un vrai Windows.
+
 ## Exploitation : sauvegarde, restauration, mises à jour (P1 bloc 7)
 
 - **`quarel-server backup <fichier|->`** et **`quarel-identity backup <fichier|->`** (service en marche) : archive `.tar.gz` = manifeste `quarel-backup.json` (`{format, kind, created_at, schema_version, identity, files}`) + **copie cohérente de la base** (`VACUUM INTO`, sans arrêter le service) + clés (`server.key` ; `signing.key`, `retired-keys.json`, `turn.secret`) + dossiers (`attachments`, `acme` ; `dm-files`, `acme`). Jamais d'écrasement d'un fichier existant. `-` = sortie standard (Docker : `docker exec … backup - > f.tar.gz`).
@@ -466,7 +475,8 @@ make e2e-accounts     # comptes : mots de passe, email, pseudo, profil, blocage,
 make client-dev       # application desktop en développement (lancer d'abord make run-identity)
 make client-build     # construit l'interface et les processus Electron
 make client-test      # types et tests unitaires du client
-make e2e-client       # application Electron réelle contre de vrais services (xvfb-run) : comptes, serveurs et messages
+make e2e-client       # application Electron réelle contre de vrais services (xvfb-run) : comptes, serveurs et messages, lien propriétaire
+make windows          # installateurs Windows des deux serveurs (NSIS requis) → dist/windows/
 ./bin/quarel-server backup f.tar.gz   # sauvegarde à chaud (idem quarel-identity), restore f.tar.gz [--force], version
 ./bin/quarelctl help  # client de test
 ```
@@ -477,6 +487,6 @@ Test vocal de bout en bout (hors `go test`) : `make e2e-voice` — vrai Identity
 
 ## Environnement de dev
 
-- OS : Linux. Disponibles : Docker, Node.js 24 (npm 11), xvfb-run, Python 3, make, gcc, livekit-server 1.13.7 (`~/.local/bin`, somme de contrôle vérifiée), Go 1.27.1 (installé dans `~/.local/go`, PATH ajouté dans `~/.zshrc`). Non installés : Rust, `gh`. `sudo` non interactif disponible (le CP autorise l'installation d'outils si besoin).
+- OS : Linux. Disponibles : Docker, Node.js 24 (npm 11), xvfb-run, NSIS, Wine, rsvg-convert, Python 3, make, gcc, livekit-server 1.13.7 (`~/.local/bin`, somme de contrôle vérifiée), Go 1.27.1 (installé dans `~/.local/go`, PATH ajouté dans `~/.zshrc`). Non installés : Rust, `gh`. `sudo` non interactif disponible (le CP autorise l'installation d'outils si besoin).
 - Si `go` est introuvable dans le shell courant : `export PATH="$HOME/.local/go/bin:$HOME/go/bin:$PATH"`.
 - Git : branche `main`, remote `origin` = `git@github.com:anlekg/quarel.git` (SSH). Identité locale au dépôt : `anlekg` / adresse masquée GitHub `106981899+anlekg@users.noreply.github.com` (ne jamais utiliser l'email personnel).

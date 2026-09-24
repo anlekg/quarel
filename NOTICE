@@ -19,6 +19,11 @@ This product includes or bundles third-party software:
 - Pion TURN (call relay, used by quarel-identity) and Pion WebRTC (calls in
   the quarelctl test client) — Copyright The Pion community — MIT License
 
+- Windows builds of the servers: fyne.io/systray (tray icon) — Apache License 2.0;
+  the community server installer bundles the official livekit-server.exe
+  (Apache License 2.0, license file installed next to it). Installers are
+  made with NSIS (zlib license); program icons and version information with
+  go-winres (0BSD), a build tool only.
 - Desktop client (client/): Electron (MIT; ships Chromium and Node.js under
   their own licenses, listed in the LICENSES.chromium.html file of each build),
   React (MIT), @noble/ed25519 and @noble/hashes (MIT, Paul Miller)
