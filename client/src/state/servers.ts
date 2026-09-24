@@ -50,7 +50,7 @@ function utf8(s: string) {
 // Signs in to a community server: identity token + proof of the device key
 // over the server's nonce. The server ID it announces must be the expected one
 // (the TLS layer already checked the certificate against it).
-export async function communityLogin(account: Account, base: string, sid: string, invite?: string): Promise<LoginResult> {
+export async function communityLogin(account: Account, base: string, sid: string, invite?: string, claim?: string): Promise<LoginResult> {
   const c = new CommunityClient(base)
   let idToken: string
   try {
@@ -62,7 +62,7 @@ export async function communityLogin(account: Account, base: string, sid: string
   const [ch, dk] = await Promise.all([c.challenge(), deviceKey(identityLabel(account.identity))])
   if (ch.server_id !== sid) throw new ApiError(0, 'server_mismatch', 'server identity changed')
   const proof = toBase64url(signWithDevice(dk, utf8('quarel-auth-v1\0' + sid + '\0' + ch.nonce)))
-  return c.login({ identity_token: idToken, nonce: ch.nonce, proof, invite })
+  return c.login({ identity_token: idToken, nonce: ch.nonce, proof, invite, claim })
 }
 
 // Public information shown before joining; also proves the certificate.
@@ -441,7 +441,9 @@ export function closeServers() {
 export async function joinServer(account: Account, inv: Invite): Promise<ServerConn> {
   const existing = conns.find((c) => c.saved.sid === inv.sid)
   if (existing) return existing
-  const res = await communityLogin(account, inv.base, inv.sid, inv.code)
+  const res = inv.claim
+    ? await communityLogin(account, inv.base, inv.sid, undefined, inv.code)
+    : await communityLogin(account, inv.base, inv.sid, inv.code)
   const conn = new ServerConn(
     { sid: inv.sid, base: inv.base, host: inv.host, name: res.server.name, token: res.session_token, expiresAt: res.expires_at, memberId: res.member.id },
     account,

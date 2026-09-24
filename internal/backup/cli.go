@@ -33,7 +33,14 @@ func (t Tool) Run(cmd string, args []string) (handled bool, err error) {
 }
 
 // Version is the build's module version or VCS revision.
+// Release is the version name set at build time (-ldflags "-X …/backup.Release=v0.3.0"), for
+// builds without Git information (Docker, Windows installer).
+var Release string
+
 func Version() string {
+	if Release != "" {
+		return Release
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "(inconnue)"

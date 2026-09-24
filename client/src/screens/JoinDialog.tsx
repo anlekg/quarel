@@ -79,7 +79,8 @@ export function JoinDialog({ account, onClose, onJoined }: {
               <span>Son identité correspond au lien d&apos;invitation. Il est hébergé par un particulier ou une association, qui peut lire les messages des salons.</span>
             </div>
           </div>
-          {(preview.info.rules || preview.info.require_phone) && (
+          {preview.inv.claim && <p className="alert alert-info">Lien propriétaire : vous deviendrez propriétaire de ce serveur.</p>}
+          {!preview.inv.claim && (preview.info.rules || preview.info.require_phone) && (
             <p className="muted small">
               Avant de participer, il faudra {preview.info.rules ? 'accepter ses règles' : ''}
               {preview.info.rules && preview.info.require_phone ? ' et ' : ''}

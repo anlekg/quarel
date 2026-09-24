@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anlekg/quarel/internal/settings"
+
 	"github.com/anlekg/quarel/internal/httpapi"
 	"github.com/anlekg/quarel/internal/ratelimit"
 	"github.com/anlekg/quarel/internal/realtime"
@@ -63,23 +65,23 @@ func DefaultLimits() Limits {
 func ConfigFromEnv() (Config, error) {
 	c := Config{
 		Addr:    env("QUAREL_ADDR", ":8080"),
-		DataDir: env("QUAREL_DATA_DIR", "./data"),
+		DataDir: settings.DataDir(),
 		Issuer:  env("QUAREL_ISSUER", "localhost:8080"),
 		SMTP: SMTPMailer{
-			Host:     os.Getenv("QUAREL_SMTP_HOST"),
+			Host:     settings.Get("QUAREL_SMTP_HOST"),
 			Port:     env("QUAREL_SMTP_PORT", "587"),
-			User:     os.Getenv("QUAREL_SMTP_USER"),
-			Password: os.Getenv("QUAREL_SMTP_PASSWORD"),
-			From:     os.Getenv("QUAREL_SMTP_FROM"),
+			User:     settings.Get("QUAREL_SMTP_USER"),
+			Password: settings.Get("QUAREL_SMTP_PASSWORD"),
+			From:     settings.Get("QUAREL_SMTP_FROM"),
 		},
 	}
 	c.Limits = DefaultLimits()
-	if os.Getenv("QUAREL_RATE_LIMITS") == "off" {
+	if settings.Get("QUAREL_RATE_LIMITS") == "off" {
 		c.Limits = Limits{AuthFailuresPerIP: maxAuthFailures, AuthFailuresTotal: maxAuthFailuresAll}
 	}
-	proxies, err := ratelimit.ParseProxies(os.Getenv("QUAREL_TRUSTED_PROXIES"))
+	proxies, err := ratelimit.ParseProxies(settings.Get("QUAREL_TRUSTED_PROXIES"))
 	if err != nil {
-		return c, fmt.Errorf("QUAREL_TRUSTED_PROXIES: %w", err)
+		return c, fmt.Errorf("proxys de confiance (QUAREL_TRUSTED_PROXIES) : %w", err)
 	}
 	c.TrustedProxies = proxies
 	if c.TLS, err = tlsconf.FromEnv("off"); err != nil {
@@ -87,7 +89,7 @@ func ConfigFromEnv() (Config, error) {
 	}
 	ttl, err := time.ParseDuration(env("QUAREL_TOKEN_TTL", "12h"))
 	if err != nil || ttl < time.Minute {
-		return c, fmt.Errorf("QUAREL_TOKEN_TTL: invalid duration")
+		return c, fmt.Errorf("durée des jetons (QUAREL_TOKEN_TTL) : durée invalide (ex. 12h, au moins 1m)")
 	}
 	c.TokenTTL = ttl
 	if c.TURN, err = turnConfigFromEnv(); err != nil {
@@ -96,23 +98,23 @@ func ConfigFromEnv() (Config, error) {
 	c.DMFileMaxBytes = int64(envInt("QUAREL_DM_FILE_MAX_MB", 25)) << 20
 	c.GroupMaxMembers = envInt("QUAREL_DM_GROUP_MAX", 10)
 	if c.DMFileTTL, err = time.ParseDuration(env("QUAREL_DM_FILE_TTL", "168h")); err != nil || c.DMFileTTL < time.Hour {
-		return c, fmt.Errorf("QUAREL_DM_FILE_TTL: invalid duration (at least 1h)")
+		return c, fmt.Errorf("conservation des fichiers (QUAREL_DM_FILE_TTL) : durée invalide (ex. 168h, au moins 1h)")
 	}
 	if c.SMTP.Host != "" && c.SMTP.From == "" {
-		return c, fmt.Errorf("QUAREL_SMTP_FROM is required when QUAREL_SMTP_HOST is set")
+		return c, fmt.Errorf("emails : l'expéditeur (QUAREL_SMTP_FROM) est obligatoire avec un serveur SMTP")
 	}
 	return c, nil
 }
 
 func envInt(key string, def int) int {
-	if v, err := strconv.Atoi(os.Getenv(key)); err == nil && v > 0 {
+	if v, err := strconv.Atoi(settings.Get(key)); err == nil && v > 0 {
 		return v
 	}
 	return def
 }
 
 func env(key, def string) string {
-	if v := os.Getenv(key); v != "" {
+	if v := settings.Get(key); v != "" {
 		return v
 	}
 	return def

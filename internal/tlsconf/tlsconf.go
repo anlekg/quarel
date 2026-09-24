@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/anlekg/quarel/internal/settings"
+
 	"github.com/anlekg/quarel/pkg/tlsbind"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -48,18 +50,18 @@ type Config struct {
 // FromEnv reads QUAREL_TLS* variables; defMode applies when QUAREL_TLS is unset.
 func FromEnv(defMode string) (Config, error) {
 	c := Config{
-		Mode:          os.Getenv("QUAREL_TLS"),
-		Domain:        os.Getenv("QUAREL_TLS_DOMAIN"),
-		Email:         os.Getenv("QUAREL_TLS_EMAIL"),
-		ACMEDirectory: os.Getenv("QUAREL_ACME_DIRECTORY"),
-		ACMECAFile:    os.Getenv("QUAREL_ACME_CA_FILE"),
-		CertFile:      os.Getenv("QUAREL_TLS_CERT"),
-		KeyFile:       os.Getenv("QUAREL_TLS_KEY"),
+		Mode:          settings.Get("QUAREL_TLS"),
+		Domain:        settings.Get("QUAREL_TLS_DOMAIN"),
+		Email:         settings.Get("QUAREL_TLS_EMAIL"),
+		ACMEDirectory: settings.Get("QUAREL_ACME_DIRECTORY"),
+		ACMECAFile:    settings.Get("QUAREL_ACME_CA_FILE"),
+		CertFile:      settings.Get("QUAREL_TLS_CERT"),
+		KeyFile:       settings.Get("QUAREL_TLS_KEY"),
 	}
 	if c.Mode == "" {
 		c.Mode = defMode
 	}
-	for _, h := range strings.Split(os.Getenv("QUAREL_TLS_HOSTS"), ",") {
+	for _, h := range strings.Split(settings.Get("QUAREL_TLS_HOSTS"), ",") {
 		if h = strings.TrimSpace(h); h != "" {
 			c.Hosts = append(c.Hosts, h)
 		}
@@ -68,14 +70,14 @@ func FromEnv(defMode string) (Config, error) {
 	case Off, SelfSigned:
 	case ACME:
 		if c.Domain == "" {
-			return c, errors.New("QUAREL_TLS=acme needs QUAREL_TLS_DOMAIN")
+			return c, errors.New("Let's Encrypt : indiquez le nom de domaine (QUAREL_TLS_DOMAIN)")
 		}
 	case Files:
 		if c.CertFile == "" || c.KeyFile == "" {
-			return c, errors.New("QUAREL_TLS=files needs QUAREL_TLS_CERT and QUAREL_TLS_KEY")
+			return c, errors.New("certificat en fichiers : indiquez le certificat et la clé privée (QUAREL_TLS_CERT, QUAREL_TLS_KEY)")
 		}
 	default:
-		return c, fmt.Errorf("QUAREL_TLS=%q: expected off, self-signed, acme or files", c.Mode)
+		return c, fmt.Errorf("certificat (QUAREL_TLS) : %q inconnu (off, self-signed, acme, files)", c.Mode)
 	}
 	return c, nil
 }

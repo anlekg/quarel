@@ -5,7 +5,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/quarel-identity ./cmd/quarel-identity \
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/anlekg/quarel/internal/backup.Release=${VERSION}" -o /out/quarel-identity ./cmd/quarel-identity \
  && mkdir -p /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot
@@ -13,5 +14,6 @@ COPY --from=build /out/quarel-identity /quarel-identity
 COPY --from=build --chown=65532:65532 /out/data /data
 ENV QUAREL_ADDR=:8080 QUAREL_DATA_DIR=/data
 VOLUME /data
-EXPOSE 8080 3478/udp
+# 8081/tcp: administration page (local network only, password).
+EXPOSE 8080 8081 3478/udp
 ENTRYPOINT ["/quarel-identity"]

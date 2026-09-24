@@ -1,0 +1,25 @@
+# Quarel community server with Docker Compose.
+#
+#   docker compose up -d --build
+#
+# Then open the administration page from any device of the local network:
+# http://<address of this machine>:8091 (first visit: choose its password; the
+# setup code is shown by "docker compose logs server"). Everything is set there.
+#
+# Host networking lets UPnP open the ports on the router (8090/tcp, 7881/tcp,
+# 7882/udp) and gives voice the real network addresses. The administration
+# page (8091) is never opened on the router and refuses Internet addresses.
+services:
+  server:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.server
+    image: quarel-server
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - server-data:/data
+
+volumes:
+  # Database, server key, attachments, settings: back it up from the administration page.
+  server-data:

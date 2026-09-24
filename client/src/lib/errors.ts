@@ -19,6 +19,7 @@ const messages: Record<string, string> = {
   invalid_invite: 'Invitation expirée, épuisée ou révoquée. Demandez-en une nouvelle.',
   invite_required: 'Ce serveur est sur invitation : il faut un lien d\u2019invitation valide.',
   banned: 'Vous êtes banni de ce serveur.',
+  invalid_claim: 'Lien propriétaire expiré ou déjà utilisé : le serveur en affiche un nouveau à chaque démarrage tant qu\u2019il n\u2019a pas de propriétaire.',
   untrusted_issuer: 'Ce serveur n\u2019accepte pas les comptes de votre service d\u2019identité.',
   issuer_unavailable: 'Le serveur n\u2019arrive pas à joindre votre service d\u2019identité. Réessayez plus tard.',
   missing_permissions: 'Vous n\u2019avez pas la permission de faire cela.',

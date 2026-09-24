@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anlekg/quarel/internal/settings"
+
 	"github.com/pion/turn/v5"
 )
 
@@ -36,16 +38,16 @@ type TURNConfig struct {
 
 func turnConfigFromEnv() (TURNConfig, error) {
 	c := TURNConfig{Enabled: env("QUAREL_TURN", "off") == "on", Listen: env("QUAREL_TURN_LISTEN", ":3478"),
-		PublicIP: os.Getenv("QUAREL_TURN_PUBLIC_IP"), AllowPrivatePeers: os.Getenv("QUAREL_TURN_ALLOW_PRIVATE") == "1"}
+		PublicIP: settings.Get("QUAREL_TURN_PUBLIC_IP"), AllowPrivatePeers: settings.Get("QUAREL_TURN_ALLOW_PRIVATE") == "1"}
 	lo, hi, ok := strings.Cut(env("QUAREL_TURN_PORTS", "49160-49200"), "-")
 	var err1, err2 error
 	c.MinPort, err1 = strconv.Atoi(lo)
 	c.MaxPort, err2 = strconv.Atoi(hi)
 	if !ok || err1 != nil || err2 != nil || c.MinPort < 1024 || c.MaxPort > 65535 || c.MinPort > c.MaxPort {
-		return c, errors.New("QUAREL_TURN_PORTS: expected a range such as 49160-49200")
+		return c, errors.New("relais d'appels : plage de ports invalide, par exemple 49160-49200 (QUAREL_TURN_PORTS)")
 	}
 	if c.Enabled && net.ParseIP(c.PublicIP) == nil {
-		return c, errors.New("QUAREL_TURN=on needs QUAREL_TURN_PUBLIC_IP (the public IP address of this machine)")
+		return c, errors.New("relais d'appels : indiquez l'adresse IP publique de cette machine (QUAREL_TURN_PUBLIC_IP)")
 	}
 	return c, nil
 }

@@ -17,6 +17,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -36,6 +37,7 @@ type Spec struct {
 	Required []string // files that must exist (keys): a backup without them is useless
 	Files    []string // other files, included when present
 	Dirs     []string // directories copied recursively (regular files only)
+	Keep     []string // files never archived and left in place by a restore (admin password)
 }
 
 // Manifest is stored first in every archive.
@@ -202,6 +204,9 @@ func Restore(spec Spec, in io.Reader, force bool, maxSchema int) (Manifest, stri
 			first = false
 			continue
 		}
+		if slices.Contains(spec.Keep, name) {
+			continue
+		}
 		dst := filepath.Join(staging, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 			return m, "", err
@@ -235,7 +240,7 @@ func Restore(spec Spec, in io.Reader, force bool, maxSchema int) (Manifest, stri
 	}
 	var existing []string
 	for _, e := range current {
-		if n := e.Name(); n != filepath.Base(staging) && !strings.HasPrefix(n, "before-restore-") && !strings.HasPrefix(n, ".restore-") {
+		if n := e.Name(); n != filepath.Base(staging) && !strings.HasPrefix(n, "before-restore-") && !strings.HasPrefix(n, ".restore-") && !slices.Contains(spec.Keep, n) {
 			existing = append(existing, n)
 		}
 	}

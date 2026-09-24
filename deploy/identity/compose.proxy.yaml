@@ -19,6 +19,9 @@ services:
       QUAREL_TRUSTED_PROXIES: ${QUAREL_TRUSTED_PROXIES:-172.16.0.0/12}
     ports:
       - "127.0.0.1:8080:8080"
+      # Administration page: this machine only (on a rented server, use an
+      # SSH tunnel: ssh -L 8081:127.0.0.1:8081 <server>, then http://localhost:8081).
+      - "127.0.0.1:8081:8081"
       # Call relay (TURN), when QUAREL_TURN=on: UDP, not through the HTTPS proxy.
       - "3478:3478/udp"
       - "49160-49200:49160-49200/udp"

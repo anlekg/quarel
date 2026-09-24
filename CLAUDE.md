@@ -42,8 +42,8 @@ Alternative à Discord **auto-hébergeable** : chaque serveur tourne chez son pr
 ## Arborescence
 
 ```
-cmd/quarel-identity/    binaire du service Identity (+ sous-commandes « admin » de l'opérateur, admin.go)
-cmd/quarel-server/      binaire du serveur communautaire
+cmd/quarel-identity/    binaire du service Identity (+ sous-commandes « admin » de l'opérateur, admin.go ; page d'administration, adminweb.go)
+cmd/quarel-server/      binaire du serveur communautaire (page d'administration : admin.go)
 cmd/quarelctl/          client de test en ligne de commande (sorties en français, neutres en genre, pour le CP) :
                         main.go (Identity), account.go (compte, profil, blocage, présence), community.go (serveurs communautaires), messages.go (réponses, réactions,
                         fichiers, recherche, fils, non-lus), access.go (exclusion, purge, journal, règles, téléphone,
@@ -68,7 +68,10 @@ internal/realtime/      passerelle WebSocket partagée (authentification 1er mes
 internal/ratelimit/     limiteurs en mémoire (seaux de jetons), IP client derrière proxys de confiance
 internal/tlsconf/       modes HTTPS : off, self-signed, acme (Let's Encrypt), files
 internal/netdiag/       UPnP (ouverture/renouvellement des ports), STUN (IP publique), diagnostic de joignabilité
-internal/httpapi/       conventions JSON partagées (erreurs, décodage strict)
+internal/httpapi/       conventions JSON partagées (erreurs, décodage strict, CORS)
+internal/settings/      réglages QUAREL_* : variables d'environnement prioritaires, sinon settings.json du dossier de données
+internal/adminui/       interface d'administration web des deux serveurs (static/ : HTML/JS/CSS sans outil de construction),
+                        superviseur (redémarrage du service à chaud), journal en mémoire
 internal/sqlitedb/      ouverture SQLite + migrations (PRAGMA user_version), copie de la base avant migration
 internal/backup/        sauvegarde/restauration d'un dossier de données (archive .tar.gz + manifeste), commandes backup/restore/version
 internal/secret/        identifiants aléatoires, jetons porteurs, fichiers de clés Ed25519
@@ -82,10 +85,11 @@ test/e2e/               tests de bout en bout : vocal (Playwright), MP chiffrés
                         limites), messages P1 (messages.sh), modération P1 (moderation.sh), ACME contre Pebble (acmeshim : corrige une différence de Pebble avec Let's Encrypt)
 examples/pingbot/       bot d'exemple (répond « pong » à « !ping ») : jeton de bot, passerelle, REST
 deploy/identity/        déploiement Docker Compose du service Identity (Let's Encrypt ou derrière un proxy)
+deploy/server/          déploiement Docker Compose du serveur communautaire (réseau hôte, tout se règle dans la page d'administration)
 docs/heberger-un-serveur.md   guide de l'hébergeur d'un serveur communautaire (installation, sauvegarde, restauration, mises à jour)
 docs/api.md             documentation publique de l'API des serveurs communautaires (bots, clients)
-Dockerfile.identity     image distroless (~25 Mo), volume /data, ports 8080/tcp et 3478/udp (relais d'appels)
-Dockerfile.server       image distroless + livekit-server (~141 Mo), volume /data, ports 8090/tcp, 7881/tcp, 7882/udp
+Dockerfile.identity     image distroless (~25 Mo), volume /data, ports 8080/tcp, 8081/tcp (administration) et 3478/udp (relais d'appels)
+Dockerfile.server       image distroless + livekit-server (~141 Mo), volume /data, ports 8090/tcp, 8091/tcp (administration), 7881/tcp, 7882/udp
 Makefile                commandes de dev (build, test, run-identity, run-server…)
 ```
 
@@ -416,6 +420,21 @@ Messages : `QUAREL_MAX_UPLOAD_MB` (25), `QUAREL_LINK_PREVIEWS` (`on`). Limites s
   - **Écrans d'arrivée** : règles (`rules_not_accepted`), téléphone (`phone_not_verified`), exclusion temporaire (lecture seule), serveur retiré (expulsion, bannissement).
   - **Pas encore** : fils (affichés, pas créés), épingles, recherche, réglages de notification, modération et administration (étape 6), vocal (étape 3).
 
+## Administration web et réglages (installation légère)
+
+- **Réglages** (`internal/settings`) : chaque variable `QUAREL_*` est lue par `settings.Get` = variable d'environnement si non vide, sinon `settings.json` du dossier de données (écrit en 0600 par la page, valeurs vides retirées). `QUAREL_DATA_DIR` vient seulement de l'environnement (défaut `./data`, `settings.Default` changé par la version Windows). **Ne jamais lire `os.Getenv` pour un réglage** : passer par `settings.Get`.
+- **Superviseur** (`adminui.Supervisor`) : `main` démarre la page d'administration, puis boucle : charger `settings.json` → `serve(ctx, ready)` → en cas d'erreur, état « erreur » affiché et attente de nouveaux réglages ; `Restart()` annule le contexte et relance. `serve` doit **tout libérer** à l'annulation (écoute, LiveKit, UPnP, base, TURN) : les tâches de fond sont suivies par un `sync.WaitGroup`. `Pause()` arrête le service pour une restauration.
+- **Page d'administration** (`internal/adminui`, port `QUAREL_ADMIN_ADDR` : `:8091` communautaire, `:8081` Identity ; `off` pour la couper ; port occupé → service sans page) :
+  - accès **réseau local seulement** (boucle locale, RFC 1918, ULA, lien local ; `QUAREL_ADMIN_PUBLIC=1` pour lever) ; jamais ouverte par l'UPnP ;
+  - **premier mot de passe** : libre depuis la machine elle-même, sinon **code d'installation** (10 caractères, affiché dans le journal) ; `admin.json` (argon2id) ; oublié → supprimer `admin.json` ;
+  - sessions en mémoire (cookie `HttpOnly`, `SameSite=Strict`, 12 h) ; écritures : en-tête `X-Quarel-Admin: 1` obligatoire et `Origin` identique (anti-CSRF) ; 10 échecs / 15 min par IP ; CSP stricte (aucun style ni script en ligne) ;
+  - API : `/api/session|setup|login|logout|password`, `/api/status` (état + `Status(r)` du service), `/api/settings` (champs décrits par le service : `Field{Key, Label, Help, Group, Kind: text|number|bool|select|secret|list, ShowIf}` ; secrets jamais renvoyés, vide = inchangé, `null` = défaut ; **validation avant d'enregistrer, retour arrière si invalide**, puis redémarrage), `/api/restart`, `/api/logs`, `/api/backup` (archive), `/api/restore` (arrêt, restauration forcée, redémarrage), `/api/x/…` (propre au service).
+  - **Communautaire** : tableau de bord (nom, identifiant, adresse, membres, vocal, UPnP), **lien propriétaire** `quarel://hôte:port/<code>?sid=…&claim=1` (l'application le reconnaît : connexion avec `claim`), `POST /api/x/rename`.
+  - **Identity** : tableau de bord (nom public, comptes, SMTP, relais), `GET /api/x/accounts?q=`, `POST /api/x/accounts/{id}/disable|enable {reason}`, `GET /api/x/log`, `POST /api/x/rotate-key` (puis redémarrage).
+- **Sauvegardes** : `settings.json` inclus ; `admin.json` jamais archivé et laissé en place par une restauration (`backup.Spec.Keep`).
+- **Version** : `backup.Release` fixé à la construction (`make build`, `--build-arg VERSION` pour Docker), sinon révision Git.
+- Les **messages d'erreur de configuration sont en français** (affichés dans la page).
+
 ## Exploitation : sauvegarde, restauration, mises à jour (P1 bloc 7)
 
 - **`quarel-server backup <fichier|->`** et **`quarel-identity backup <fichier|->`** (service en marche) : archive `.tar.gz` = manifeste `quarel-backup.json` (`{format, kind, created_at, schema_version, identity, files}`) + **copie cohérente de la base** (`VACUUM INTO`, sans arrêter le service) + clés (`server.key` ; `signing.key`, `retired-keys.json`, `turn.secret`) + dossiers (`attachments`, `acme` ; `dm-files`, `acme`). Jamais d'écrasement d'un fichier existant. `-` = sortie standard (Docker : `docker exec … backup - > f.tar.gz`).
@@ -430,8 +449,8 @@ make build            # binaires dans bin/ (dont le bot d'exemple pingbot)
 make test             # tests (go test ./...)
 make test-race        # tests avec détecteur de concurrence (gcc requis, installé)
 make vet
-make run-identity     # service Identity local sur :8080, données dans ./data/identity
-make run-server       # serveur communautaire local sur https://localhost:8090 (auto-signé, UPnP off), données dans ./data/server
+make run-identity     # service Identity local sur :8080 (administration :8081), données dans ./data/identity
+make run-server       # serveur communautaire local sur https://localhost:8090 (auto-signé, UPnP off ; administration :8091), données dans ./data/server
 make docker-identity  # image quarel-identity
 make docker-server    # image quarel-server
 make e2e-voice        # vocal de bout en bout avec 2 navigateurs : audio, caméra, écran, droits, modération (18 vérifications)

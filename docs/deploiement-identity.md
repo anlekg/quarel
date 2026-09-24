@@ -24,6 +24,20 @@ Le certificat HTTPS est obtenu automatiquement au premier accès.
 
 **Derrière un proxy HTTPS existant** (Caddy, nginx, Traefik…) : utiliser `docker compose -f compose.proxy.yaml up -d --build`. Le service écoute alors en HTTP sur `127.0.0.1:8080` ; le proxy doit transmettre `https://<domaine>` vers cette adresse, WebSockets compris (`/v1/gateway`), et `X-Forwarded-For`.
 
+### Page d'administration
+
+Le service a une page d'administration sur le port **8081**, publiée seulement sur la machine elle-même (`127.0.0.1:8081`, et elle refuse toute adresse Internet). Sur un serveur loué, passez par un tunnel SSH :
+
+```sh
+ssh -L 8081:127.0.0.1:8081 utilisateur@mon-serveur    # puis ouvrir http://localhost:8081
+```
+
+Au premier passage, choisissez le mot de passe administrateur. On y trouve :
+- **Tableau de bord** : nom public, nombre de comptes, certificat, emails, relais d'appels, avec des alertes (nom public encore « localhost », pas de SMTP…) ;
+- **Réglages** : tout ce que contient `.env`, modifiable sans ligne de commande. Une variable présente dans `.env` reste prioritaire (le réglage est alors verrouillé dans la page) : vous pouvez vider `.env` et tout régler dans la page ;
+- **Comptes** : rechercher, désactiver ou réactiver un compte (raison obligatoire, consignée), journal de l'opérateur, changement de la clé de signature ;
+- **Sauvegardes** et **Journal**.
+
 Pour que des serveurs communautaires acceptent vos comptes, leurs hébergeurs ajoutent votre domaine : `QUAREL_TRUSTED_ISSUERS=identity.quarel.app,identity.mon-asso.fr`.
 
 ## Relais d'appels

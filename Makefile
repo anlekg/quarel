@@ -2,8 +2,11 @@ export PATH := $(HOME)/.local/go/bin:$(HOME)/.local/bin:$(PATH)
 
 .PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages e2e-moderation e2e-accounts e2e-dm-groups e2e-calls e2e-ops client-install client-dev client-build client-test e2e-client clean
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -X github.com/anlekg/quarel/internal/backup.Release=$(VERSION)
+
 build:
-	go build -o bin/ ./cmd/... ./examples/...
+	go build -ldflags "$(LDFLAGS)" -o bin/ ./cmd/... ./examples/...
 
 test:
 	go test -timeout 120s ./...
@@ -26,10 +29,10 @@ run-server: build
 	QUAREL_TRUSTED_ISSUERS=localhost:8080 QUAREL_DATA_DIR=./data/server QUAREL_UPNP=off QUAREL_VOICE_PUBLIC_IP=local ./bin/quarel-server
 
 docker-identity:
-	docker build -f Dockerfile.identity -t quarel-identity .
+	docker build --build-arg VERSION=$(VERSION) -f Dockerfile.identity -t quarel-identity .
 
 docker-server:
-	docker build -f Dockerfile.server -t quarel-server .
+	docker build --build-arg VERSION=$(VERSION) -f Dockerfile.server -t quarel-server .
 
 clean:
 	rm -rf bin

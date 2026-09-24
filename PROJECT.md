@@ -430,3 +430,28 @@ Livré : rejoindre un serveur par lien d'invitation (aperçu « Serveur authenti
 | 2026-09-24 | Certificats auto-signés : **contrôle préalable par le processus principal d'Electron**, puis acceptation par Chromium du seul certificat lié à l'identité du lien | Chromium garde en mémoire tout refus de certificat jusqu'au redémarrage : sans ce contrôle, un lien erroné bloquerait le bon. Aucun serveur n'est contacté par l'interface avant d'avoir prouvé son identité. |
 | 2026-09-24 | **Client web : serveurs à certificat reconnu seulement** (nom de domaine, Let's Encrypt) | Un navigateur ne sait pas vérifier la liaison d'un certificat auto-signé. Les serveurs domestiques sans nom de domaine se rejoignent avec l'application. À reprendre à l'étape « version web » (options possibles : nom de domaine automatique, relais). |
 | 2026-09-24 | Aperçus de liens affichés **sans leur image** | Le serveur ne télécharge jamais l'image (anti-SSRF) ; la charger depuis le client révélerait l'adresse IP de chaque lecteur au site cité. |
+
+### Installation légère : interfaces d'administration et Windows (2026-09-24)
+
+Le CP rappelle l'objectif de départ : **déploiement et usage les plus légers possible**, sources disponibles pour tout reconstruire soi-même. Constat : Docker existait pour les deux serveurs, mais configuré seulement par variables d'environnement ; le `.exe` n'était prévu qu'en P2 pour le serveur communautaire, sans interface. Le CP fait passer ce chantier **avant la suite du client**, puis la mise en ligne des deux serveurs de test sur `quarel.app`.
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-09-24 | *(choix du CP)* Les **deux serveurs** (identité et communautaire) ont une **version Windows** et une **version Docker**, chacune avec une **interface de configuration** | Installation et administration sans ligne de commande. |
+| 2026-09-24 | *(choix du CP)* Windows : **icône près de l'horloge + interface dans le navigateur** ; **installateur** (démarrage avec Windows, désinstallation propre) | Même interface web que Docker : un seul outil à maintenir, `.exe` léger. |
+| 2026-09-24 | *(choix du CP)* Docker : interface d'administration **accessible depuis le réseau local, protégée par un mot de passe** choisi au premier lancement ; jamais ouverte vers Internet par l'UPnP | Serveurs souvent sans écran. |
+| 2026-09-24 | Réglages dans un **fichier du dossier de données** (`settings.json`) modifiable par l'interface ; **les variables d'environnement restent prioritaires** (affichées comme verrouillées) | Compatible avec les déploiements existants et Docker Compose. |
+| 2026-09-24 | Le programme **démarre toujours son interface d'administration**, même avec une configuration invalide, et **redémarre le service** en interne pour appliquer un changement | On peut toujours réparer depuis l'interface, sans ligne de commande. |
+| 2026-09-24 | Interface d'administration en **HTML/JS simple intégrés au binaire Go** (pas de Node) | Reconstruire les serveurs ne demande que Go. |
+
+Ordre : **A.** interfaces d'administration (les deux serveurs, Docker) → **B.** Windows (icône, installateur, LiveKit pour Windows) → **C.** mise en ligne sur `quarel.app` avec le CP.
+
+**Bloc A livré (2026-09-24)** : réglages dans `settings.json` (variables d'environnement prioritaires), superviseur qui redémarre le service à chaud et le garde réparable depuis la page, page d'administration commune (premier mot de passe avec code d'installation à distance, tableau de bord, réglages validés avant enregistrement, sauvegarde et restauration, journal, mot de passe) ; communautaire : lien propriétaire reconnu par l'application, renommage ; Identity : comptes (désactivation/réactivation avec raison), journal de l'opérateur, rotation de clé. Messages de configuration traduits en français. Docker : port 8091 (communautaire) / 8081 (Identity, publié sur 127.0.0.1 seulement), `deploy/server/compose.yaml`. Tests : `internal/adminui` (mot de passe, code d'installation, anti-CSRF, réseau local seulement, réglages refusés et retour arrière, secrets, superviseur) ; tous les scénarios de bout en bout existants inchangés.
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-09-24 | Page d'administration **refusée à toute adresse Internet** (boucle locale, réseau privé, lien local seulement), en plus du mot de passe | « Réseau local » choisi par le CP ; protège aussi un serveur loué dont le port serait publié par erreur. Levée possible (`QUAREL_ADMIN_PUBLIC=1`). |
+| 2026-09-24 | Premier mot de passe : libre depuis la machine elle-même, **code d'installation** (affiché dans le journal) depuis un autre appareil | Sinon, n'importe qui sur le réseau local pourrait choisir le mot de passe avant l'hébergeur. |
+| 2026-09-24 | Page d'administration en **HTTP** sur le réseau local | Pas d'avertissement de certificat pour l'hébergeur. Risque accepté : le mot de passe circule en clair sur le réseau local (Wi-Fi chiffré en pratique). À revoir si le CP le souhaite. |
+| 2026-09-24 | Identity en Docker : page publiée sur **127.0.0.1** seulement, accès par tunnel SSH | Un service d'identité tourne en général sur un serveur loué, sans réseau local. |
+| 2026-09-24 | **Lien propriétaire** `quarel://…?sid=…&claim=1` affiché dans la page | L'hébergeur devient propriétaire depuis l'application en collant un lien, sans ligne de commande. |

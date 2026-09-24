@@ -20,6 +20,9 @@ services:
       QUAREL_TLS: acme
     ports:
       - "443:8443"
+      # Administration page: this machine only (on a rented server, use an
+      # SSH tunnel: ssh -L 8081:127.0.0.1:8081 <server>, then http://localhost:8081).
+      - "127.0.0.1:8081:8081"
       # Call relay (TURN), when QUAREL_TURN=on: signalling port and relay range.
       - "3478:3478/udp"
       - "49160-49200:49160-49200/udp"

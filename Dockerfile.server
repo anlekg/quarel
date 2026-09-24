@@ -5,7 +5,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/quarel-server ./cmd/quarel-server \
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/anlekg/quarel/internal/backup.Release=${VERSION}" -o /out/quarel-server ./cmd/quarel-server \
  && mkdir -p /out/data
 
 # Official LiveKit SFU binary (statically linked), pinned.
@@ -18,5 +19,6 @@ COPY --from=build --chown=65532:65532 /out/data /data
 ENV QUAREL_ADDR=:8090 QUAREL_DATA_DIR=/data QUAREL_LIVEKIT_BIN=/livekit-server
 VOLUME /data
 # 8090/tcp: API, real-time gateway, voice signalling (/lk). 7881/tcp + 7882/udp: voice media.
-EXPOSE 8090 7881 7882/udp
+# 8091/tcp: administration page (local network only, password; never opened on the router).
+EXPOSE 8090 8091 7881 7882/udp
 ENTRYPOINT ["/quarel-server"]

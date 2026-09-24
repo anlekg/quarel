@@ -89,6 +89,9 @@ type Admin struct {
 	now func() time.Time
 }
 
+// Admin returns the operator tools on the running service's database.
+func (s *Server) Admin() *Admin { return NewAdmin(s.db) }
+
 // NewAdmin opens the tools on an Identity database.
 func NewAdmin(db *sql.DB) *Admin { return &Admin{db: db, now: time.Now} }
 
@@ -102,6 +105,52 @@ func (a *Admin) FindUser(ctx context.Context, who string) (id, pseudo string, di
 		return "", "", false, fmt.Errorf("aucun compte ne correspond à %q", who)
 	}
 	return id, pseudo, at.Valid, err
+}
+
+// Account is a row of the operator's account search.
+type Account struct {
+	ID         string     `json:"id"`
+	Pseudo     string     `json:"pseudo"`
+	Email      string     `json:"email"`
+	CreatedAt  time.Time  `json:"created_at"`
+	DisabledAt *time.Time `json:"disabled_at"`
+}
+
+// Search finds accounts by id, email or pseudo (prefix, case-insensitive);
+// an empty query lists the most recent ones.
+func (a *Admin) Search(ctx context.Context, q string, limit int) ([]Account, error) {
+	q = strings.ToLower(strings.TrimSpace(q))
+	like := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q) + "%"
+	rows, err := a.db.QueryContext(ctx, `
+		SELECT id, pseudo, email, created_at, disabled_at FROM users
+		WHERE ? = '' OR id = ? OR email LIKE ? ESCAPE '\' OR pseudo_norm LIKE ? ESCAPE '\'
+		ORDER BY created_at DESC LIMIT ?`, q, q, like, like, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Account{}
+	for rows.Next() {
+		var acc Account
+		var created int64
+		var disabled sql.NullInt64
+		if err := rows.Scan(&acc.ID, &acc.Pseudo, &acc.Email, &created, &disabled); err != nil {
+			return nil, err
+		}
+		acc.CreatedAt = time.Unix(created, 0).UTC()
+		if disabled.Valid {
+			t := time.Unix(disabled.Int64, 0).UTC()
+			acc.DisabledAt = &t
+		}
+		out = append(out, acc)
+	}
+	return out, rows.Err()
+}
+
+// Counts returns the number of accounts and of disabled ones.
+func (a *Admin) Counts(ctx context.Context) (total, disabled int, err error) {
+	err = a.db.QueryRowContext(ctx, `SELECT COUNT(*), COUNT(disabled_at) FROM users`).Scan(&total, &disabled)
+	return
 }
 
 func (a *Admin) log(ctx context.Context, q interface {

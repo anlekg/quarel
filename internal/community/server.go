@@ -220,6 +220,41 @@ func (s *Server) PrepareClaim(ctx context.Context) (string, error) {
 	return code, setSetting(ctx, s.db, "claim_code_hash", secret.SHA256Hex(code))
 }
 
+// Overview is what the host's administration interface shows.
+type Overview struct {
+	Name     string
+	Members  int
+	HasOwner bool
+}
+
+// Overview returns the server name, member count and whether it has an owner.
+func (s *Server) Overview(ctx context.Context) (Overview, error) {
+	info, err := s.info(ctx)
+	if err != nil {
+		return Overview{}, err
+	}
+	var owners int
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM members WHERE is_owner = 1`).Scan(&owners)
+	return Overview{Name: info.Name, Members: info.MemberCount, HasOwner: owners > 0}, err
+}
+
+// SetName renames the server (from the host's administration interface).
+func (s *Server) SetName(ctx context.Context, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" || len([]rune(name)) > 100 {
+		return errf(http.StatusBadRequest, "invalid_name", "name must be 1-100 characters")
+	}
+	if err := setSetting(ctx, s.db, "name", name); err != nil {
+		return err
+	}
+	info, err := s.info(ctx)
+	if err != nil {
+		return err
+	}
+	s.hub.Broadcast("SERVER_UPDATE", info)
+	return nil
+}
+
 // --- HTTP ---
 
 // Handler returns the HTTP routes.

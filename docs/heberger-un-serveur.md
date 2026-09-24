@@ -7,23 +7,38 @@ Un serveur communautaire, c'est votre « serveur Discord » à vous : salons tex
 Il faut Docker. Depuis une copie du dépôt :
 
 ```sh
-git clone https://github.com/anlekg/quarel.git && cd quarel
-docker build -f Dockerfile.server -t quarel-server .
-docker run -d --name quarel --restart unless-stopped --network host \
-  -v quarel-data:/data -e QUAREL_SERVER_NAME="Mon serveur" quarel-server
-docker logs quarel
+git clone https://github.com/anlekg/quarel.git && cd quarel/deploy/server
+docker compose up -d --build
+docker compose logs server     # affiche l'adresse de l'administration et le code d'installation
 ```
 
-Le journal affiche un **code de revendication** : la première personne qui l'utilise (`quarelctl claim <adresse> <code>`, puis avec le vrai client) devient propriétaire du serveur.
+(Sans Compose : `docker build -f Dockerfile.server -t quarel-server .` puis `docker run -d --name quarel --restart unless-stopped --network host -v quarel-data:/data quarel-server`.)
 
-- `--network host` permet l'**ouverture automatique des ports** de la box (UPnP). Sans UPnP, ouvrez à la main vers cette machine : **8090/tcp** (application et connexions), **7882/udp** et **7881/tcp** (voix). `quarelctl network` diagnostique la joignabilité.
-- **HTTPS** est actif d'office avec un certificat lié à l'identité du serveur : les clients le vérifient sans autorité ni nom de domaine. Avec un nom de domaine : `-e QUAREL_TLS=acme -e QUAREL_TLS_DOMAIN=… -e QUAREL_TLS_EMAIL=…` (le port public 443 doit mener au 8090).
-- Comptes acceptés : ceux de `identity.quarel.app` par défaut ; ajoutez d'autres services avec `-e QUAREL_TRUSTED_ISSUERS=identity.quarel.app,identity.mon-asso.fr`.
-- Toutes les options sont décrites dans `CLAUDE.md` (variables `QUAREL_*`).
+Une version **Windows** (installateur, icône près de l'horloge) est en préparation.
+
+### Page d'administration
+
+Ouvrez **`http://<adresse de la machine>:8091`** depuis n'importe quel appareil du réseau local (l'adresse est affichée dans le journal).
+
+1. **Premier passage** : choisissez le mot de passe administrateur. Depuis un autre appareil que la machine elle-même, le **code d'installation** affiché dans le journal est demandé (personne d'autre sur le réseau ne peut prendre la main avant vous).
+2. **Tableau de bord** : état du service, adresse, identifiant, membres, vocal, ports de la box. Tant que le serveur n'a pas de propriétaire, il affiche un **lien propriétaire** : dans l'application Quarel, « Rejoindre un serveur », collez-le : vous devenez propriétaire. Bouton « Renommer le serveur ».
+3. **Réglages** : services d'identité acceptés, réseau et UPnP, certificat HTTPS, vocal, taille des fichiers, aperçus de liens, SMS. **Enregistrer** vérifie les réglages (refusés avec explication s'ils sont incohérents, rien n'est changé) puis redémarre le service en quelques secondes.
+4. **Sauvegardes** : télécharger une archive complète, ou en restaurer une (les données actuelles sont mises de côté, jamais effacées).
+5. **Journal** : les derniers messages du serveur.
+
+La page n'est **jamais ouverte vers Internet** : l'UPnP ne l'ouvre pas et elle refuse toute adresse qui ne vient pas du réseau local. Mot de passe oublié : arrêtez le serveur, supprimez `admin.json` dans le volume de données, relancez.
+
+Les réglages sont enregistrés dans `settings.json` (volume de données). Une variable d'environnement `QUAREL_*` (option `-e` de Docker, fichier Compose) reste prioritaire : le réglage correspondant apparaît alors verrouillé dans la page. `QUAREL_ADMIN_ADDR` change l'adresse de la page (`off` pour la couper).
+
+### Bon à savoir
+
+- `network_mode: host` (`--network host`) permet l'**ouverture automatique des ports** de la box (UPnP). Sans UPnP, ouvrez à la main vers cette machine : **8090/tcp** (application et connexions), **7882/udp** et **7881/tcp** (voix) ; le tableau de bord les rappelle.
+- **HTTPS** est actif d'office avec un certificat lié à l'identité du serveur : l'application le vérifie sans autorité ni nom de domaine. Avec un nom de domaine, choisissez Let's Encrypt dans les réglages (le port public 443 doit mener au 8090). Le **client web** (navigateur) ne peut joindre que des serveurs avec un nom de domaine et Let's Encrypt.
+- Comptes acceptés : ceux de `identity.quarel.app` par défaut ; ajoutez d'autres services dans les réglages.
 
 ## Exiger un numéro de téléphone (facultatif)
 
-Pour limiter les faux comptes et les retours de bannis, un serveur peut exiger un numéro vérifié par SMS (`quarelctl srv-set require_phone=true`). Le serveur ne garde jamais le numéro, seulement une empreinte. Choisissez comment les SMS partent :
+Pour limiter les faux comptes et les retours de bannis, un serveur peut exiger un numéro vérifié par SMS (`quarelctl srv-set require_phone=true`). Le serveur ne garde jamais le numéro, seulement une empreinte. Choisissez comment les SMS partent (page d'administration, « Réglages », « Vérification du téléphone », ou variables ci-dessous) :
 
 - **Webhook (recommandé)** : le serveur envoie `{phone, code, text}` à une adresse de votre choix, qui fait partir le SMS. Vous pouvez y brancher votre propre téléphone Android (application « passerelle SMS »), un modem GSM ou n'importe quel fournisseur : aucun tiers imposé.
   `-e QUAREL_PHONE_VERIFY=webhook -e QUAREL_PHONE_WEBHOOK_URL=https://… -e QUAREL_PHONE_WEBHOOK_SECRET=…`
@@ -35,6 +50,8 @@ Pour limiter les faux comptes et les retours de bannis, un serveur peut exiger u
 Les SMS sont à vos frais selon le fournisseur.
 
 ## Sauvegarder
+
+Le plus simple : page d'administration, **Sauvegardes**, « Télécharger une sauvegarde ». En ligne de commande :
 
 La sauvegarde se fait **serveur en marche** ; elle contient la base (messages, membres, rôles…), la **clé du serveur** (son identité : sans elle, les membres verraient un autre serveur) et les fichiers envoyés :
 
