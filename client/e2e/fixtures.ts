@@ -161,6 +161,18 @@ export class Ctl {
     }
   }
 
+  // A long-running command (dm-listen…) in the background; its output accumulates in out().
+  listen(profile: string, ...args: string[]) {
+    const p = spawn(join(repo, 'bin', 'quarelctl'), ['-s', this.identity.url, '-p', profile, ...args], {
+      cwd: this.dir,
+      env: { ...process.env, XDG_CONFIG_HOME: join(this.dir, 'cfg'), QUAREL_PASSWORD: 'motdepasse-solide' },
+    })
+    let out = ''
+    p.stdout.on('data', (d) => (out += d))
+    p.stderr.on('data', (d) => (out += d))
+    return { out: () => out, stop: () => p.kill() }
+  }
+
   // run() blocks the event loop: logs are read only once it is free again.
   async account(name: string) {
     this.run(name, 'register', name + '@example.com', name)

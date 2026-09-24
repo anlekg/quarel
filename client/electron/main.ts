@@ -3,7 +3,7 @@
 import { app, BrowserWindow, desktopCapturer, ipcMain, protocol, safeStorage, shell, session } from 'electron'
 import { hostname } from 'node:os'
 import { extname, join, normalize, sep } from 'node:path'
-import { readFile, writeFile, rename, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, rename, mkdir, rm } from 'node:fs/promises'
 import { boundServerID, checkServer } from './tlsbind'
 
 const devURL = process.env.QUAREL_DEV_URL
@@ -97,7 +97,7 @@ async function saveSecrets() {
 }
 
 function checkKey(key: unknown): string {
-  if (typeof key !== 'string' || !/^[a-z0-9:._-]{1,128}$/i.test(key)) throw new Error('invalid secret key')
+  if (typeof key !== 'string' || !/^[a-z0-9:._-]{1,128}$/i.test(key) || key.startsWith('.')) throw new Error('invalid secret key')
   return key
 }
 
@@ -151,6 +151,39 @@ ipcMain.handle('vault:set', async (e, key, value) => {
   const path = join(vaultDir(), checkKey(key))
   await writeFile(path + '.tmp', safeStorage.encryptString(value), { mode: 0o600 })
   await rename(path + '.tmp', path)
+})
+
+// --- files of private conversations: ciphertexts (end-to-end encrypted,
+// their keys live in the vault), kept to be served to other devices ---
+
+const filesDir = () => join(app.getPath('userData'), 'files')
+
+function checkFileId(id: unknown): string {
+  if (typeof id !== 'string' || !/^[a-z0-9]{8,64}$/.test(id)) throw new Error('invalid file id')
+  return id
+}
+
+ipcMain.handle('files:get', async (e, id) => {
+  fromApp(e)
+  try {
+    return new Uint8Array(await readFile(join(filesDir(), checkFileId(id))))
+  } catch {
+    return null
+  }
+})
+
+ipcMain.handle('files:put', async (e, id, data) => {
+  fromApp(e)
+  if (!(data instanceof Uint8Array)) throw new Error('file data must be bytes')
+  await mkdir(filesDir(), { recursive: true, mode: 0o700 })
+  const path = join(filesDir(), checkFileId(id))
+  await writeFile(path + '.tmp', data, { mode: 0o600 })
+  await rename(path + '.tmp', path)
+})
+
+ipcMain.handle('files:delete', async (e, id) => {
+  fromApp(e)
+  await rm(join(filesDir(), checkFileId(id)), { force: true })
 })
 
 ipcMain.handle('app:info', (e) => {

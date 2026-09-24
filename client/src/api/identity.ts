@@ -1,5 +1,5 @@
 // Client for a Quarel Identity service (accounts, sessions).
-import { request } from './http'
+import { fetchBlob, request } from './http'
 
 export interface User {
   id: string
@@ -271,6 +271,29 @@ export class IdentityClient {
 
   sessions() {
     return this.call<SessionInfo[]>('GET', '/v1/me/sessions')
+  }
+
+  iceServers() {
+    return this.call<{ ice_servers: { urls: string[]; username?: string; credential?: string }[]; relay: boolean }>('GET', '/v1/calls/ice-servers')
+  }
+
+  // Encrypted server copy of a conversation file, for the devices not served peer to peer.
+  uploadDMFile(convId: string, data: Uint8Array, devices: string[]) {
+    return this.call<{ id: string; size: number; pending_devices: number; expires_at: string }>(
+      'POST', '/v1/dms/' + convId + '/files?for=' + encodeURIComponent(devices.join(',')), data)
+  }
+
+  async downloadDMFile(convId: string, fileId: string): Promise<Uint8Array> {
+    const blob = await fetchBlob(this.base + '/v1/dms/' + convId + '/files/' + encodeURIComponent(fileId), this.token ?? '')
+    return new Uint8Array(await blob.arrayBuffer())
+  }
+
+  ackDMFile(convId: string, fileId: string) {
+    return this.call<void>('POST', '/v1/dms/' + convId + '/files/' + encodeURIComponent(fileId) + '/ack')
+  }
+
+  deleteDMFile(convId: string, fileId: string) {
+    return this.call<void>('DELETE', '/v1/dms/' + convId + '/files/' + encodeURIComponent(fileId))
   }
 
   getBackup() {

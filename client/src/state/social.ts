@@ -4,7 +4,8 @@ import { useSyncExternalStore } from 'react'
 import type { Conversation, FriendLists, InboxItem, PublicUser } from '../api/identity'
 import { ApiError } from '../api/http'
 import { loadCrypto } from '../crypto'
-import { E2E, type BackupStatus, type E2EEvent } from '../e2e/engine'
+import { E2E, type BackupStatus, type E2EEvent, type FileRef } from '../e2e/engine'
+import { Files, type SendResult } from '../e2e/files'
 import { verificationCode } from '../e2e/keys'
 import { identityClient, signOut, type Account } from './account'
 
@@ -32,6 +33,7 @@ const empty: SocialState = {
 
 let state: SocialState = empty
 let e2e: E2E | null = null
+let files: Files | null = null
 let account: Account | null = null
 let ws: WebSocket | null = null
 let closed = true
@@ -80,6 +82,7 @@ export async function openSocial(a: Account) {
     const c = await loadCrypto()
     e2e = await E2E.open(c, api(), a.user.id, a.user.pseudo, a.sessionId)
     e2e.on(onEngine)
+    files = new Files(e2e, api(), (convId) => state.conversations.find((c) => c.id === convId)?.members.map((m) => m.id))
     set({ validated: e2e.validated, code: verificationCode(e2e.ed25519) })
     await Promise.all([refreshFriends(), refreshConversations(), refreshDevices(), refreshBackup()])
     set({ status: 'ready' })
@@ -95,6 +98,8 @@ export function closeSocial() {
   clearTimeout(retryTimer)
   ws?.close()
   ws = null
+  files?.close()
+  files = null
   e2e = null
   account = null
 }
@@ -258,7 +263,18 @@ export async function editText(c: Conversation, target: number, text: string) {
 }
 
 export async function deleteMessage(c: Conversation, target: number) {
-  return e2e!.send(c.id, othersOf(c), { type: 'delete', target, text: '' })
+  const file = e2e!.history(c.id).find((m) => m.event_id === target)?.file
+  const res = await e2e!.send(c.id, othersOf(c), { type: 'delete', target, text: '' })
+  if (file) await files?.forget(c.id, file)
+  return res
+}
+
+export function sendFile(c: Conversation, file: File, text: string): Promise<SendResult> {
+  return files!.send(c.id, othersOf(c), file, text)
+}
+
+export function openFile(c: Conversation, ref: FileRef): Promise<Uint8Array> {
+  return files!.open(c.id, ref)
 }
 
 let lastTyping = 0

@@ -120,6 +120,19 @@ export interface MegolmPlain {
   sent_at: string
 }
 
+// Olm "file" message (cmd/quarelctl/filexfer.go): offer | fetch | answer.
+export interface FileSignal {
+  action: 'offer' | 'fetch' | 'answer'
+  transfer_id?: string
+  conv_id: string
+  file_id: string
+  size?: number
+  sdp?: string
+  from_user: string // set on reception
+  from_device: string
+  at: number // reception (ms)
+}
+
 interface RoomKey {
   dm_id: string
   session_id: string
@@ -137,6 +150,9 @@ export type E2EEvent =
   | { kind: 'history'; dmId: string }
   | { kind: 'approved' } // this device was validated (by another one, or restored)
   | { kind: 'backup' } // backup state changed
+  | { kind: 'file_signal'; signal: FileSignal } // peer-to-peer file transfer signalling, from a trusted device
+  | { kind: 'file_received'; dmId: string; ref: FileRef } // a file event was decrypted
+  | { kind: 'file_gone'; dmId: string; ref: FileRef } // a message with a file was deleted
   | { kind: 'warning'; text: string }
 
 export class E2E {
@@ -453,13 +469,17 @@ export class E2E {
         this.emit({ kind: 'warning', text: this.name(p.sender_user) + ' a tenté de modifier le message d’une autre personne : ignoré.' })
         return false
       }
-      if (p.type === 'delete') list.splice(i, 1)
+      if (p.type === 'delete') {
+        const [gone] = list.splice(i, 1)
+        if (gone.file) this.emit({ kind: 'file_gone', dmId: p.dm_id, ref: gone.file })
+      }
       else list[i] = { ...list[i], text: p.text, edited: true }
       this.st.history[p.dm_id] = list
       return true
     }
     if (list.some((h) => h.event_id === eventId)) return false
     list.push({ event_id: eventId, from: p.sender_user, text: p.text, at: p.sent_at, ...(p.file ? { file: p.file } : {}) })
+    if (p.file && p.sender_device !== this.st.device_id) this.emit({ kind: 'file_received', dmId: p.dm_id, ref: p.file })
     list.sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
     this.st.history[p.dm_id] = list
     return true
@@ -514,7 +534,7 @@ export class E2E {
     try {
       if (it.kind === 'to_device') {
         const { plain, sender, master } = await this.openSecret(it)
-        this.handleSecret(plain, sender, master)
+        this.handleSecret(plain, sender, master, it)
       } else if (it.kind === 'dm') {
         const p = this.openDM(it)
         if (p === 'no_key') {
@@ -536,7 +556,7 @@ export class E2E {
     }
   }
 
-  private handleSecret(plain: OlmPlain, sender: DeviceInfo, master: string) {
+  private handleSecret(plain: OlmPlain, sender: DeviceInfo, master: string, it: InboxItem) {
     let trusted = false
     try {
       trusted = !!master && (this.pin(plain.sender_user, master), true) && this.deviceTrusted(plain.sender_user, sender, master)
@@ -580,7 +600,18 @@ export class E2E {
         this.mergeContent(h.history ?? {}, inbound)
         return
       }
-      // "file" and "call" signalling: steps 4c and 5.
+      case 'file': {
+        if (!trusted) {
+          this.emit({ kind: 'warning', text: 'Transfert de fichier refusé : l’appareil « ' + sender.device_name + ' » de ' + this.name(plain.sender_user) + ' n’est pas validé.' })
+          return
+        }
+        const at = Date.parse(it.created_at) || Date.now()
+        if (Date.now() - at > 2 * 60_000) return // stale: the other side gave up
+        const sig = plain.content as FileSignal
+        this.emit({ kind: 'file_signal', signal: { ...sig, from_user: plain.sender_user, from_device: plain.sender_device, at } })
+        return
+      }
+      // "call" signalling: step 5.
     }
   }
 
@@ -642,6 +673,26 @@ export class E2E {
       }
     }
     return out
+  }
+
+  // --- files ---
+
+  // Trusted devices of these users, except this one.
+  devicesOf(userIds: string[]) {
+    return this.run(async () => {
+      const out: DeviceInfo[] = []
+      for (const u of new Set(userIds)) for (const d of await this.trusted(u)) if (d.device_id !== this.st.device_id) out.push(d)
+      return out
+    })
+  }
+
+  sendFileSignal(devs: DeviceInfo[], signal: Omit<FileSignal, 'from_user' | 'from_device' | 'at'>) {
+    return this.run(() => this.sendSecret(devs, 'file', signal))
+  }
+
+  // A trusted device of a user, by id (to answer a request).
+  async trustedDevice(userId: string, deviceId: string) {
+    return (await this.run(() => this.trusted(userId))).find((d) => d.device_id === deviceId)
   }
 
   // --- device approval ---

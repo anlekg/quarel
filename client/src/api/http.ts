@@ -21,14 +21,16 @@ export async function request<T>(base: string, method: string, path: string, opt
   const headers: Record<string, string> = {}
   if (opts.token) headers.Authorization = 'Bearer ' + opts.token
   const form = opts.body instanceof FormData
-  if (opts.body !== undefined && !form) headers['Content-Type'] = 'application/json'
+  const raw = opts.body instanceof Uint8Array || opts.body instanceof Blob
+  if (raw) headers['Content-Type'] = 'application/octet-stream'
+  else if (opts.body !== undefined && !form) headers['Content-Type'] = 'application/json'
   let res: Response
   try {
     res = await fetch(base + path, {
       method,
       headers,
-      body: opts.body === undefined ? undefined : form ? (opts.body as FormData) : JSON.stringify(opts.body),
-      signal: opts.signal ?? AbortSignal.timeout(form ? 300_000 : 20_000),
+      body: opts.body === undefined ? undefined : form || raw ? (opts.body as BodyInit) : JSON.stringify(opts.body),
+      signal: opts.signal ?? AbortSignal.timeout(form || raw ? 600_000 : 20_000),
     })
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e

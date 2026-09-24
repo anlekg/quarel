@@ -4,15 +4,16 @@ import type { Conversation, PublicUser } from '../api/identity'
 import { Avatar } from '../components/Avatar'
 import { MessageContent, type MentionNames } from '../components/MessageContent'
 import { Alert, Dialog, Field } from '../components/ui'
-import { Chat, Lock, Pencil, Plus, Send, Trash, Users } from '../components/icons'
+import { Chat, Download, FileIcon, Lock, Paperclip, Pencil, Plus, Send, Trash, Users } from '../components/icons'
 import { errorMessage } from '../lib/errors'
-import { formatDay, formatFull, formatStamp, formatTime, sameDay } from '../lib/format'
+import { formatDay, formatFull, formatSize, formatStamp, formatTime, sameDay } from '../lib/format'
 import { prefs } from '../platform'
 import { SecurityBanner } from './Security'
 import type { Account } from '../state/account'
-import type { HistMsg } from '../e2e/engine'
+import type { FileRef, HistMsg } from '../e2e/engine'
+import { FileError, MAX_FILE } from '../e2e/files'
 import {
-  acceptFriend, addFriend, createGroup, deleteMessage, editText, engine, leaveGroup, markRead, openDirect, removeFriend, sendText,
+  acceptFriend, addFriend, createGroup, deleteMessage, editText, engine, leaveGroup, markRead, openDirect, openFile, removeFriend, sendFile, sendText,
   typing, typingIn, useSocial,
 } from '../state/social'
 
@@ -218,6 +219,11 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
   const [text, setText] = useState('')
   const [editing, setEditing] = useState<HistMsg | null>(null)
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
+  const [uploads, setUploads] = useState<{ key: number; name: string }[]>([])
+  const [lightbox, setLightbox] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const input = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const names = useMemo(() => {
     const byId = new Map(conv.members.map((m) => [m.id, m.pseudo]))
@@ -249,6 +255,32 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
     setText('')
   }
 
+  // Files: encrypted here, sent peer to peer to the devices online, the rest via the server.
+  const attach = (list: FileList | File[]) => {
+    if (!s.validated) return
+    setError('')
+    setInfo('')
+    const caption = text.trim()
+    let first = true
+    for (const f of Array.from(list)) {
+      if (f.size > MAX_FILE) {
+        setError('« ' + f.name + ' » est trop volumineux (100 Mo au maximum).')
+        continue
+      }
+      const key = Date.now() + Math.random()
+      setUploads((u) => [...u, { key, name: f.name }])
+      const t = first && !editing ? caption : ''
+      first = false
+      sendFile(conv, f, t)
+        .then((r) => {
+          if (r.missed) setInfo('« ' + f.name + ' » est trop gros pour la copie du serveur : ' + r.missed + ' appareil(s) hors ligne le recevront en direct plus tard, quand vous serez connecté·e en même temps.')
+        })
+        .catch((err) => setError(errorMessage(err)))
+        .finally(() => setUploads((u) => u.filter((x) => x.key !== key)))
+    }
+    if (caption && !editing) setText('')
+  }
+
   const reads = s.reads[conv.id] ?? {}
   const lastMine = [...history].reverse().find((m) => m.from === me)
   const readers = lastMine ? Object.entries(reads).filter(([u, ev]) => u !== me && ev >= lastMine.event_id).map(([u]) => name(u)) : []
@@ -270,7 +302,11 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
         <SecurityBanner />
         {error && <div style={{ padding: '8px 16px 0' }}><Alert kind="error">{error}</Alert></div>}
         {s.warnings.length > 0 && <div style={{ padding: '8px 16px 0' }}><Alert kind="warn">{s.warnings[s.warnings.length - 1]}</Alert></div>}
-        <div className="messages" ref={listRef} role="log" aria-label={'Conversation avec ' + title}>
+        {info && <div style={{ padding: '8px 16px 0' }}><Alert kind="info">{info}</Alert></div>}
+        <div className={'messages' + (dragging ? ' drop-target' : '')} ref={listRef} role="log" aria-label={'Conversation avec ' + title}
+          onDragOver={(ev) => { if (s.validated && ev.dataTransfer.types.includes('Files')) { ev.preventDefault(); setDragging(true) } }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(ev) => { ev.preventDefault(); setDragging(false); attach(ev.dataTransfer.files) }}>
           <div className="messages-start">
             <h3>{title}</h3>
             <p className="muted">Début de votre conversation. Les messages sont chiffrés de bout en bout et gardés sur vos appareils.</p>
@@ -291,8 +327,8 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
                   </div>
                   <div className="body">
                     {!grouped && <div className="meta"><span className="author">{name(m.from)}</span><span className="when" title={formatFull(m.at)}>{formatStamp(m.at)}</span></div>}
+                    {m.file && <DMFile conv={conv} ref_={m.file} onImage={setLightbox} />}
                     <div className="text">
-                      {m.file ? '📎 ' + m.file.name + (m.text ? ' — ' : '') : ''}
                       <MessageContent text={m.text} names={names} />
                       {m.edited && <span className="edited">(modifié)</span>}
                       {mine && m === lastMine && (
@@ -302,7 +338,7 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
                   </div>
                   {mine && (
                     <div className="msg-tools">
-                      <button aria-label="Modifier" title="Modifier" onClick={() => { setEditing(m); setText(m.text) }}><Pencil size={16} /></button>
+                      {!m.file && <button aria-label="Modifier" title="Modifier" onClick={() => { setEditing(m); setText(m.text) }}><Pencil size={16} /></button>}
                       <button className="danger" aria-label="Supprimer" title="Supprimer" onClick={() => run(deleteMessage(conv, m.event_id))}><Trash size={16} /></button>
                     </div>
                   )}
@@ -310,7 +346,14 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
               </Fragment>
             )
           })}
+          {uploads.map((u) => (
+            <div className="msg upload-pending" key={u.key}>
+              <div className="gutter" />
+              <div className="body"><div className="attach-file"><span className="spinner" /><div className="info"><span style={{ fontWeight: 600 }}>{u.name}</span><span className="muted small">Chiffrement et envoi…</span></div></div></div>
+            </div>
+          ))}
         </div>
+        {lightbox && <div className="lightbox" onClick={() => setLightbox(null)}><img src={lightbox} alt="" /></div>}
         <div className="composer-wrap">
           <div className="composer">
             {editing && (
@@ -320,6 +363,9 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
               </div>
             )}
             <div className="composer-row">
+              <button className="icon-btn" aria-label="Joindre un fichier" title="Joindre un fichier (chiffré de bout en bout)" disabled={!s.validated || !!editing}
+                onClick={() => input.current?.click()}><Paperclip /></button>
+              <input ref={input} type="file" multiple hidden aria-label="Fichier à envoyer" onChange={(ev) => { if (ev.target.files) attach(ev.target.files); ev.target.value = '' }} />
               <textarea rows={1} value={text} disabled={!s.validated} aria-label={'Message pour ' + title}
                 placeholder={s.validated ? 'Écrire à ' + title : 'Appareil non validé'}
                 onChange={(ev) => { setText(ev.target.value); if (ev.target.value) typing(conv) }}
@@ -342,6 +388,68 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
           {typers.length > 1 && <>{typers.join(', ')} écrivent…</>}
         </div>
       </div>
+    </div>
+  )
+}
+
+const fileErrors: Record<string, string> = {
+  unavailable: 'Fichier indisponible pour l’instant : aucun appareil qui le possède n’est en ligne, et le serveur n’en a plus de copie.',
+  tampered: 'Fichier altéré ou mauvaise clé : refusé.',
+  bad_key: 'Clé de fichier invalide.',
+}
+
+// A file of a private conversation: images are shown (decrypted here), other
+// files are decrypted when downloaded.
+function DMFile({ conv, ref_, onImage }: { conv: Conversation; ref_: FileRef; onImage: (url: string) => void }) {
+  const image = /^image\/(png|jpeg|gif|webp)$/.test(ref_.mime) && ref_.size <= 20 << 20
+  const [url, setUrl] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const load = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const data = await openFile(conv, ref_)
+      return URL.createObjectURL(new Blob([data as BlobPart], { type: image ? ref_.mime : 'application/octet-stream' }))
+    } catch (e) {
+      setError(e instanceof FileError ? fileErrors[e.code] ?? e.code : errorMessage(e))
+      return null
+    } finally {
+      setBusy(false)
+    }
+  }
+  useEffect(() => {
+    if (!image) return
+    let obj: string | null = null
+    let live = true
+    load().then((u) => {
+      obj = u
+      if (live) setUrl(u)
+      else if (u) URL.revokeObjectURL(u)
+    })
+    return () => {
+      live = false
+      if (obj) URL.revokeObjectURL(obj)
+    }
+  }, [conv.id, ref_.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const download = async () => {
+    const obj = url ?? (await load())
+    if (!obj) return
+    const link = document.createElement('a')
+    link.href = obj
+    link.download = ref_.name
+    link.click()
+    if (!url) setTimeout(() => URL.revokeObjectURL(obj), 60_000)
+  }
+  if (image && url) return <img className="attach-img" src={url} alt={ref_.name} onClick={() => onImage(url)} />
+  return (
+    <div className="attach-file" data-testid="dm-file">
+      {busy ? <span className="spinner" /> : <FileIcon size={28} />}
+      <div className="info">
+        <span style={{ fontWeight: 600 }}>{ref_.name}</span>
+        <span className="muted small">{error || formatSize(ref_.size) + ' · chiffré de bout en bout'}</span>
+      </div>
+      <button className="icon-btn" aria-label={'Télécharger ' + ref_.name} title="Télécharger" disabled={busy} onClick={download}><Download size={18} /></button>
     </div>
   )
 }

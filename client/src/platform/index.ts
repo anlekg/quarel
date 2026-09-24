@@ -25,9 +25,16 @@ interface Vault {
   set(key: string, value: string): Promise<void>
 }
 
+interface FileStore {
+  get(id: string): Promise<Uint8Array | null>
+  put(id: string, data: Uint8Array): Promise<void>
+  delete(id: string): Promise<void>
+}
+
 interface DesktopBridge {
   secrets: Secrets
   vault: Vault
+  files: FileStore
   info(): Promise<AppInfo>
   pinServer(host: string, sid: string): Promise<void>
   screenSources(): Promise<ScreenSource[]>
@@ -120,30 +127,45 @@ export async function chooseScreenSource(id: string) {
 // encrypted by the OS keychain. Browser: IndexedDB (not encrypted at rest).
 const idb = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
-    const req = indexedDB.open('quarel', 1)
-    req.onupgradeneeded = () => req.result.createObjectStore('vault')
+    const req = indexedDB.open('quarel', 2)
+    req.onupgradeneeded = () => {
+      for (const store of ['vault', 'files']) if (!req.result.objectStoreNames.contains(store)) req.result.createObjectStore(store)
+    }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
   })
 
+async function idbGet<T>(store: string, key: string): Promise<T | null> {
+  const db = await idb()
+  return new Promise((resolve, reject) => {
+    const r = db.transaction(store).objectStore(store).get(key)
+    r.onsuccess = () => resolve((r.result as T | undefined) ?? null)
+    r.onerror = () => reject(r.error)
+  })
+}
+
+async function idbWrite(store: string, fn: (s: IDBObjectStore) => void): Promise<void> {
+  const db = await idb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite')
+    fn(tx.objectStore(store))
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
 const webVault: Vault = {
-  async get(key) {
-    const db = await idb()
-    return new Promise((resolve, reject) => {
-      const r = db.transaction('vault').objectStore('vault').get(key)
-      r.onsuccess = () => resolve((r.result as string | undefined) ?? null)
-      r.onerror = () => reject(r.error)
-    })
-  },
-  async set(key, value) {
-    const db = await idb()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('vault', 'readwrite')
-      tx.objectStore('vault').put(value, key)
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-    })
-  },
+  get: (key) => idbGet<string>('vault', key),
+  set: (key, value) => idbWrite('vault', (s) => s.put(value, key)),
 }
 
 export const vault: Vault = desktop?.vault ?? webVault
+
+// Ciphertexts of private conversation files (their keys are in the vault).
+const webFiles: FileStore = {
+  get: (id) => idbGet<Uint8Array>('files', id),
+  put: (id, data) => idbWrite('files', (s) => s.put(data, id)),
+  delete: (id) => idbWrite('files', (s) => s.delete(id)),
+}
+
+export const files: FileStore = desktop?.files ?? webFiles
