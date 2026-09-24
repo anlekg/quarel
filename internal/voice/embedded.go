@@ -70,6 +70,9 @@ func (c EmbeddedConfig) yaml(k Keys) string {
 	fmt.Fprintf(&b, "keys:\n  %s: %s\n", k.Key, k.Secret)
 	fmt.Fprintf(&b, "webhook:\n  api_key: %s\n  urls: [%q]\n", k.Key, c.WebhookURL)
 	b.WriteString("room:\n  auto_create: true\n  empty_timeout: 60\n")
+	// Who is speaking: published every 200 ms without smoothing (default
+	// 500 ms over 2 intervals) so the indicator follows the voice closely.
+	b.WriteString("audio:\n  update_interval: 200\n  smooth_intervals: 1\n")
 	b.WriteString("logging:\n  level: warn\n")
 	return b.String()
 }

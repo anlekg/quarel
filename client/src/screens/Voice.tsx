@@ -168,8 +168,10 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
 
 function PersonTile({ m, state, me, speaking }: { m?: Member; state?: VoiceState; me: boolean; speaking: boolean }) {
   return (
-    <div className={'tile' + (speaking ? ' speaking' : '')}>
-      {m ? <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={88} /> : <Avatar id="?" name="?" size={88} />}
+    <div className="tile">
+      <span className={'ring' + (speaking ? ' speaking' : '')}>
+        {m ? <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={88} /> : <Avatar id="?" name="?" size={88} />}
+      </span>
       <span className="who">
         {(m?.display_name ?? '…') + (me ? ' (vous)' : '')}
         {state?.server_mute || state?.self_mute ? <MicOff size={16} className={state?.server_mute ? 'mod' : ''} /> : null}

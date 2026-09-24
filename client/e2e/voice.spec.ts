@@ -82,8 +82,13 @@ test('voice: join, hear, mute, camera, moderation, leave', async () => {
   await controls.getByRole('button', { name: 'Activer la caméra' }).click()
   await expect(grid.locator('.tile video')).toHaveCount(1)
   await expect(alice.locator('#videos video')).toHaveCount(1, { timeout: 15000 })
+  const bobRow = channels.locator('.vu', { hasText: 'bob' })
+  await expect(bobRow.getByLabel('caméra')).toBeVisible({ timeout: 10000 })
   await controls.getByRole('button', { name: 'Couper la caméra' }).click()
   await expect(grid.locator('.tile video')).toHaveCount(0)
+  // Really off: the server and alice know it (not just a paused track).
+  await expect(bobRow.getByLabel('caméra')).toHaveCount(0, { timeout: 10000 })
+  await expect(alice.locator('#videos video')).toHaveCount(0, { timeout: 10000 })
 
   // Moderation: alice (owner) mutes bob's microphone.
   ctl.run('alice', 'voice-mute', 'bob')

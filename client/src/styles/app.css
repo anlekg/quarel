@@ -387,7 +387,7 @@ p { margin: 0; }
 .voice-users .vu { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
 .voice-users .vu .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .voice-users .vu.speaking .n { color: var(--text); font-weight: 600; }
-.voice-users .vu .mini { width: 20px; height: 20px; font-size: 9px; }
+.voice-users .vu .mini { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; transition: box-shadow .08s; }
 .voice-users .vu.speaking .mini { box-shadow: 0 0 0 2px var(--ok); }
 .voice-users svg { color: var(--text-4); flex-shrink: 0; }
 .voice-users svg.mod { color: var(--danger-text); }
@@ -406,6 +406,9 @@ p { margin: 0; }
 .voice-grid { flex: 1; min-height: 0; display: grid; gap: 12px; padding: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-rows: minmax(180px, 1fr); overflow-y: auto; }
 .tile { position: relative; border-radius: 12px; background: var(--bg-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; overflow: hidden; }
 .tile.speaking { outline: 3px solid var(--ok); outline-offset: -3px; }
+/* Speaking ring around the (round) profile picture. */
+.tile .ring { border-radius: 50%; display: inline-flex; transition: box-shadow .08s; }
+.tile .ring.speaking { box-shadow: 0 0 0 4px var(--bg-2), 0 0 0 7px var(--ok); }
 .tile video { width: 100%; height: 100%; object-fit: contain; background: #000; }
 .tile .label { position: absolute; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; background: rgba(13, 15, 18, .8); font-size: 13px; font-weight: 600; }
 .tile .who { display: flex; align-items: center; gap: 6px; font-weight: 600; }

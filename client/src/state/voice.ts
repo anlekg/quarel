@@ -4,7 +4,7 @@
 import { useSyncExternalStore } from 'react'
 import {
   ConnectionState, Participant, RemoteParticipant, Room, RoomEvent, Track, type RemoteTrack,
-  type LocalTrackPublication, type RemoteTrackPublication, type TrackPublication,
+  type LocalTrackPublication, type LocalVideoTrack, type RemoteTrackPublication, type TrackPublication,
 } from 'livekit-client'
 import { ApiError } from '../api/http'
 import type { ServerConn } from './servers'
@@ -110,7 +110,7 @@ function refresh() {
     canSpeak: allows(2, 'MICROPHONE'),
     canStream: allows(1, 'CAMERA') || allows(3, 'SCREEN_SHARE'),
     canListen: perm?.canSubscribe !== false,
-    camera: lp.isCameraEnabled,
+    camera: !!lp.getTrackPublication(Track.Source.Camera)?.track && lp.isCameraEnabled,
     screen: lp.isScreenShareEnabled,
     participants: [lp.identity, ...[...room.remoteParticipants.values()].map((p) => p.identity)],
     videos,
@@ -231,7 +231,15 @@ export async function toggleDeafen() {
 
 export async function toggleCamera() {
   if (!room || !snap) return
-  await room.localParticipant.setCameraEnabled(!snap.camera).catch(() => emit({ error: 'camera_unavailable' }))
+  const lp = room.localParticipant
+  if (snap.camera) {
+    // Unpublish (not just mute) so the server and the others know it is off,
+    // and the camera light goes out.
+    const pub = lp.getTrackPublication(Track.Source.Camera)
+    if (pub?.track) await lp.unpublishTrack(pub.track as LocalVideoTrack, true).catch(() => {})
+  } else {
+    await lp.setCameraEnabled(true).catch(() => emit({ error: 'camera_unavailable' }))
+  }
   refresh()
 }
 
