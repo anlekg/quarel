@@ -169,7 +169,7 @@ Deux types de serveurs :
 | 2026-09-24 | Membres restreints (exclusion, règles, téléphone) = **lecture seule** (droit `view_channel` uniquement), avec un code d'erreur explicite | Une seule règle simple, appliquée partout où les permissions sont calculées (vocal compris). |
 | 2026-09-24 | Bots = membres sans compte Identity, jeton `qb_…` propre au serveur, sans expiration, renouvelable | Même API que les clients ; aucune dépendance au service central. |
 | 2026-09-24 | Journal d'audit conservé **90 jours** | Assez pour enquêter, sans historique indéfini (privacy). |
-| 2026-09-24 | *(à valider par le CP)* Micro et son coupés par la modération **persistants** jusqu'à levée (même après reconnexion) | Sinon il suffirait de se reconnecter pour contourner la sanction. |
+| 2026-09-24 | *(validé par le CP)* Micro et son coupés par la modération **persistants** jusqu'à levée (même après reconnexion) | Sinon il suffirait de se reconnecter pour contourner la sanction. |
 | 2026-09-24 | Déplacement vocal = éjection de la salle + consigne `VOICE_MOVE` au client | Le déplacement natif de LiveKit n'est pas garanti hors de son offre cloud ; l'éjection, elle, est garantie par le serveur. |
 | 2026-09-24 | Caméra et partage d'écran sous une seule permission `stream` | Simple à comprendre pour les administrateurs ; séparable plus tard sans casser l'API. |
 | 2026-09-24 | *(validé par le CP)* Mot de passe oublié : la **2FA reste exigée**, et **tous les appareils sont déconnectés** | Sinon l'accès à la boîte mail suffirait à prendre le compte, et un intrus déjà connecté le resterait. Contrepartie : il faut revalider ses appareils (phrase de récupération). |
