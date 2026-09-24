@@ -11,3 +11,4 @@ node_modules/
 /packaging/windows/cache/
 /dist/
 rsrc_windows_*.syso
+/client/crypto/target/

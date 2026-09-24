@@ -1,6 +1,6 @@
 export PATH := $(HOME)/.local/go/bin:$(HOME)/.local/bin:$(PATH)
 
-.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages e2e-moderation e2e-accounts e2e-dm-groups e2e-calls e2e-ops windows client-install client-dev client-build client-test e2e-client clean
+.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages e2e-moderation e2e-accounts e2e-dm-groups e2e-calls e2e-ops windows client-interop client-install client-dev client-build client-test e2e-client clean
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/anlekg/quarel/internal/backup.Release=$(VERSION)
@@ -95,6 +95,11 @@ client-dev:
 
 client-build:
 	cd client && npm run build
+
+# The client's Olm/Megolm (vodozemac, WebAssembly) against the Go test client's (goolm).
+client-interop:
+	go build -o bin/olminterop ./test/olminterop
+	cd client && node crypto/interop.mjs ../bin/olminterop
 
 # Unit tests and type checks of the client.
 client-test:

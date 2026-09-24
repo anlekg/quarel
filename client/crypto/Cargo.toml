@@ -1,0 +1,22 @@
+# Thin WebAssembly bindings to vodozemac (Matrix's Olm/Megolm, audited Rust
+# implementation) for the Quarel client. Rebuild with build.sh; the output
+# (src/crypto/wasm/) is committed so building the client needs no Rust.
+[package]
+name = "quarel-crypto"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+vodozemac = { version = "=0.11.0", default-features = false, features = ["wasm_js"] }
+wasm-bindgen = "=0.2.128"
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

@@ -482,3 +482,12 @@ Choix du CP : **cette machine**, accord pour ouvrir des ports sur la box, DNS ch
 ### Client graphique — étape 3 : vocal et vidéo (2026-09-24)
 
 Livré : rejoindre un salon vocal d'un clic, participants sous le salon (micro, son, caméra, écran, modération, qui parle), vue du salon (tuiles, caméras, partages d'écran), micro, sourdine, caméra, partage d'écran (sélecteur d'écrans et de fenêtres dans l'application de bureau), barre « Vocal connecté » visible partout, suivi des décisions de la modération (micro/son coupés, déplacement, déconnexion). Fonctionne dans l'application et dans le client web (`app.quarel.app`). Test de bout en bout avec un vrai LiveKit. **Non vérifié automatiquement** : l'indicateur « en train de parler » (le bip du faux micro de Chromium ne déclenche pas la détection de LiveKit) et le vocal à travers Internet (à tester par le CP sur `test.quarel.app`).
+
+### Client graphique — étape 4 : amis et messages privés chiffrés (en cours)
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-09-24 | Chiffrement du client : **vodozemac officiel compilé nous-mêmes en WebAssembly** (`client/crypto/`, fine couche wasm-bindgen, 480 Ko), module généré versionné dans `client/src/crypto/wasm/` et reconstructible (`client/crypto/build.sh`, Rust requis seulement pour le reconstruire) | Aucune version navigateur de vodozemac n'est à la fois officielle et utilisable pour notre protocole : bindings npm tiers d'un seul mainteneur (risque de chaîne d'approvisionnement), libolm abandonné (failles de synchronisation connues), `matrix-sdk-crypto-wasm` lié au protocole Matrix complet. |
+| 2026-09-24 | Formats « version 1 » (ceux de libolm) partout | Compatibilité exacte avec le client de test (goolm) : **vérifiée** par `make client-interop` (signatures, sessions Olm et messages Megolm dans les deux sens, clés exportées). |
+
+Découpage : **4a** amis, conversations et groupes chiffrés ; **4b** validation des appareils, transfert d'historique, phrase de récupération ; **4c** fichiers chiffrés.
