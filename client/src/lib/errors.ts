@@ -65,7 +65,11 @@ const messages: Record<string, string> = {
   backup_conflict: 'Trop de modifications simultanées de la sauvegarde, réessayez.',
 }
 
+// An error whose message is already written for people (French).
+export class UserError extends Error {}
+
 export function errorMessage(e: unknown): string {
+  if (e instanceof UserError) return e.message
   if (e instanceof PhraseError) return e.message
   if (e instanceof E2EError) return messages[e.code] ?? 'Erreur de chiffrement (' + e.code + ').'
   if (e instanceof ApiError) {

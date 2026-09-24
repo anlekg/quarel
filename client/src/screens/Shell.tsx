@@ -13,6 +13,8 @@ import { leaveVoice } from '../state/voice'
 import { closeSocial, openSocial, useSocial } from '../state/social'
 import { Home } from './Home'
 import { Settings } from './Settings'
+import { CallBar, IncomingCall } from './Call'
+import { closeCalls } from '../state/calls'
 
 export function Shell({ account }: { account: Account }) {
   const [settings, setSettings] = useState(false)
@@ -24,6 +26,7 @@ export function Shell({ account }: { account: Account }) {
     openServers(account)
     openSocial(account)
     return () => {
+      closeCalls()
       leaveVoice()
       closeServers()
       closeSocial()
@@ -39,6 +42,10 @@ export function Shell({ account }: { account: Account }) {
   const u = account.user
   const userbar = (
     <>
+    <CallBar onOpen={(userId) => {
+      select('home')
+      window.dispatchEvent(new CustomEvent('quarel:open-dm', { detail: { userId } }))
+    }} />
     <VoiceBar onOpen={(conn, channelId) => {
       prefs.set('channel:' + conn.saved.sid, channelId)
       select(conn.saved.sid)
@@ -75,6 +82,7 @@ export function Shell({ account }: { account: Account }) {
           onJoined={(c) => { setJoining(false); select(c.saved.sid) }} />
       )}
       {settings && <Settings account={account} onClose={() => setSettings(false)} />}
+      <IncomingCall account={account} />
     </div>
   )
 }

@@ -7,7 +7,7 @@ Le service Identity gère les comptes (email, pseudo, mot de passe, 2FA), les am
 - Une machine avec Docker et Docker Compose.
 - Un **nom de domaine** pointant vers elle (ex. `identity.mon-asso.fr`). Il fait partie de chaque identité (`pseudo@identity.mon-asso.fr`) et de la configuration des serveurs qui l'acceptent : **choisissez-le une fois pour toutes**.
 - Le port **443** ouvert vers la machine (Let's Encrypt et les utilisateurs y passent).
-- Pour le **relais d'appels** (TURN, utilisé quand deux amis ne peuvent pas se joindre directement) : l'adresse IP publique de la machine (`QUAREL_TURN_PUBLIC_IP`) et les ports **UDP 3478 et 49160-49200** ouverts. Mettre `QUAREL_TURN=off` pour ne pas proposer de relais.
+- Pour le **relais d'appels** (TURN, utilisé quand deux amis ne peuvent pas se joindre directement) : les ports **UDP 3478 et 49160-49200** ouverts vers la machine. L'adresse IP publique est trouvée automatiquement (`QUAREL_TURN_PUBLIC_IP=auto` : box par UPnP, sinon STUN ; suivie si elle change) ou indiquée à la main. À la maison, avec le réseau de l'hôte (`network_mode: host`, ou l'exécutable Windows), le service ouvre lui-même ces ports sur la box par **UPnP** (`QUAREL_UPNP=off` pour l'empêcher). Mettre `QUAREL_TURN=off` pour ne pas proposer de relais.
 - Un compte SMTP pour envoyer les codes (vérification d'email, mot de passe oublié). Sans SMTP, les codes n'apparaissent que dans le journal du service : suffisant pour un essai, pas pour de vrais utilisateurs.
 
 ## Installation

@@ -30,6 +30,7 @@ export class Identity {
         QUAREL_DATA_DIR: this.dir,
         QUAREL_RATE_LIMITS: 'off',
         QUAREL_ADMIN_ADDR: 'off',
+        QUAREL_UPNP: 'off', // never open ports on the router in tests
         ...this.env,
       },
     })

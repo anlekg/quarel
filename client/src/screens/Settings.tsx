@@ -11,8 +11,9 @@ import { identityClient, signOut, type Account } from '../state/account'
 import type { OwnDevice } from '../e2e/engine'
 import { listDevices, useSocial } from '../state/social'
 import { ApproveDialog, RecoverySection } from './Security'
+import { relayAllowed, setRelayAllowed } from '../state/calls'
 
-type Section = 'account' | 'devices' | 'recovery' | 'invites'
+type Section = 'account' | 'devices' | 'recovery' | 'calls' | 'invites'
 
 const dateFmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long' })
 const dateTimeFmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
@@ -34,13 +35,14 @@ export function Settings({ account, onClose }: { account: Account; onClose: () =
         <button className={section === 'account' ? 'active' : ''} onClick={() => setSection('account')}>Compte</button>
         <button className={section === 'devices' ? 'active' : ''} onClick={() => setSection('devices')}>Appareils</button>
         <button className={section === 'recovery' ? 'active' : ''} onClick={() => setSection('recovery')}>Récupération</button>
+        <button className={section === 'calls' ? 'active' : ''} onClick={() => setSection('calls')}>Appels</button>
         <button className={section === 'invites' ? 'active' : ''} onClick={() => setSection('invites')}>Invitations</button>
         <span className="group" />
         <button className="danger" onClick={() => setConfirmLogout(true)}>Se déconnecter</button>
       </nav>
       <main className="settings-main">
         {section === 'account' ? <AccountSection account={account} /> : section === 'devices' ? <DevicesSection account={account} />
-          : section === 'recovery' ? <RecoverySection /> : <InvitesSection account={account} />}
+          : section === 'recovery' ? <RecoverySection /> : section === 'calls' ? <CallsSection /> : <InvitesSection account={account} />}
       </main>
       <button className="icon-btn settings-close" aria-label="Fermer les paramètres" title="Fermer (Échap)" onClick={onClose}>
         <Close />
@@ -155,6 +157,25 @@ function DevicesSection({ account }: { account: Account }) {
         </div>
       )}
       {approving && <ApproveDialog device={approving} onClose={() => { setApproving(null); load() }} />}
+    </>
+  )
+}
+
+function CallsSection() {
+  const [relay, setRelay] = useState(relayAllowed)
+  return (
+    <>
+      <h2>Appels</h2>
+      <p className="muted" style={{ lineHeight: 1.5 }}>
+        Les appels entre amis passent directement d&apos;un appareil à l&apos;autre, chiffrés de bout en bout. Quand c&apos;est impossible
+        (certaines box ou réseaux d&apos;entreprise), votre service d&apos;identité peut relayer le flux, qui reste chiffré : il ne peut ni
+        l&apos;écouter ni le voir, mais il voit votre adresse IP et celle de votre correspondant·e.
+      </p>
+      <label className="check-line card" style={{ padding: '14px 16px' }}>
+        <input type="checkbox" checked={relay} onChange={(e) => { setRelay(e.target.checked); setRelayAllowed(e.target.checked) }} />
+        <span>Utiliser le relais si aucune connexion directe n&apos;est possible
+          <span className="muted small" style={{ display: 'block' }}>Désactivé : votre appareil n&apos;utilisera jamais le relais (certains appels échoueront). Votre correspondant·e peut toujours utiliser le sien.</span></span>
+      </label>
     </>
   )
 }

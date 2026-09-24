@@ -91,7 +91,7 @@ test('devices: validation both ways, history transfer, recovery phrase', async (
   const appCode = (await b.page.getByTestId('own-code').textContent())!
   ctl.run('bob2', 'device-approve', deviceWithCode('bob2', appCode), appCode)
   await expect(b.page.getByTestId('unvalidated')).toBeHidden()
-  await b.page.getByRole('button', { name: 'alice' }).click()
+  await b.page.locator('.dm-item', { hasText: 'alice' }).click()
   await expect(b.page.getByRole('log')).toContainText('Premier message')
   await expect(b.page.getByRole('log')).toContainText('Bien reçu')
   ctl.run('alice', 'dm', 'bob', 'Nouveau message')
@@ -116,7 +116,7 @@ test('devices: validation both ways, history transfer, recovery phrase', async (
   await expect(c.page.getByRole('dialog')).toContainText('Cet appareil est validé')
   await c.page.getByRole('button', { name: 'Terminer' }).click()
   await expect(c.page.getByTestId('unvalidated')).toBeHidden()
-  await c.page.getByRole('button', { name: 'alice' }).click()
+  await c.page.locator('.dm-item', { hasText: 'alice' }).click()
   const log = c.page.getByRole('log')
   await expect(log).toContainText('Premier message')
   await expect(log).toContainText('Nouveau message') // backed up by B (or the Go device)

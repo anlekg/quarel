@@ -13,18 +13,18 @@ start_identity() { # port, extra env...
   PIDS+=($!); sleep 0.5
 }
 start_server() { # data dir
-  QUAREL_ADDR=127.0.0.1:18090 QUAREL_TRUSTED_ISSUERS=localhost:18080 QUAREL_DATA_DIR=$1 QUAREL_UPNP=off QUAREL_VOICE=off \
+  QUAREL_ADDR=127.0.0.1:28090 QUAREL_TRUSTED_ISSUERS=localhost:28080 QUAREL_DATA_DIR=$1 QUAREL_UPNP=off QUAREL_VOICE=off \
     QUAREL_RATE_LIMITS=off $B/quarel-server > $1.log 2>&1 &
   SRV=$!; PIDS+=($SRV); sleep 0.7
 }
-Q() { local p=$1; shift; $B/quarelctl -s http://127.0.0.1:18080 -p "$p" "$@" 2>&1; }
+Q() { local p=$1; shift; $B/quarelctl -s http://127.0.0.1:28080 -p "$p" "$@" 2>&1; }
 FAIL=0
 expect() { # expect "<description>" "<output>" "<text that must appear>"
   if grep -qF -- "$3" <<<"$2"; then echo "✔ $1"; else echo "✘ $1 — attendu : $3"; echo "$2" | sed 's/^/    /'; FAIL=1; fi
 }
-code() { grep -o 'Quarel : [0-9]*' $D/id18080.log | tail -1 | grep -o '[0-9]*$'; }
+code() { grep -o 'Quarel : [0-9]*' $D/id28080.log | tail -1 | grep -o '[0-9]*$'; }
 
-start_identity 18080 QUAREL_RATE_LIMITS=off
+start_identity 28080 QUAREL_RATE_LIMITS=off
 for u in alice bob; do
   Q $u register $u@example.com $u >/dev/null; Q $u verify-email $u@example.com "$(code)" >/dev/null; Q $u login $u "pc-$u" >/dev/null
 done
@@ -52,15 +52,15 @@ expect "l'historique est de retour" "$(Q alice dm-history bob)" "Message trois, 
 Q alice dm bob "Écrit depuis l'appareil restauré" >/dev/null
 expect "bob lit le message de l'appareil restauré" "$(Q bob dm-sync)" "Écrit depuis l'appareil restauré"
 for w in "Message un" "Message trois" "restauré"; do
-  if cat "$D"/id18080/identity.db* | grep -aqF "$w"; then echo "✘ « $w » en clair dans la base du serveur"; FAIL=1; fi
+  if cat "$D"/id28080/identity.db* | grep -aqF "$w"; then echo "✘ « $w » en clair dans la base du serveur"; FAIL=1; fi
 done
 echo "✔ la sauvegarde est opaque pour le serveur (aucun texte en clair dans sa base)"
 
 echo "## HTTPS et identité du serveur"
 start_server $D/srv
 CLAIM=$(grep -o 'unique) : [a-z0-9]*' $D/srv.log | awk '{print $NF}')
-expect "le serveur démarre en HTTPS" "$(cat $D/srv.log)" "url=https://127.0.0.1:18090"
-expect "revendication en HTTPS (certificat auto-signé vérifié)" "$(Q alice claim localhost:18090 "$CLAIM")" "propriétaire"
+expect "le serveur démarre en HTTPS" "$(cat $D/srv.log)" "url=https://127.0.0.1:28090"
+expect "revendication en HTTPS (certificat auto-signé vérifié)" "$(Q alice claim localhost:28090 "$CLAIM")" "propriétaire"
 LINK=$(Q alice invite 5 | grep -o 'quarel://[^ ]*' | head -1)
 BAD=$(sed 's/sid=[a-z2-7]*/sid=aaaaaaaaaaaaaaaaaaaaaaaaaa/' <<<"$LINK")
 expect "lien au sid falsifié refusé dès la poignée de main TLS" "$(Q bob join "$BAD")" "possible interception"
@@ -70,9 +70,9 @@ start_server $D/srv-imposteur   # another server (other key) at the same address
 expect "un autre serveur à la même adresse est refusé" "$(Q bob channels)" "possible interception"
 
 echo "## Limitation de débit"
-start_identity 18081
+start_identity 28081
 for i in 1 2 3 4 5; do
-  $B/quarelctl -s http://127.0.0.1:18081 -p "rl$i" register rl$i@example.com user$i >/dev/null 2>&1
+  $B/quarelctl -s http://127.0.0.1:28081 -p "rl$i" register rl$i@example.com user$i >/dev/null 2>&1
 done
-expect "6e inscription depuis la même adresse refusée" "$($B/quarelctl -s http://127.0.0.1:18081 -p rl6 register rl6@example.com user6 2>&1)" "rate_limited"
+expect "6e inscription depuis la même adresse refusée" "$($B/quarelctl -s http://127.0.0.1:28081 -p rl6 register rl6@example.com user6 2>&1)" "rate_limited"
 exit $FAIL

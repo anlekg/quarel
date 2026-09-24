@@ -18,6 +18,16 @@ type live struct {
 	srv     *identity.Server
 	cfg     identity.Config
 	restart func()
+	upnp    string // relay ports: "on" (opened by UPnP), "failed" (router did not answer), "off"
+}
+
+func (l *live) setUPnP(ok, wanted bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.upnp = map[bool]string{true: "on", false: "failed"}[ok]
+	if !wanted {
+		l.upnp = "off"
+	}
 }
 
 func (l *live) set(srv *identity.Server, cfg identity.Config) {
@@ -72,7 +82,10 @@ var fields = []adminui.Field{
 	{Group: "Relais d'appels", Key: "QUAREL_TURN", Label: "Relais pour les appels qui ne passent pas en direct", Kind: "select", Default: "off",
 		Options: []adminui.Option{opt("off", "Désactivé"), opt("on", "Activé")},
 		Help:    "La bande passante des appels relayés passe par cette machine. Le relais refuse toute adresse privée."},
-	{Group: "Relais d'appels", Key: "QUAREL_TURN_PUBLIC_IP", Label: "Adresse IP publique de cette machine", Kind: "text", ShowIf: "QUAREL_TURN=on"},
+	{Group: "Relais d'appels", Key: "QUAREL_TURN_PUBLIC_IP", Label: "Adresse IP publique de cette machine", Kind: "text", Default: "auto", ShowIf: "QUAREL_TURN=on",
+		Help: "« auto » : trouvée par la box (UPnP) ou par STUN, et suivie si elle change."},
+	{Group: "Relais d'appels", Key: "QUAREL_UPNP", Label: "Ouvrir les ports du relais sur la box (UPnP)", Kind: "select", Default: "on", ShowIf: "QUAREL_TURN=on",
+		Options: []adminui.Option{opt("on", "Oui"), opt("off", "Non, je les ouvre moi-même")}},
 	{Group: "Relais d'appels", Key: "QUAREL_TURN_LISTEN", Label: "Port du relais", Kind: "text", Default: ":3478", ShowIf: "QUAREL_TURN=on", Help: "UDP, à ouvrir sur le pare-feu."},
 	{Group: "Relais d'appels", Key: "QUAREL_TURN_PORTS", Label: "Plage de ports relayés", Kind: "text", Default: "49160-49200", ShowIf: "QUAREL_TURN=on", Help: "UDP, à ouvrir sur le pare-feu."},
 
@@ -101,7 +114,15 @@ func (l *live) status(r *http.Request) map[string]any {
 	}
 	relay := "désactivé"
 	if cfg.TURN.Enabled {
-		relay = fmt.Sprintf("actif sur %s (UDP %s, ports %d-%d)", cfg.TURN.PublicIP, strings.TrimPrefix(cfg.TURN.Listen, ":"), cfg.TURN.MinPort, cfg.TURN.MaxPort)
+		relay = fmt.Sprintf("actif sur %s (UDP %s, ports %d-%d)", srv.TURNPublicIP(), strings.TrimPrefix(cfg.TURN.Listen, ":"), cfg.TURN.MinPort, cfg.TURN.MaxPort)
+		l.mu.Lock()
+		switch l.upnp {
+		case "on":
+			relay += ", ports ouverts par UPnP"
+		case "failed":
+			relay += " — la box n'a pas répondu à l'UPnP : ouvrez ces ports vous-même"
+		}
+		l.mu.Unlock()
 	}
 	regLabels := map[string]string{"open": "ouverte", "invite": "sur invitation", "closed": "fermée"}
 	polLabels := map[string]string{"open": "tous, sauf liste noire", "approved": "approuvés seulement"}

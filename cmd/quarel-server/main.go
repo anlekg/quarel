@@ -176,9 +176,9 @@ func serve(ctx context.Context, ready func(), state *live, out io.Writer) error 
 
 	var mapper *netdiag.PortMapper
 	if cfg.UPnP {
-		mapper = openPorts(ctx, ports, &wg)
+		mapper = netdiag.OpenPorts(ctx, ports, upnpLease, &wg)
 	} else {
-		slog.Info("UPnP disabled (QUAREL_UPNP=off): open these ports on the router yourself if needed", "ports", describe(ports))
+		slog.Info("UPnP disabled (QUAREL_UPNP=off): open these ports on the router yourself if needed", "ports", netdiag.Describe(ports))
 	}
 	srv.SetNetworkDiagnosis(func(ctx context.Context) netdiag.Diagnosis {
 		var st *netdiag.Status
@@ -282,35 +282,6 @@ func hostFor(addr string) string {
 		return "localhost" + addr
 	}
 	return addr
-}
-
-func describe(ports []netdiag.Mapping) string {
-	var parts []string
-	for _, p := range ports {
-		parts = append(parts, fmt.Sprintf("%d/%s (%s)", p.External, strings.ToLower(p.Protocol), p.Purpose))
-	}
-	return strings.Join(parts, ", ")
-}
-
-// openPorts maps ports on the router through UPnP and keeps them alive.
-func openPorts(ctx context.Context, ports []netdiag.Mapping, wg *sync.WaitGroup) *netdiag.PortMapper {
-	gw, err := netdiag.Discover(ctx)
-	if err != nil {
-		slog.Warn("UPnP: "+err.Error()+"; open these ports on the router yourself", "ports", describe(ports))
-		return nil
-	}
-	pm := netdiag.NewPortMapper(gw, ports, upnpLease)
-	st := pm.Refresh(ctx)
-	slog.Info("UPnP: ports opened on the router", "router", st.Router, "local_ip", st.LocalIP, "external_ip", st.ExternalIP, "mapped", describe(st.Mapped))
-	if len(st.Errors) > 0 {
-		slog.Warn("UPnP: some ports could not be opened", "errors", st.Errors)
-	}
-	if netdiag.IsPrivate(st.ExternalIP) {
-		slog.Warn("UPnP: the router's own address is private: this connection is behind another NAT (often carrier-grade NAT); the server is probably NOT reachable from the Internet", "external_ip", st.ExternalIP)
-	}
-	wg.Add(1)
-	go func() { defer wg.Done(); pm.Run(ctx) }() // removes the mappings when ctx ends
-	return pm
 }
 
 // setupVoice enables voice channels according to QUAREL_VOICE and says, in

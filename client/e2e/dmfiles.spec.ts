@@ -88,7 +88,7 @@ test('private conversation files: peer to peer, server copy, later from a holder
   expect(ctl.run('alice', 'dm-file', 'bob', 'plan.png')).toContain('1 via le serveur')
   expect(readdirSync(join(id.dir, 'dm-files'))).toHaveLength(1)
   ;({ app, page } = await launchApp(userData))
-  await page.getByRole('button', { name: 'alice' }).click()
+  await page.locator('.dm-item', { hasText: 'alice' }).click()
   await expect(page.getByRole('log').locator('img.attach-img[alt="plan.png"]')).toBeVisible()
   await expect.poll(() => readdirSync(join(id.dir, 'dm-files')).length).toBe(0)
   await expect(page.getByRole('log').getByTestId('dm-file').filter({ hasText: 'devis.bin' })).toContainText('chiffré de bout en bout')

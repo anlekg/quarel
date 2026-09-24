@@ -100,7 +100,7 @@ test('private messages: friends, encrypted with the Go client both ways', async 
   // History and keys survive a restart; new messages still decrypt.
   await app.close()
   ;({ app, page } = await launchApp(userData))
-  await page.getByRole('button', { name: 'alice' }).click()
+  await page.locator('.dm-item', { hasText: 'alice' }).click()
   await expect(page.getByRole('log')).toContainText('Oui, de bout en bout !')
   ctl.run('alice', 'dm', 'bob', 'Toujours là ?')
   await expect(page.getByRole('log')).toContainText('Toujours là ?')

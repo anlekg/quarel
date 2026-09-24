@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/anlekg/quarel/internal/adminui"
 	"github.com/anlekg/quarel/internal/backup"
 	"github.com/anlekg/quarel/internal/identity"
+	"github.com/anlekg/quarel/internal/netdiag"
 	"github.com/anlekg/quarel/internal/settings"
 	"github.com/anlekg/quarel/internal/tlsconf"
 )
@@ -133,6 +135,14 @@ func serve(ctx context.Context, ready func(), state *live) error {
 		slog.Warn("QUAREL_SMTP_HOST not set: verification codes will be printed in this log (development mode)")
 	}
 
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	if cfg.TURN.Enabled {
+		setupRelayNetwork(ctx, cfg.TURN, srv, state, &wg)
+	}
 	turnSrv, err := srv.StartTURN()
 	if err != nil {
 		return err
@@ -156,10 +166,6 @@ func serve(ctx context.Context, ready func(), state *live) error {
 		// No global read/write timeouts: they would cut long-lived WebSocket connections.
 		IdleTimeout: 2 * time.Minute,
 	}
-	var wg sync.WaitGroup
-	defer wg.Wait()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	wg.Add(2)
 	go func() { defer wg.Done(); srv.WatchDisabled(ctx, 15*time.Second) }() // disabled accounts lose their live connections
 	go func() {                                                             // expired conversation files
@@ -199,4 +205,56 @@ func serve(ctx context.Context, ready func(), state *live) error {
 		return err
 	}
 	return nil
+}
+
+// setupRelayNetwork opens the relay's ports on the router (UPnP, unless
+// QUAREL_UPNP=off) and, with QUAREL_TURN_PUBLIC_IP=auto, finds the public
+// address to announce — the router's (UPnP) or STUN's — and follows its changes.
+func setupRelayNetwork(ctx context.Context, c identity.TURNConfig, srv *identity.Server, state *live, wg *sync.WaitGroup) {
+	_, p, _ := net.SplitHostPort(c.Listen)
+	port, _ := strconv.Atoi(p)
+	ports := []netdiag.Mapping{{Protocol: "UDP", External: port, Internal: port, Purpose: "call relay"}}
+	for p := c.MinPort; p <= c.MaxPort; p++ {
+		ports = append(ports, netdiag.Mapping{Protocol: "UDP", External: p, Internal: p, Purpose: "call relay"})
+	}
+	var mapper *netdiag.PortMapper
+	if settings.Get("QUAREL_UPNP") != "off" {
+		mapper = netdiag.OpenPorts(ctx, ports, time.Hour, wg)
+	} else {
+		slog.Info("UPnP disabled (QUAREL_UPNP=off): open the call relay ports on the router yourself", "ports", fmt.Sprintf("%d/udp, %d-%d/udp", port, c.MinPort, c.MaxPort))
+	}
+	state.setUPnP(mapper != nil, settings.Get("QUAREL_UPNP") != "off")
+	if c.PublicIP != "auto" {
+		return
+	}
+	find := func() string {
+		if mapper != nil {
+			if ip := mapper.Status().ExternalIP; ip != "" && !netdiag.IsPrivate(ip) {
+				return ip
+			}
+		}
+		stun, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		ip, err := netdiag.PublicIP(stun, netdiag.DefaultSTUNServers)
+		if err != nil {
+			slog.Warn("call relay: public address not found", "err", err)
+		}
+		return ip
+	}
+	srv.SetTURNPublicIP(find())
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(10 * time.Minute):
+			}
+			if ip := find(); ip != "" && ip != srv.TURNPublicIP() {
+				slog.Info("call relay: public address changed", "public_ip", ip)
+				srv.SetTURNPublicIP(ip)
+			}
+		}
+	}()
 }

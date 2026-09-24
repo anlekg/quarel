@@ -125,9 +125,9 @@ func (l *live) status(r *http.Request) map[string]any {
 	var notices []map[string]string
 	switch {
 	case !cfg.UPnP:
-		notices = append(notices, map[string]string{"level": "info", "text": "UPnP désactivé : pour être joignable depuis Internet, redirigez sur votre box " + describe(ports) + " vers cette machine."})
+		notices = append(notices, map[string]string{"level": "info", "text": "UPnP désactivé : pour être joignable depuis Internet, redirigez sur votre box " + netdiag.Describe(ports) + " vers cette machine."})
 	case mapper == nil:
-		notices = append(notices, map[string]string{"level": "warn", "text": "La box n'a pas répondu à l'UPnP : redirigez vous-même " + describe(ports) + " vers cette machine."})
+		notices = append(notices, map[string]string{"level": "warn", "text": "La box n'a pas répondu à l'UPnP : redirigez vous-même " + netdiag.Describe(ports) + " vers cette machine."})
 	default:
 		st := mapper.Status()
 		items = append(items, map[string]any{"label": "Box (UPnP)", "value": fmt.Sprintf("%d/%d port(s) ouverts", len(st.Mapped), len(ports))})

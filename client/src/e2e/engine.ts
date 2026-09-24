@@ -133,6 +133,16 @@ export interface FileSignal {
   at: number // reception (ms)
 }
 
+// Olm "call" message (cmd/quarelctl/calls.go): complete SDP, no trickle ICE.
+export interface CallSignal {
+  call_id: string
+  action: 'invite' | 'answer' | 'reject' | 'hangup'
+  sdp?: string
+  from_user: string // set on reception
+  from_device: string
+  at: number // reception (ms)
+}
+
 interface RoomKey {
   dm_id: string
   session_id: string
@@ -153,6 +163,7 @@ export type E2EEvent =
   | { kind: 'file_signal'; signal: FileSignal } // peer-to-peer file transfer signalling, from a trusted device
   | { kind: 'file_received'; dmId: string; ref: FileRef } // a file event was decrypted
   | { kind: 'file_gone'; dmId: string; ref: FileRef } // a message with a file was deleted
+  | { kind: 'call_signal'; signal: CallSignal } // call signalling, from a trusted device
   | { kind: 'warning'; text: string }
 
 export class E2E {
@@ -611,7 +622,17 @@ export class E2E {
         this.emit({ kind: 'file_signal', signal: { ...sig, from_user: plain.sender_user, from_device: plain.sender_device, at } })
         return
       }
-      // "call" signalling: step 5.
+      case 'call': {
+        if (!trusted) {
+          this.emit({ kind: 'warning', text: 'Signal d’appel refusé : l’appareil « ' + sender.device_name + ' » de ' + this.name(plain.sender_user) + ' n’est pas validé.' })
+          return
+        }
+        const at = Date.parse(it.created_at) || Date.now()
+        if (Date.now() - at > 2 * 60_000) return // stale
+        const sig = plain.content as CallSignal
+        this.emit({ kind: 'call_signal', signal: { ...sig, from_user: plain.sender_user, from_device: plain.sender_device, at } })
+        return
+      }
     }
   }
 
@@ -688,6 +709,10 @@ export class E2E {
 
   sendFileSignal(devs: DeviceInfo[], signal: Omit<FileSignal, 'from_user' | 'from_device' | 'at'>) {
     return this.run(() => this.sendSecret(devs, 'file', signal))
+  }
+
+  sendCallSignal(devs: DeviceInfo[], signal: Omit<CallSignal, 'from_user' | 'from_device' | 'at'>) {
+    return this.run(() => this.sendSecret(devs, 'call', signal))
   }
 
   // A trusted device of a user, by id (to answer a request).

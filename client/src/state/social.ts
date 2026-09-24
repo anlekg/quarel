@@ -60,6 +60,15 @@ export function engine() {
   return e2e
 }
 
+export function socialState() {
+  return state
+}
+
+// The Identity client of the signed-in account (null when signed out).
+export function identityAPI() {
+  return account ? identityClient(account) : null
+}
+
 const api = () => identityClient(account!)
 
 async function refreshFriends() {
@@ -104,7 +113,16 @@ export function closeSocial() {
   account = null
 }
 
+const engineListeners = new Set<(ev: E2EEvent) => void>()
+
+// Engine events for other modules (calls), across sign-ins.
+export function onEngineEvent(l: (ev: E2EEvent) => void) {
+  engineListeners.add(l)
+  return () => engineListeners.delete(l)
+}
+
 function onEngine(ev: E2EEvent) {
+  for (const l of engineListeners) l(ev)
   if (ev.kind === 'history') set({ version: state.version + 1 })
   if (ev.kind === 'approved') {
     set({ validated: true })

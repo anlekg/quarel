@@ -7,7 +7,7 @@ REPO=$(cd "$(dirname "$0")/../.." && pwd); B=$REPO/bin
 D=$(mktemp -d); PIDS=()
 trap 'kill "${PIDS[@]}" 2>/dev/null; rm -rf "$D"' EXIT
 export XDG_CONFIG_HOME=$D/cfg QUAREL_PASSWORD=motdepasse-solide
-QUAREL_ADDR=127.0.0.1:18080 QUAREL_ISSUER=localhost:18080 QUAREL_DATA_DIR=$D/id QUAREL_RATE_LIMITS=off \
+QUAREL_ADDR=127.0.0.1:28080 QUAREL_ISSUER=localhost:28080 QUAREL_DATA_DIR=$D/id QUAREL_RATE_LIMITS=off \
   $B/quarel-identity > $D/id.log 2>&1 &
 PIDS+=($!); sleep 0.5
 # Fake SMS gateway behind the generic webhook provider: it records what it receives.
@@ -18,12 +18,12 @@ class H(http.server.BaseHTTPRequestHandler):
         open(sys.argv[1], "ab").write(self.rfile.read(int(self.headers["Content-Length"])) + b"\n")
         self.send_response(200); self.end_headers()
     def log_message(self, *a): pass
-http.server.HTTPServer(("127.0.0.1", 18095), H).serve_forever()' $D/sms.log & PIDS+=($!)
-QUAREL_ADDR=127.0.0.1:18090 QUAREL_TRUSTED_ISSUERS=localhost:18080 QUAREL_DATA_DIR=$D/srv QUAREL_UPNP=off QUAREL_VOICE=off \
-  QUAREL_RATE_LIMITS=off QUAREL_PHONE_VERIFY=webhook QUAREL_PHONE_WEBHOOK_URL=http://127.0.0.1:18095/sms \
+http.server.HTTPServer(("127.0.0.1", 28095), H).serve_forever()' $D/sms.log & PIDS+=($!)
+QUAREL_ADDR=127.0.0.1:28090 QUAREL_TRUSTED_ISSUERS=localhost:28080 QUAREL_DATA_DIR=$D/srv QUAREL_UPNP=off QUAREL_VOICE=off \
+  QUAREL_RATE_LIMITS=off QUAREL_PHONE_VERIFY=webhook QUAREL_PHONE_WEBHOOK_URL=http://127.0.0.1:28095/sms \
   $B/quarel-server > $D/srv.log 2>&1 &
 PIDS+=($!); sleep 0.7
-Q() { local p=$1; shift; $B/quarelctl -s http://127.0.0.1:18080 -p "$p" "$@" 2>&1; }
+Q() { local p=$1; shift; $B/quarelctl -s http://127.0.0.1:28080 -p "$p" "$@" 2>&1; }
 FAIL=0
 expect() { # expect "<description>" "<output>" "<text that must appear>"
   if grep -qF -- "$3" <<<"$2"; then echo "✔ $1"; else echo "✘ $1 — attendu : $3"; echo "$2" | sed 's/^/    /'; FAIL=1; fi
@@ -32,7 +32,7 @@ code() { grep -o 'Quarel : [0-9]*' $D/id.log | tail -1 | grep -o '[0-9]*$'; }
 for u in alice bob carol dave; do
   Q $u register $u@example.com $u >/dev/null; Q $u verify-email $u@example.com "$(code)" >/dev/null; Q $u login $u "pc-$u" >/dev/null
 done
-Q alice claim localhost:18090 "$(grep -o 'unique) : [a-z0-9]*' $D/srv.log | awk '{print $NF}')" >/dev/null
+Q alice claim localhost:28090 "$(grep -o 'unique) : [a-z0-9]*' $D/srv.log | awk '{print $NF}')" >/dev/null
 LINK=$(Q alice invite 10 | grep -o 'quarel://[^ ]*' | head -1)
 Q bob join "$LINK" >/dev/null
 Q alice listen > $D/listen.log & PIDS+=($!); sleep 0.5
@@ -76,7 +76,7 @@ BOT=$(Q alice bot-create Pingbot)
 expect "bot créé avec son jeton" "$BOT" "Jeton du bot"
 TOKEN=$(grep -o 'qb_[A-Za-z0-9_-]*' <<<"$BOT" | head -1)
 SID=$(grep -o 'QUAREL_SERVER_ID=[a-z2-7]*' <<<"$BOT" | head -1 | cut -d= -f2)
-QUAREL_URL=https://localhost:18090 QUAREL_SERVER_ID=$SID QUAREL_BOT_TOKEN=$TOKEN $B/pingbot > $D/bot.log 2>&1 & PIDS+=($!)
+QUAREL_URL=https://localhost:28090 QUAREL_SERVER_ID=$SID QUAREL_BOT_TOKEN=$TOKEN $B/pingbot > $D/bot.log 2>&1 & PIDS+=($!)
 sleep 0.7
 expect "le bot se connecte (certificat auto-signé vérifié)" "$(cat $D/bot.log)" "connected to"
 Q bob send général '!ping' >/dev/null; sleep 0.5

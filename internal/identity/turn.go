@@ -31,14 +31,14 @@ const turnCredentialTTL = 12 * time.Hour
 type TURNConfig struct {
 	Enabled           bool
 	Listen            string // UDP address, e.g. ":3478"
-	PublicIP          string // address given to clients (required when enabled)
+	PublicIP          string // address given to clients, or "auto" (found by the program: UPnP or STUN, SetTURNPublicIP)
 	MinPort, MaxPort  int    // relay port range, to open on the router/firewall
 	AllowPrivatePeers bool   // development and tests only
 }
 
 func turnConfigFromEnv() (TURNConfig, error) {
 	c := TURNConfig{Enabled: env("QUAREL_TURN", "off") == "on", Listen: env("QUAREL_TURN_LISTEN", ":3478"),
-		PublicIP: settings.Get("QUAREL_TURN_PUBLIC_IP"), AllowPrivatePeers: settings.Get("QUAREL_TURN_ALLOW_PRIVATE") == "1"}
+		PublicIP: env("QUAREL_TURN_PUBLIC_IP", "auto"), AllowPrivatePeers: settings.Get("QUAREL_TURN_ALLOW_PRIVATE") == "1"}
 	lo, hi, ok := strings.Cut(env("QUAREL_TURN_PORTS", "49160-49200"), "-")
 	var err1, err2 error
 	c.MinPort, err1 = strconv.Atoi(lo)
@@ -46,8 +46,8 @@ func turnConfigFromEnv() (TURNConfig, error) {
 	if !ok || err1 != nil || err2 != nil || c.MinPort < 1024 || c.MaxPort > 65535 || c.MinPort > c.MaxPort {
 		return c, errors.New("relais d'appels : plage de ports invalide, par exemple 49160-49200 (QUAREL_TURN_PORTS)")
 	}
-	if c.Enabled && net.ParseIP(c.PublicIP) == nil {
-		return c, errors.New("relais d'appels : indiquez l'adresse IP publique de cette machine (QUAREL_TURN_PUBLIC_IP)")
+	if c.Enabled && c.PublicIP != "auto" && net.ParseIP(c.PublicIP).To4() == nil {
+		return c, errors.New("relais d'appels : adresse IP publique invalide (une adresse IPv4, ou « auto » pour la trouver automatiquement)")
 	}
 	return c, nil
 }
@@ -68,11 +68,43 @@ func (s *Server) turnSecret() (string, error) {
 	return secret, os.WriteFile(path, []byte(secret+"\n"), 0o600)
 }
 
+// SetTURNPublicIP sets the address announced for the relay (found by the
+// program when QUAREL_TURN_PUBLIC_IP=auto); it may change while running.
+func (s *Server) SetTURNPublicIP(ip string) {
+	s.turnIP.Store(ip)
+}
+
+// TURNPublicIP is the address announced for the relay ("" if unknown).
+func (s *Server) TURNPublicIP() string {
+	ip, _ := s.turnIP.Load().(string)
+	return ip
+}
+
+// relayAddresses allocates relay ports and announces the current public IP.
+type relayAddresses struct {
+	*turn.RelayAddressGeneratorPortRange
+	ip func() string
+}
+
+func (r relayAddresses) AllocatePacketConn(conf turn.AllocateListenerConfig) (net.PacketConn, net.Addr, error) {
+	conn, addr, err := r.RelayAddressGeneratorPortRange.AllocatePacketConn(conf)
+	if u, ok := addr.(*net.UDPAddr); ok && err == nil {
+		u.IP = net.ParseIP(r.ip())
+	}
+	return conn, addr, err
+}
+
 // StartTURN runs the relay until the returned closer is closed (nil if disabled).
 func (s *Server) StartTURN() (io.Closer, error) {
 	c := s.cfg.TURN
 	if !c.Enabled {
 		return nil, nil
+	}
+	if c.PublicIP != "auto" {
+		s.SetTURNPublicIP(c.PublicIP)
+	}
+	if net.ParseIP(s.TURNPublicIP()) == nil {
+		return nil, errors.New("relais d'appels : adresse IP publique de cette machine introuvable (ni par l'UPnP de la box, ni par STUN) : indiquez-la (QUAREL_TURN_PUBLIC_IP)")
 	}
 	secret, err := s.turnSecret()
 	if err != nil {
@@ -88,10 +120,10 @@ func (s *Server) StartTURN() (io.Closer, error) {
 		AuthHandler: turn.LongTermTURNRESTAuthHandler(secret, nil),
 		PacketConnConfigs: []turn.PacketConnConfig{{
 			PacketConn: conn,
-			RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-				RelayAddress: net.ParseIP(c.PublicIP), Address: "0.0.0.0",
+			RelayAddressGenerator: relayAddresses{&turn.RelayAddressGeneratorPortRange{
+				RelayAddress: net.ParseIP(s.TURNPublicIP()), Address: "0.0.0.0",
 				MinPort: uint16(c.MinPort), MaxPort: uint16(c.MaxPort),
-			},
+			}, s.TURNPublicIP},
 			PermissionHandler: func(_ net.Addr, peer net.IP) bool { return c.AllowPrivatePeers || publicPeer(peer) },
 		}},
 	})
@@ -99,7 +131,7 @@ func (s *Server) StartTURN() (io.Closer, error) {
 		conn.Close()
 		return nil, fmt.Errorf("TURN: %w", err)
 	}
-	slog.Info("TURN relay ready", "listen", c.Listen, "public_ip", c.PublicIP, "relay_ports", fmt.Sprintf("%d-%d", c.MinPort, c.MaxPort))
+	slog.Info("TURN relay ready", "listen", c.Listen, "public_ip", s.TURNPublicIP(), "relay_ports", fmt.Sprintf("%d-%d", c.MinPort, c.MaxPort))
 	return srv, nil
 }
 
@@ -127,7 +159,7 @@ func (s *Server) handleCallServers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, port, _ := net.SplitHostPort(s.cfg.TURN.Listen)
-	host := net.JoinHostPort(s.cfg.TURN.PublicIP, port)
+	host := net.JoinHostPort(s.TURNPublicIP(), port)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ice_servers": []iceServer{
 			{URLs: []string{"stun:" + host}},

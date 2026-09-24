@@ -8,11 +8,11 @@ REPO=$(cd "$(dirname "$0")/../.." && pwd); B=$REPO/bin
 D=$(mktemp -d); PIDS=()
 trap 'kill "${PIDS[@]}" 2>/dev/null; rm -rf "$D"' EXIT
 export XDG_CONFIG_HOME=$D/cfg QUAREL_PASSWORD=motdepasse-solide
-IDENV="QUAREL_ADDR=127.0.0.1:18080 QUAREL_ISSUER=localhost:18080 QUAREL_DATA_DIR=$D/id QUAREL_RATE_LIMITS=off"
+IDENV="QUAREL_ADDR=127.0.0.1:28080 QUAREL_ISSUER=localhost:28080 QUAREL_DATA_DIR=$D/id QUAREL_RATE_LIMITS=off"
 env $IDENV $B/quarel-identity > $D/id.log 2>&1 & PIDS+=($!); sleep 0.5
-QUAREL_ADDR=127.0.0.1:18090 QUAREL_TRUSTED_ISSUERS=localhost:18080 QUAREL_DATA_DIR=$D/srv QUAREL_UPNP=off QUAREL_VOICE=off \
+QUAREL_ADDR=127.0.0.1:28090 QUAREL_TRUSTED_ISSUERS=localhost:28080 QUAREL_DATA_DIR=$D/srv QUAREL_UPNP=off QUAREL_VOICE=off \
   QUAREL_RATE_LIMITS=off QUAREL_DISABLED_POLL=1s $B/quarel-server > $D/srv.log 2>&1 & PIDS+=($!); sleep 0.7
-Q() { local p=$1; shift; $B/quarelctl -s http://127.0.0.1:18080 -p "$p" "$@" 2>&1; }
+Q() { local p=$1; shift; $B/quarelctl -s http://127.0.0.1:28080 -p "$p" "$@" 2>&1; }
 FAIL=0
 expect() { # expect "<description>" "<output>" "<text that must appear>"
   if grep -qF -- "$3" <<<"$2"; then echo "✔ $1"; else echo "✘ $1 — attendu : $3"; echo "$2" | sed 's/^/    /'; FAIL=1; fi
@@ -22,7 +22,7 @@ for u in alice bob carol; do
   Q $u register $u@example.com $u >/dev/null; Q $u verify-email $u@example.com "$(code)" >/dev/null; Q $u login $u "pc-$u" >/dev/null
 done
 Q alice friend-add bob >/dev/null; Q bob friend-accept alice >/dev/null
-Q alice claim localhost:18090 "$(grep -o 'unique) : [a-z0-9]*' $D/srv.log | awk '{print $NF}')" >/dev/null
+Q alice claim localhost:28090 "$(grep -o 'unique) : [a-z0-9]*' $D/srv.log | awk '{print $NF}')" >/dev/null
 LINK=$(Q alice invite 10 | grep -o 'quarel://[^ ]*' | head -1)
 Q bob join "$LINK" >/dev/null
 
@@ -53,8 +53,8 @@ AV=$(grep -o 'http://[^ ]*/avatar[^ ]*' <<<"$P")
 [ "$(curl -s -o /dev/null -w '%{content_type}' "$AV")" = "image/png" ] && echo "✔ avatar servi (sans session)" || { echo "✘ avatar"; FAIL=1; }
 
 echo "## Pseudo, mot de passe, email"
-expect "changement de pseudo" "$(Q alice pseudo alicia)" "alicia@localhost:18080"
-Q alice join localhost:18090 >/dev/null   # reconnection: the server learns the new handle
+expect "changement de pseudo" "$(Q alice pseudo alicia)" "alicia@localhost:28080"
+Q alice join localhost:28090 >/dev/null   # reconnection: the server learns the new handle
 expect "le serveur communautaire affiche le nouveau pseudo, même membre" "$(Q bob members)" "alicia"
 expect "pseudo : une fois par jour" "$(Q alice pseudo alice2)" "pseudo_change_too_soon"
 expect "changement de mot de passe" "$(QUAREL_NEW_PASSWORD=nouveau-mdp-alice Q alice passwd)" "Mot de passe changé"

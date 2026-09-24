@@ -20,7 +20,7 @@ vet:
 
 # Local dev Identity service on :8080, data in ./data/identity, verification codes printed in the log.
 run-identity: build
-	QUAREL_ISSUER=localhost:8080 QUAREL_DATA_DIR=./data/identity ./bin/quarel-identity
+	QUAREL_ISSUER=localhost:8080 QUAREL_UPNP=off QUAREL_DATA_DIR=./data/identity ./bin/quarel-identity
 
 # Local dev community server on https://localhost:8090 (self-signed), trusting the local Identity
 # service, data in ./data/server. UPnP off (never touch the router from dev), voice on local addresses.

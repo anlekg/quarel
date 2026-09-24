@@ -4,11 +4,13 @@ import type { Conversation, PublicUser } from '../api/identity'
 import { Avatar } from '../components/Avatar'
 import { MessageContent, type MentionNames } from '../components/MessageContent'
 import { Alert, Dialog, Field } from '../components/ui'
-import { Chat, Download, FileIcon, Lock, Paperclip, Pencil, Plus, Send, Trash, Users } from '../components/icons'
+import { Chat, Download, FileIcon, Lock, Paperclip, Pencil, Phone, Plus, Send, Trash, Users } from '../components/icons'
 import { errorMessage } from '../lib/errors'
 import { formatDay, formatFull, formatSize, formatStamp, formatTime, sameDay } from '../lib/format'
 import { prefs } from '../platform'
 import { SecurityBanner } from './Security'
+import { CallPanel } from './Call'
+import { startCall, useCall } from '../state/calls'
 import type { Account } from '../state/account'
 import type { FileRef, HistMsg } from '../e2e/engine'
 import { FileError, MAX_FILE } from '../e2e/files'
@@ -42,6 +44,15 @@ export function Home({ account, userbar }: { account: Account; userbar: ReactNod
     prefs.set('home-view', v)
   }
   const conv = s.conversations.find((c) => c.id === view)
+  // The call bar opens the conversation with the person called.
+  useEffect(() => {
+    const open = (ev: Event) => {
+      const { userId } = (ev as CustomEvent<{ userId: string }>).detail
+      openDirect(userId).then((c) => go(c.id), () => {})
+    }
+    window.addEventListener('quarel:open-dm', open)
+    return () => window.removeEventListener('quarel:open-dm', open)
+  }, [])
   useEffect(() => {
     if (view !== 'friends' && s.status === 'ready' && !conv) go('friends')
   }, [view, conv, s.status])
@@ -223,6 +234,8 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
   const [uploads, setUploads] = useState<{ key: number; name: string }[]>([])
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  const activeCall = useCall()
+  const other = conv.kind === 'direct' ? (conv.user ?? conv.members.find((m) => m.id !== me)) : undefined
   const input = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const names = useMemo(() => {
@@ -295,10 +308,15 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
           <span className="title">{title}</span>
           <span className="e2e-badge" title="Seuls les appareils validés des participants peuvent lire ces messages. Le serveur ne voit que du chiffré."><Lock size={13} />Chiffré de bout en bout</span>
           <span style={{ flex: 1 }} />
+          {other && s.friends.friends.some((f) => f.id === other.id) && (
+            <button className="icon-btn" aria-label={'Appeler ' + other.pseudo} title={s.validated ? 'Appeler' : 'Appareil non validé'}
+              disabled={!s.validated || (!!activeCall && activeCall.status !== 'ended')} onClick={() => run(startCall(other))}><Phone size={18} /></button>
+          )}
           {conv.kind === 'group' && (
             <button className="btn btn-ghost btn-sm" onClick={() => { if (confirm('Quitter le groupe « ' + title + ' » ?')) run(leaveGroup(conv).then(onLeft)) }}>Quitter le groupe</button>
           )}
         </header>
+        {other && <CallPanel account={account} userId={other.id} />}
         <SecurityBanner />
         {error && <div style={{ padding: '8px 16px 0' }}><Alert kind="error">{error}</Alert></div>}
         {s.warnings.length > 0 && <div style={{ padding: '8px 16px 0' }}><Alert kind="warn">{s.warnings[s.warnings.length - 1]}</Alert></div>}

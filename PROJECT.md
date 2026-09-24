@@ -493,3 +493,17 @@ Livré : rejoindre un salon vocal d'un clic, participants sous le salon (micro, 
 Découpage : **4a** amis, conversations et groupes chiffrés ; **4b** validation des appareils, transfert d'historique, phrase de récupération ; **4c** fichiers chiffrés.
 
 **4a livré (2026-09-24)** : amis (demandes, acceptation, retrait, présence), conversations directes et groupes chiffrés de bout en bout, envoi / réception en direct, distribué, vu, « … écrit », modification et suppression, historique gardé sur l'appareil (coffre chiffré par le trousseau). **Interopérabilité réelle vérifiée** : l'application et `quarelctl` échangent des messages dans les deux sens, groupes compris (`e2e/dm.spec.ts`). Correctif au passage : l'application de bureau sert son interface par `app://quarel/` au lieu de `file://`.
+
+**4b livré (2026-09-24)** : validation d'un appareil en tapant son code sur un appareil validé (clé du compte, clé de sauvegarde et historique transmis par Olm), phrase de récupération de 12 mots créée et utilisée dans l'application, sauvegarde chiffrée automatique ; vérifié dans les deux sens face à `quarelctl` (`e2e/devices.spec.ts`).
+
+**4c livré (2026-09-24)** : fichiers chiffrés dans les conversations privées, en direct entre appareils en ligne (WebRTC, STUN seulement) et copie serveur pour les autres, effacée dès réception ; vérifié face à `quarelctl` (`e2e/dmfiles.spec.ts`).
+
+### Étape 5 : appels entre amis (2026-09-24)
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-09-24 | **Relais de secours activé sur `identity.quarel.app`** (choix du CP) | Sans relais, les appels entre deux réseaux dont les box sont strictes échouent. Le flux relayé reste chiffré de bout en bout ; chaque utilisateur peut refuser le relais dans ses paramètres. |
+| 2026-09-24 | Ports du relais (3478/udp, 49160-49200/udp) ouverts par **UPnP** par le service d'identité lui-même, IP publique **trouvée automatiquement** (`QUAREL_TURN_PUBLIC_IP=auto`) et suivie | Même logique d'installation légère que le serveur communautaire (box domestique, IP qui peut changer) ; accord du CP pour ouvrir ces ports sur sa box. |
+| 2026-09-24 | Appels en tête à tête, audio + caméra (entre applications), sans renégociation | La caméra s'allume par `replaceTrack` sur un émetteur vidéo prévu dès l'invitation ; le protocole reste celui de `quarelctl` (invite/answer/reject/hangup), qui ne fait que de l'audio. |
+
+**5 livré (2026-09-24)** : appeler un ami depuis sa conversation, sonnerie sur tous ses appareils, réponse / refus, micro, caméra, chemin affiché (direct, réseau local, relais) ; vérifié face à `quarelctl` dans les deux sens, par le relais seul, et entre deux applications avec vidéo (`e2e/calls.spec.ts`). Au passage : les scripts de test du serveur utilisent les ports 28080/28090 (18080/18090 sont pris par le déploiement de test).

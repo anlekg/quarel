@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/anlekg/quarel/internal/settings"
@@ -159,7 +160,8 @@ type Server struct {
 
 	proxies ratelimit.Proxies
 	limit   struct{ global, register, login, email, friends, files, typing, turn *ratelimit.Limiter }
-	turnKey string // shared secret of the TURN relay ("" when it is off)
+	turnKey string       // shared secret of the TURN relay ("" when it is off)
+	turnIP  atomic.Value // string: public address announced for the relay
 }
 
 // Open prepares the data directory, database and signing key.

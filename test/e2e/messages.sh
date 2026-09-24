@@ -7,13 +7,13 @@ REPO=$(cd "$(dirname "$0")/../.." && pwd); B=$REPO/bin
 D=$(mktemp -d); PIDS=()
 trap 'kill "${PIDS[@]}" 2>/dev/null; rm -rf "$D"' EXIT
 export XDG_CONFIG_HOME=$D/cfg QUAREL_PASSWORD=motdepasse-solide
-QUAREL_ADDR=127.0.0.1:18080 QUAREL_ISSUER=localhost:18080 QUAREL_DATA_DIR=$D/id QUAREL_RATE_LIMITS=off \
+QUAREL_ADDR=127.0.0.1:28080 QUAREL_ISSUER=localhost:28080 QUAREL_DATA_DIR=$D/id QUAREL_RATE_LIMITS=off \
   $B/quarel-identity > $D/id.log 2>&1 &
 PIDS+=($!); sleep 0.5
-QUAREL_ADDR=127.0.0.1:18090 QUAREL_TRUSTED_ISSUERS=localhost:18080 QUAREL_DATA_DIR=$D/srv QUAREL_UPNP=off QUAREL_VOICE=off \
+QUAREL_ADDR=127.0.0.1:28090 QUAREL_TRUSTED_ISSUERS=localhost:28080 QUAREL_DATA_DIR=$D/srv QUAREL_UPNP=off QUAREL_VOICE=off \
   QUAREL_RATE_LIMITS=off QUAREL_MAX_UPLOAD_MB=1 $B/quarel-server > $D/srv.log 2>&1 &
 PIDS+=($!); sleep 0.7
-Q() { local p=$1; shift; (cd $D && $B/quarelctl -s http://127.0.0.1:18080 -p "$p" "$@" 2>&1); }
+Q() { local p=$1; shift; (cd $D && $B/quarelctl -s http://127.0.0.1:28080 -p "$p" "$@" 2>&1); }
 FAIL=0
 expect() { # expect "<description>" "<output>" "<text that must appear>"
   if grep -qF -- "$3" <<<"$2"; then echo "✔ $1"; else echo "✘ $1 — attendu : $3"; echo "$2" | sed 's/^/    /'; FAIL=1; fi
@@ -22,7 +22,7 @@ code() { grep -o 'Quarel : [0-9]*' $D/id.log | tail -1 | grep -o '[0-9]*$'; }
 for u in alice bob; do
   Q $u register $u@example.com $u >/dev/null; Q $u verify-email $u@example.com "$(code)" >/dev/null; Q $u login $u "pc-$u" >/dev/null
 done
-Q alice claim localhost:18090 "$(grep -o 'unique) : [a-z0-9]*' $D/srv.log | awk '{print $NF}')" >/dev/null
+Q alice claim localhost:28090 "$(grep -o 'unique) : [a-z0-9]*' $D/srv.log | awk '{print $NF}')" >/dev/null
 Q bob join "$(Q alice invite 5 | grep -o 'quarel://[^ ]*' | head -1)" >/dev/null
 Q bob listen > $D/listen.log & PIDS+=($!); sleep 0.5
 id() { grep -o '\] [0-9]*' <<<"$1" | head -1 | grep -o '[0-9]*'; }

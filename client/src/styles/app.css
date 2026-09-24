@@ -473,3 +473,24 @@ p { margin: 0; }
 .tag-warn { background: #3a3120; color: #f0dcae; }
 .messages.drop-target { outline: 2px dashed var(--accent); outline-offset: -8px; }
 .upload-pending { opacity: .8; }
+
+/* Calls between friends */
+.icon-btn.on { color: var(--accent); }
+.incoming-call { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 16px;
+  padding: 16px 20px; background: var(--bg-3); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 40px rgba(0, 0, 0, .5);
+  animation: call-pulse 1.6s ease-in-out infinite; }
+.incoming-call .who { display: flex; flex-direction: column; gap: 2px; min-width: 120px; }
+.incoming-call .who b { font-size: 16px; }
+.incoming-call .acts { display: flex; gap: 8px; }
+.incoming-call .btn { display: inline-flex; align-items: center; gap: 6px; }
+@keyframes call-pulse { 50% { box-shadow: 0 12px 40px rgba(0, 0, 0, .5), 0 0 0 4px var(--accent-soft); } }
+.call-panel { padding: 16px; background: #0c0e11; border-bottom: 1px solid var(--bg-2); }
+.call-stage { display: flex; gap: 12px; justify-content: center; }
+.call-tile { position: relative; flex: 1; max-width: 420px; aspect-ratio: 16 / 9; background: var(--bg-2); border-radius: 12px; display: flex;
+  align-items: center; justify-content: center; overflow: hidden; }
+.call-tile video { width: 100%; height: 100%; object-fit: cover; }
+.call-tile video.mirror { transform: scaleX(-1); }
+.call-name { position: absolute; left: 8px; bottom: 8px; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px;
+  background: rgba(0, 0, 0, .55); font-size: 12px; font-weight: 600; }
+.call-status { text-align: center; font-size: 13px; color: var(--text-3); margin: 10px 0 0; }
+@media (max-width: 700px) { .call-stage { flex-direction: column; align-items: center; } .call-tile { width: 100%; } }
