@@ -58,8 +58,8 @@ type Config struct {
 	OVHSMSService      string
 	OVHSMSSender       string
 	TwilioAccountSID   string
-	TwilioAuthToken  string
-	TwilioVerifySID  string // Verify service ("VA…")
+	TwilioAuthToken    string
+	TwilioVerifySID    string // Verify service ("VA…")
 
 	// DisabledPoll is how often the lists of disabled accounts of the trusted
 	// Identity services are fetched.
