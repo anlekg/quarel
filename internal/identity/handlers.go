@@ -97,6 +97,7 @@ func checkPassword(p string) error {
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email, Pseudo, Password string
+		Invite                  string // needed when registration is by invitation
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, r, err)
@@ -117,6 +118,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	invite, err := s.checkRegistration(ctx, email, req.Invite)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	for _, c := range []struct{ col, val, code string }{
 		{"email", email, "email_taken"},
 		{"pseudo_norm", strings.ToLower(req.Pseudo), "pseudo_taken"},
@@ -135,9 +141,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := &user{ID: newID(), Email: email, Pseudo: req.Pseudo, CreatedAt: s.now().Unix()}
-	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO users (id, email, pseudo, pseudo_norm, password_hash, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`, u.ID, u.Email, u.Pseudo, strings.ToLower(u.Pseudo), hash, u.CreatedAt)
+	err = s.insertUser(ctx, u, hash, invite)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") { // lost a race with a concurrent registration
 			writeErr(w, r, errf(http.StatusConflict, "already_in_use", "email or pseudo is already in use"))
@@ -150,6 +154,29 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		slog.Error("sending verification email", "user", u.ID, "err", err)
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"user_id": u.ID, "handle": s.handle(u)})
+}
+
+// insertUser creates the account, consuming the invitation in the same transaction.
+func (s *Server) insertUser(ctx context.Context, u *user, hash, invite string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var invitedBy any
+	if invite != "" {
+		by, err := s.consumeInvite(ctx, tx, invite)
+		if err != nil {
+			return err
+		}
+		invitedBy = by
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO users (id, email, pseudo, pseudo_norm, password_hash, created_at, invited_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, u.ID, u.Email, u.Pseudo, strings.ToLower(u.Pseudo), hash, u.CreatedAt, invitedBy); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Server) sendVerificationCode(ctx context.Context, u *user) error {
@@ -584,10 +611,36 @@ func (s *Server) handleIssueToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	token, exp, err := s.signer.Issue(u.ID, s.handle(u), deviceKey, s.cfg.TokenTTL, s.now())
+	// Optional body {audience}: the community server the token is for. Needed
+	// when only approved servers may use this service; never stored.
+	var req struct {
+		Audience string `json:"audience"`
+	}
+	if r.ContentLength != 0 {
+		if err := decode(r, &req); err != nil {
+			writeErr(w, r, err)
+			return
+		}
+	}
+	sealTo, err := s.tokenFor(r.Context(), req.Audience)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"token": token, "expires_at": exp.UTC()})
+	audience := ""
+	if sealTo != nil {
+		audience = req.Audience
+	}
+	token, exp, err := s.signer.IssueFor(u.ID, s.handle(u), deviceKey, s.cfg.TokenTTL, s.now(), audience)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if sealTo != nil {
+		if token, err = idtoken.Seal(token, sealTo, audience); err != nil {
+			writeErr(w, r, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"token": token, "expires_at": exp.UTC(), "sealed": sealTo != nil})
 }

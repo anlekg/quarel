@@ -11,7 +11,7 @@ import { deviceKey, signWithDevice } from '../lib/device'
 import { identityLabel } from '../lib/identityURL'
 import type { Invite } from '../lib/invite'
 import { checkServer, pinServer, secrets } from '../platform'
-import { identityClient, signOut, type Account } from './account'
+import { identityClient, serverRules, signOut, type Account } from './account'
 
 export interface SavedServer {
   sid: string
@@ -33,7 +33,8 @@ export type Status = 'connecting' | 'ready' | 'offline' | 'removed'
 
 export interface ServerState {
   status: Status
-  removed?: 'kicked' | 'banned' | 'left' | 'disabled'
+  removed?: 'kicked' | 'banned' | 'left' | 'disabled' | 'blocked' | 'not_approved'
+  blockedReason?: string
   ready?: Ready
   reads: Record<number, ReadState>
   messages: Record<number, ChannelMessages>
@@ -52,9 +53,12 @@ function utf8(s: string) {
 // (the TLS layer already checked the certificate against it).
 export async function communityLogin(account: Account, base: string, sid: string, invite?: string, claim?: string): Promise<LoginResult> {
   const c = new CommunityClient(base)
+  const rules = await serverRules(account)
+  if (rules.blocked.has(sid)) throw new ApiError(0, 'server_blocked', rules.blocked.get(sid) ?? '')
   let idToken: string
   try {
-    idToken = (await identityClient(account).identityToken()).token
+    const audience = rules.policy.server_policy === 'approved' ? sid : undefined
+    idToken = (await identityClient(account).identityToken(audience)).token
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) await signOut({ remote: false })
     throw e
@@ -66,7 +70,9 @@ export async function communityLogin(account: Account, base: string, sid: string
 }
 
 // Public information shown before joining; also proves the certificate.
-export async function previewServer(inv: Invite): Promise<ServerInfo> {
+export async function previewServer(account: Account, inv: Invite): Promise<ServerInfo> {
+  const rules = await serverRules(account, true)
+  if (rules.blocked.has(inv.sid)) throw new ApiError(0, 'server_blocked', rules.blocked.get(inv.sid) ?? '')
   const url = new URL(inv.base)
   const check = await checkServer(inv.host, Number(url.port || 443), inv.sid)
   if (check === 'unreachable') throw new ApiError(0, 'network', 'server unreachable')
@@ -119,8 +125,9 @@ export class ServerConn {
         this.saved = { ...this.saved, token: res.session_token, expiresAt: res.expires_at, name: res.server.name, memberId: res.member.id }
         this.persist()
       } catch (e) {
-        if (e instanceof ApiError && ['banned', 'invite_required', 'account_disabled'].includes(e.code)) {
-          this.markRemoved(e.code === 'banned' ? 'banned' : e.code === 'account_disabled' ? 'disabled' : 'kicked')
+        if (e instanceof ApiError && ['banned', 'invite_required', 'account_disabled', 'server_blocked', 'server_not_approved'].includes(e.code)) {
+          const reason = ({ banned: 'banned', account_disabled: 'disabled', server_blocked: 'blocked', server_not_approved: 'not_approved' } as const)[e.code as 'banned'] ?? 'kicked'
+          this.markRemoved(reason, e.code === 'server_blocked' ? e.message : undefined)
         }
         throw e
       } finally {
@@ -199,8 +206,8 @@ export class ServerConn {
     this.retryTimer = setTimeout(() => this.connect(), delay)
   }
 
-  private markRemoved(reason: ServerState['removed']) {
-    this.set({ status: 'removed', removed: reason })
+  markRemoved(reason: ServerState['removed'], blockedReason?: string) {
+    this.set({ status: 'removed', removed: reason, blockedReason })
     this.stop()
   }
 
@@ -428,7 +435,16 @@ export async function openServers(account: Account) {
   for (const s of saved) await pinServer(s.host, s.sid)
   conns = saved.map((s) => new ServerConn(s, account, save))
   emit()
-  for (const c of conns) c.start()
+  let blocked = new Map<string, string>()
+  try {
+    blocked = (await serverRules(account, true)).blocked
+  } catch {
+    /* identity service unreachable: servers still connect with their current session */
+  }
+  for (const c of conns) {
+    if (blocked.has(c.saved.sid)) c.markRemoved('blocked', blocked.get(c.saved.sid))
+    else c.start()
+  }
 }
 
 export function closeServers() {

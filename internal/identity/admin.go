@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -299,4 +300,133 @@ func (a *Admin) RotateSigningKey(ctx context.Context, dataDir, reason, operator 
 		slog.Error("admin log", "err", err)
 	}
 	return oldKID, newKID, nil
+}
+
+// --- registration invitations and community servers (operator) ---
+
+// Invites lists every invitation, newest first.
+func (a *Admin) Invites(ctx context.Context) ([]Invite, error) { return listInvites(ctx, a.db, nil) }
+
+// CreateInvite creates an operator invitation (maxUses 0: unlimited; validFor 0: never expires).
+func (a *Admin) CreateInvite(ctx context.Context, note string, maxUses int, validFor time.Duration) (Invite, error) {
+	if maxUses < 0 {
+		return Invite{}, errors.New("nombre d'utilisations invalide")
+	}
+	var exp *time.Time
+	if validFor > 0 {
+		t := a.now().Add(validFor).UTC().Truncate(time.Second)
+		exp = &t
+	}
+	return createInvite(ctx, a.db, "", strings.TrimSpace(note), maxUses, exp, a.now())
+}
+
+// RevokeInvite makes an invitation unusable (it stays listed).
+func (a *Admin) RevokeInvite(ctx context.Context, code string) error {
+	_, err := a.db.ExecContext(ctx, `UPDATE registration_invites SET expires_at = ? WHERE code = ?`, a.now().Unix(), code)
+	return err
+}
+
+// CommunityServer is a server known to the operator: blocked, or asking for approval.
+type CommunityServer struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name,omitempty"`
+	URL         string     `json:"url,omitempty"`
+	Contact     string     `json:"contact,omitempty"`
+	Status      string     `json:"status"` // pending, approved, rejected, or "" (never asked)
+	Blocked     bool       `json:"blocked"`
+	Reason      string     `json:"reason,omitempty"` // why it is blocked
+	RequestedAt *time.Time `json:"requested_at,omitempty"`
+}
+
+// Servers lists blocked servers and approval requests.
+func (a *Admin) Servers(ctx context.Context) ([]CommunityServer, error) {
+	rows, err := a.db.QueryContext(ctx, `
+		SELECT id, COALESCE(name, ''), COALESCE(url, ''), COALESCE(contact, ''), COALESCE(status, ''), blocked, COALESCE(reason, ''), requested_at FROM (
+			SELECT a.server_id AS id, a.name, a.url, a.contact, a.status, b.server_id IS NOT NULL AS blocked, b.reason, a.requested_at
+			FROM server_approvals a LEFT JOIN blocked_servers b ON b.server_id = a.server_id
+			UNION ALL
+			SELECT b.server_id, NULL, NULL, NULL, NULL, 1, b.reason, NULL
+			FROM blocked_servers b WHERE b.server_id NOT IN (SELECT server_id FROM server_approvals))
+		ORDER BY requested_at DESC, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []CommunityServer{}
+	for rows.Next() {
+		var c CommunityServer
+		var req sql.NullInt64
+		if err := rows.Scan(&c.ID, &c.Name, &c.URL, &c.Contact, &c.Status, &c.Blocked, &c.Reason, &req); err != nil {
+			return nil, err
+		}
+		if req.Valid {
+			t := time.Unix(req.Int64, 0).UTC()
+			c.RequestedAt = &t
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+var serverIDRe = regexp.MustCompile(`^[a-z2-7]{26}$`)
+
+// BlockServer adds a community server to the public block list.
+func (a *Admin) BlockServer(ctx context.Context, id, reason, operator string) error {
+	id = strings.ToLower(strings.TrimSpace(id))
+	if !serverIDRe.MatchString(id) {
+		return errors.New("identifiant de serveur invalide (26 caractères, visible dans son lien d'invitation après « sid= »)")
+	}
+	tx, err := a.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO blocked_servers (server_id, reason, created_at) VALUES (?, ?, ?)
+		ON CONFLICT (server_id) DO UPDATE SET reason = excluded.reason`, id, strings.TrimSpace(reason), a.now().Unix()); err != nil {
+		return err
+	}
+	if err := a.log(ctx, tx, "server_block", "", "serveur "+id+" : "+reason, operator); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// UnblockServer removes a server from the block list.
+func (a *Admin) UnblockServer(ctx context.Context, id, operator string) error {
+	tx, err := a.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM blocked_servers WHERE server_id = ?`, id); err != nil {
+		return err
+	}
+	if err := a.log(ctx, tx, "server_unblock", "", "serveur "+id, operator); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DecideServer approves or rejects an approval request.
+func (a *Admin) DecideServer(ctx context.Context, id string, approve bool, operator string) error {
+	status, action := "rejected", "server_reject"
+	if approve {
+		status, action = "approved", "server_approve"
+	}
+	tx, err := a.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `UPDATE server_approvals SET status = ?, decided_at = ? WHERE server_id = ?`, status, a.now().Unix(), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return errors.New("aucune demande de ce serveur")
+	}
+	if err := a.log(ctx, tx, action, "", "serveur "+id, operator); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

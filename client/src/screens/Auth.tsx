@@ -1,8 +1,8 @@
 // Signed-out screens: sign in (with 2FA), create an account, verify the email
 // address, reset a forgotten password, choose the identity service.
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { ApiError } from '../api/http'
-import { IdentityClient } from '../api/identity'
+import { IdentityClient, type Policy } from '../api/identity'
 import { Alert, Dialog, Field, PasswordField, Submit, useCooldown } from '../components/ui'
 import { Home, Lock, Phone } from '../components/icons'
 import { deviceKey } from '../lib/device'
@@ -26,6 +26,11 @@ export function Auth({ notice }: { notice?: string }) {
   const [email, setEmail] = useState('')
 
   const client = new IdentityClient(identity)
+  const [policy, setPolicy] = useState<Policy | null>(null)
+  useEffect(() => {
+    setPolicy(null)
+    new IdentityClient(identity).policy().then(setPolicy, () => {})
+  }, [identity])
 
   async function finishLogin(login: string, password: string, totp?: string) {
     const [dk, app, keys] = await Promise.all([deviceKey(identityLabel(identity)), appInfo(), client.keySet()])
@@ -81,8 +86,9 @@ export function Auth({ notice }: { notice?: string }) {
     case 'register':
       body = (
         <RegisterForm
-          onSubmit={async (em, pseudo, password) => {
-            await client.register(em, pseudo, password)
+          policy={policy}
+          onSubmit={async (em, pseudo, password, invite) => {
+            await client.register(em, pseudo, password, invite)
             setEmail(em)
             setCreds({ login: em, password })
             go('verify', 'Compte créé. Un code à 6 chiffres vient d’être envoyé à ' + em + '.')
@@ -274,31 +280,52 @@ function MfaForm({ onSubmit, onBack }: { onSubmit: (code: string) => Promise<voi
   )
 }
 
-function RegisterForm({ onSubmit, onLogin }: {
-  onSubmit: (email: string, pseudo: string, password: string) => Promise<void>
+function RegisterForm({ policy, onSubmit, onLogin }: {
+  policy: Policy | null
+  onSubmit: (email: string, pseudo: string, password: string, invite?: string) => Promise<void>
   onLogin: () => void
 }) {
+  const [invite, setInvite] = useState('')
   const [email, setEmail] = useState('')
   const [pseudo, setPseudo] = useState('')
   const [password, setPassword] = useState('')
   const [touched, setTouched] = useState(false)
   const s = useSubmit()
+  const domains = policy?.email_domains ?? []
+  const needInvite = policy?.registration === 'invite'
+  const domainOK = domains.length === 0 || domains.includes(email.trim().toLowerCase().split('@')[1] ?? '')
   const errs = {
-    email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? '' : 'Adresse email invalide.',
+    email: !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? 'Adresse email invalide.'
+      : !domainOK ? 'Adresses acceptées : ' + domains.map((d) => '@' + d).join(', ') + '.' : '',
+    invite: needInvite && !invite.trim() ? 'Entrez le code d\u2019invitation reçu.' : '',
     pseudo: pseudoRe.test(pseudo.trim()) ? '' : 'De 3 à 32 caractères : lettres, chiffres, « _ », « . » ou « - » (pas au début ni à la fin).',
     password: [...password].length >= MIN_PASSWORD ? '' : 'Au moins ' + MIN_PASSWORD + ' caractères.',
   }
   const submit = (e: FormEvent) => {
     e.preventDefault()
     setTouched(true)
-    if (errs.email || errs.pseudo || errs.password) return
-    s.run(() => onSubmit(email.trim(), pseudo.trim(), password))
+    if (errs.email || errs.pseudo || errs.password || errs.invite) return
+    s.run(() => onSubmit(email.trim(), pseudo.trim(), password, needInvite ? invite.trim() : undefined))
+  }
+  if (policy?.registration === 'closed') {
+    return (
+      <div className="auth-form">
+        <Head title="Créer un compte" />
+        <Alert kind="info">Ce service d&apos;identité n&apos;accepte pas de nouveaux comptes. Vous pouvez en choisir un autre ci-dessous.</Alert>
+        <p className="muted small">Déjà un compte ? <button type="button" className="link" onClick={onLogin}>Se connecter</button></p>
+      </div>
+    )
   }
   return (
     <form className="auth-form" onSubmit={submit} noValidate>
       <Head title="Créer un compte" sub="Un compte suffit pour tous les serveurs Quarel." />
+      {needInvite && (
+        <Field label="Code d'invitation" autoComplete="off" value={invite} onChange={(e) => setInvite(e.target.value)}
+          error={touched ? errs.invite : ''} hint="Ce service est sur invitation : le code vous a été donné par son équipe ou par un de ses membres." autoFocus />
+      )}
       <Field label="Email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)}
-        error={touched ? errs.email : ''} hint="Jamais montrée aux autres. Sert à vérifier le compte et à le récupérer." autoFocus />
+        error={touched ? errs.email : ''} autoFocus={!needInvite}
+        hint={domains.length ? 'Adresses acceptées : ' + domains.map((d) => '@' + d).join(', ') + '. Jamais montrée aux autres.' : 'Jamais montrée aux autres. Sert à vérifier le compte et à le récupérer.'} />
       <Field label="Pseudo" autoComplete="username" value={pseudo} onChange={(e) => setPseudo(e.target.value)}
         error={touched ? errs.pseudo : ''} hint="Visible par tous. Modifiable ensuite, une fois par jour." />
       <PasswordField label="Mot de passe" autoComplete="new-password" value={password}

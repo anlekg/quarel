@@ -191,7 +191,7 @@ function renderLogin() {
 const pages = () => [
   ['dashboard', 'Tableau de bord'],
   ['settings', 'Réglages'],
-  ...(session.kind === 'identity' ? [['accounts', 'Comptes']] : []),
+  ...(session.kind === 'identity' ? [['accounts', 'Comptes'], ['invites', 'Invitations'], ['servers', 'Serveurs']] : []),
   ['backups', 'Sauvegardes'],
   ['logs', 'Journal'],
   ['password', 'Mot de passe'],
@@ -205,7 +205,8 @@ function renderApp() {
     h('span', { class: 'spacer' }),
     h('button', { onclick: async () => { await api('POST', '/logout').catch(() => {}); session.signed_in = false; render() } }, 'Se déconnecter'))
   app.replaceChildren(h('div', { class: 'layout' }, nav, main))
-  ;({ dashboard: pageDashboard, settings: pageSettings, accounts: pageAccounts, backups: pageBackups, logs: pageLogs, password: pagePassword })[page](main)
+  ;({ dashboard: pageDashboard, settings: pageSettings, accounts: pageAccounts, invites: pageInvites, servers: pageServers,
+    backups: pageBackups, logs: pageLogs, password: pagePassword })[page](main)
 }
 
 const stateLabels = { running: 'En marche', starting: 'Démarrage…', error: 'Arrêté : erreur de configuration', stopped: 'Arrêté' }
@@ -233,8 +234,9 @@ async function pageDashboard(main) {
       st.error ? h('div', { class: 'alert alert-error' }, 'Le service ne peut pas démarrer :\n' + st.error + '\n\nCorrigez les réglages : il redémarrera tout seul.') : null,
       svc.claim_code ? h('div', { class: 'panel' }, h('h3', {}, 'Devenir propriétaire'),
         h('div', { class: 'form-grid' },
-          h('p', { class: 'muted' }, 'Ce serveur n’a pas encore de propriétaire. Dans l’application Quarel, rejoignez-le puis entrez ce code (usage unique ; un nouveau est créé à chaque démarrage) :'),
-          h('div', { class: 'claim mono' }, svc.claim_code))) : null,
+          h('p', { class: 'muted' }, 'Ce serveur n\u2019a pas encore de propriétaire. Dans l\u2019application Quarel, choisissez « Rejoindre un serveur » et collez ce lien : vous en deviendrez propriétaire. Il ne sert qu\u2019une fois ; un nouveau est créé à chaque démarrage tant que personne ne l\u2019a utilisé.'),
+          copyRow(svc.owner_link),
+          h('p', { class: 'muted small' }, 'Si l\u2019application se connecte depuis Internet, remplacez l\u2019adresse du lien par l\u2019adresse publique ou le nom de domaine du serveur.'))) : null,
       ...(svc.notices || []).map((n) => alertBox(n.level, n.text)),
       h('div', { class: 'panel' }, h('h3', {}, 'Service'), rows.map(([k, v]) => h('div', { class: 'row' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v)))),
       h('div', { class: 'actions' },
@@ -257,6 +259,150 @@ async function pageDashboard(main) {
   }
   await load()
   timer = setInterval(load, 5000)
+  if (session.kind === 'community') main.append(await identityPanel())
+}
+
+// Community server: where it stands with each accepted identity service.
+async function identityPanel() {
+  const box = h('div', { class: 'form-grid' }, h('p', { class: 'muted' }, 'Vérification…'))
+  const panel = h('div', { class: 'panel' }, h('h3', {}, 'Services d\u2019identité acceptés'), box)
+  const draw = async () => {
+    let list
+    try {
+      list = await api('GET', '/x/identity')
+    } catch (e) {
+      box.replaceChildren(alertBox('error', errText(e)))
+      return
+    }
+    box.replaceChildren(...list.map((it) => {
+      let state
+      if (!it.reachable) state = h('span', { class: 'tag red' }, 'injoignable')
+      else if (it.blocked) state = h('span', { class: 'tag red' }, 'a bloqué ce serveur')
+      else if (it.server_policy !== 'approved') state = h('span', { class: 'tag' }, 'accepte tous les serveurs')
+      else state = h('span', { class: 'tag' + (it.status === 'approved' ? '' : ' red') },
+        { approved: 'serveur approuvé', pending: 'demande en attente', rejected: 'demande refusée', none: 'approbation nécessaire' }[it.status] || it.status)
+      const ask = it.reachable && !it.blocked && it.server_policy === 'approved' && it.status !== 'approved' && it.status !== 'pending'
+        ? h('button', { class: 'btn btn-primary btn-sm', onclick: async () => {
+          const contact = prompt('Comment l\u2019opérateur de ' + it.issuer + ' peut-il vous joindre ? (email, pseudo…)')
+          if (contact === null) return
+          try {
+            await api('POST', '/x/identity/request', { issuer: it.issuer, contact })
+            draw()
+          } catch (e) {
+            alert(errText(e))
+          }
+        } }, 'Demander l\u2019accès') : null
+      const help = it.blocked ? 'Ses utilisateurs ne peuvent plus rejoindre ce serveur.'
+        : it.server_policy === 'approved' && it.status !== 'approved' ? 'Ses utilisateurs ne pourront se connecter qu\u2019une fois le serveur approuvé par son opérateur.' : ''
+      return h('div', { class: 'row' }, h('div', { class: 'k mono' }, it.issuer), h('div', { class: 'v' }, state, ' ', ask, help ? h('div', { class: 'muted small' }, help) : null))
+    }))
+  }
+  draw()
+  return panel
+}
+
+// --- identity service: invitations ---
+
+async function pageInvites(main) {
+  const err = h('div')
+  const list = h('div')
+  const note = h('input', { class: 'input', placeholder: 'Pour qui ? (facultatif)' })
+  const uses = h('input', { class: 'input', type: 'number', min: '0', value: '1' })
+  const days = h('input', { class: 'input', type: 'number', min: '0', value: '30' })
+  const created = h('div')
+  async function load() {
+    try {
+      const invites = await api('GET', '/x/invites')
+      const now = Date.now()
+      list.replaceChildren(invites.length === 0 ? h('p', { class: 'muted empty' }, 'Aucune invitation.') :
+        h('table', {}, h('thead', {}, h('tr', {}, ['Code', 'Créée par', 'Utilisations', 'Expire', ''].map((t) => h('th', {}, t)))),
+          h('tbody', {}, invites.map((i) => {
+            const expired = i.expires_at && Date.parse(i.expires_at) <= now
+            const full = i.max_uses > 0 && i.uses >= i.max_uses
+            return h('tr', {},
+              h('td', {}, h('span', { class: 'mono' }, i.code), i.note ? h('div', { class: 'muted small' }, i.note) : null),
+              h('td', {}, i.created_by || 'opérateur'),
+              h('td', {}, i.uses + ' / ' + (i.max_uses || '∞')),
+              h('td', {}, expired ? h('span', { class: 'tag red' }, 'expirée') : full ? h('span', { class: 'tag red' }, 'épuisée') : i.expires_at ? fmtDate(i.expires_at) : 'jamais'),
+              h('td', {}, !expired && !full ? h('button', { class: 'btn btn-ghost btn-sm', onclick: async () => {
+                await api('POST', '/x/invites/' + encodeURIComponent(i.code) + '/revoke').catch((e) => err.replaceChildren(alertBox('error', errText(e))))
+                load()
+              } }, 'Révoquer') : null))
+          }))))
+    } catch (e) {
+      list.replaceChildren(alertBox('error', errText(e)))
+    }
+  }
+  main.append(h('h2', {}, 'Invitations'),
+    h('p', { class: 'muted' }, 'Avec les inscriptions « sur invitation » (Réglages), un code est demandé pour créer un compte. Donnez-le avec l\u2019adresse de ce service.'),
+    h('form', { class: 'panel', onsubmit: async (ev) => {
+      ev.preventDefault()
+      err.replaceChildren()
+      try {
+        const inv = await api('POST', '/x/invites', { note: note.value, max_uses: Number(uses.value), valid_days: Number(days.value) })
+        created.replaceChildren(h('div', { class: 'form-grid' }, h('p', {}, 'Nouvelle invitation :'), copyRow(inv.code)))
+        note.value = ''
+        load()
+      } catch (e) {
+        err.append(alertBox('error', errText(e)))
+      }
+    } }, h('h3', {}, 'Nouvelle invitation'), h('div', { class: 'form-grid' },
+      field('Note', note), field('Nombre d\u2019utilisations', uses, '0 : illimité.'), field('Valable (jours)', days, '0 : sans limite de durée.'),
+      err, h('div', { class: 'actions' }, h('button', { class: 'btn btn-primary', type: 'submit' }, 'Créer')))),
+    created,
+    h('div', { class: 'panel' }, h('h3', {}, 'Toutes les invitations'), list))
+  await load()
+}
+
+// --- identity service: community servers (block list, approvals) ---
+
+async function pageServers(main) {
+  const err = h('div')
+  const list = h('div')
+  const policy = h('p', { class: 'muted' })
+  const id = h('input', { class: 'input mono', placeholder: 'identifiant (26 caractères, après « sid= » dans ses liens)' })
+  const reason = h('input', { class: 'input', placeholder: 'Raison (affichée aux utilisateurs)' })
+  const act = (path, body) => async () => {
+    err.replaceChildren()
+    try {
+      await api('POST', path, body)
+      load()
+    } catch (e) {
+      err.append(alertBox('error', errText(e)))
+    }
+  }
+  async function load() {
+    try {
+      const data = await api('GET', '/x/servers')
+      policy.textContent = data.policy === 'approved'
+        ? 'Mode actuel : seuls les serveurs approuvés peuvent utiliser les comptes de ce service (jetons chiffrés pour eux).'
+        : 'Mode actuel : tous les serveurs sauf ceux bloqués ci-dessous (l\u2019application refuse de s\u2019y connecter). Le mode « approuvés seulement » se choisit dans les Réglages.'
+      list.replaceChildren(data.servers.length === 0 ? h('p', { class: 'muted empty' }, 'Aucun serveur bloqué ni demande d\u2019approbation.') :
+        h('table', {}, h('thead', {}, h('tr', {}, ['Serveur', 'Contact', 'État', ''].map((t) => h('th', {}, t)))),
+          h('tbody', {}, data.servers.map((sv) => h('tr', {},
+            h('td', {}, h('b', {}, sv.name || '—'), h('div', { class: 'muted small mono' }, sv.id), sv.url ? h('div', { class: 'muted small mono' }, sv.url) : null),
+            h('td', {}, sv.contact || '—', sv.requested_at ? h('div', { class: 'muted small' }, 'demande du ' + fmtDate(sv.requested_at)) : null),
+            h('td', {}, sv.blocked ? h('span', { class: 'tag red', title: sv.reason }, 'bloqué') : null, ' ',
+              sv.status ? h('span', { class: 'tag' + (sv.status === 'approved' ? '' : ' red') }, { approved: 'approuvé', pending: 'en attente', rejected: 'refusé' }[sv.status]) : null),
+            h('td', {}, h('div', { class: 'toolbar' },
+              sv.status && sv.status !== 'approved' ? h('button', { class: 'btn btn-primary btn-sm', onclick: act('/x/servers/' + sv.id + '/approve') }, 'Approuver') : null,
+              sv.status === 'pending' || sv.status === 'approved' ? h('button', { class: 'btn btn-ghost btn-sm', onclick: act('/x/servers/' + sv.id + '/reject') }, sv.status === 'approved' ? 'Retirer l\u2019approbation' : 'Refuser') : null,
+              sv.blocked ? h('button', { class: 'btn btn-ghost btn-sm', onclick: act('/x/servers/' + sv.id + '/unblock') }, 'Débloquer')
+                : h('button', { class: 'btn btn-ghost btn-sm', onclick: () => {
+                  const why = prompt('Bloquer ' + (sv.name || sv.id) + ' : raison (affichée aux utilisateurs)')
+                  if (why !== null) act('/x/servers/block', { id: sv.id, reason: why.trim() })()
+                } }, 'Bloquer'))))))))
+    } catch (e) {
+      list.replaceChildren(alertBox('error', errText(e)))
+    }
+  }
+  main.append(h('h2', {}, 'Serveurs communautaires'), policy,
+    h('form', { class: 'panel', onsubmit: (ev) => { ev.preventDefault(); act('/x/servers/block', { id: id.value.trim(), reason: reason.value.trim() })().then(() => { id.value = ''; reason.value = '' }) } },
+      h('h3', {}, 'Bloquer un serveur'), h('div', { class: 'form-grid' },
+        h('p', { class: 'muted' }, 'Ses utilisateurs ne pourront plus le rejoindre avec un compte de ce service.'), field('Identifiant du serveur', id), field('Raison', reason),
+        h('div', { class: 'actions' }, h('button', { class: 'btn btn-danger btn-sm', type: 'submit' }, 'Bloquer')))),
+    err, h('div', { class: 'panel' }, h('h3', {}, 'Serveurs connus'), list))
+  await load()
 }
 
 function shown(f, values) {

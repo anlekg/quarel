@@ -41,6 +41,16 @@ type Config struct {
 	GroupMaxMembers int           // members of a group conversation (QUAREL_DM_GROUP_MAX)
 
 	TURN TURNConfig // relay for peer-to-peer calls
+
+	// Who may create an account: "open", "invite" (an invitation code is
+	// needed) or "closed"; optional email domains and account cap (0: none).
+	Registration        string
+	RegistrationDomains []string
+	MaxAccounts         int
+	UserInvites         int // invitations each user may create (0: operator only)
+	// ServerPolicy: "open" (any community server, except blocked ones, checked
+	// by the apps) or "approved" (tokens sealed for approved servers only).
+	ServerPolicy string
 }
 
 // Limits caps request rates (0 disables a limit).
@@ -99,6 +109,24 @@ func ConfigFromEnv() (Config, error) {
 	c.GroupMaxMembers = envInt("QUAREL_DM_GROUP_MAX", 10)
 	if c.DMFileTTL, err = time.ParseDuration(env("QUAREL_DM_FILE_TTL", "168h")); err != nil || c.DMFileTTL < time.Hour {
 		return c, fmt.Errorf("conservation des fichiers (QUAREL_DM_FILE_TTL) : durée invalide (ex. 168h, au moins 1h)")
+	}
+	c.Registration = env("QUAREL_REGISTRATION", "open")
+	if c.Registration != "open" && c.Registration != "invite" && c.Registration != "closed" {
+		return c, fmt.Errorf("inscriptions (QUAREL_REGISTRATION) : %q inconnu (open, invite, closed)", c.Registration)
+	}
+	for _, d := range strings.Split(settings.Get("QUAREL_REGISTRATION_DOMAINS"), ",") {
+		if d = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(d), "@")); d != "" {
+			if strings.ContainsAny(d, "@ /") || !strings.Contains(d, ".") {
+				return c, fmt.Errorf("domaines d'email autorisés (QUAREL_REGISTRATION_DOMAINS) : %q n'est pas un nom de domaine", d)
+			}
+			c.RegistrationDomains = append(c.RegistrationDomains, d)
+		}
+	}
+	c.MaxAccounts = envInt("QUAREL_MAX_ACCOUNTS", 0)
+	c.UserInvites = envInt("QUAREL_USER_INVITES", 0)
+	c.ServerPolicy = env("QUAREL_SERVER_POLICY", "open")
+	if c.ServerPolicy != "open" && c.ServerPolicy != "approved" {
+		return c, fmt.Errorf("serveurs communautaires (QUAREL_SERVER_POLICY) : %q inconnu (open, approved)", c.ServerPolicy)
 	}
 	if c.SMTP.Host != "" && c.SMTP.From == "" {
 		return c, fmt.Errorf("emails : l'expéditeur (QUAREL_SMTP_FROM) est obligatoire avec un serveur SMTP")
@@ -184,6 +212,12 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer, retired 
 	if s.cfg.DMFileMaxBytes <= 0 {
 		s.cfg.DMFileMaxBytes = 25 << 20
 	}
+	if s.cfg.Registration == "" {
+		s.cfg.Registration = "open"
+	}
+	if s.cfg.ServerPolicy == "" {
+		s.cfg.ServerPolicy = "open"
+	}
 	if s.cfg.GroupMaxMembers < 2 {
 		s.cfg.GroupMaxMembers = 10
 	}
@@ -225,6 +259,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/auth/forgot-password", s.limited(s.limit.email, s.handleForgotPassword))
 	mux.HandleFunc("POST /v1/auth/reset-password", s.limited(s.limit.login, s.handleResetPassword))
 	mux.HandleFunc("GET /v1/disabled-accounts", s.handleDisabledAccounts)
+	mux.HandleFunc("GET /v1/policy", s.handlePolicy)
+	mux.HandleFunc("GET /v1/servers/blocked", s.handleBlockedServers)
+	mux.HandleFunc("POST /v1/servers/requests", s.limited(s.limit.email, s.handleServerRequest))
+	mux.HandleFunc("GET /v1/servers/requests/{id}", s.handleServerRequestStatus)
+	mux.HandleFunc("GET /v1/me/invites", s.authed(s.handleMyInvites))
+	mux.HandleFunc("POST /v1/me/invites", s.authed(s.handleCreateMyInvite))
+	mux.HandleFunc("DELETE /v1/me/invites/{code}", s.authed(s.handleDeleteMyInvite))
 
 	mux.HandleFunc("GET /v1/me", s.authed(s.handleMe))
 	mux.HandleFunc("PATCH /v1/me", s.authed(s.handleChangePseudo))

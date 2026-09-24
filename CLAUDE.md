@@ -136,6 +136,15 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 - **Refus du relais par l'utilisateur** : réglage du client (`quarelctl calls relay=off`, `state.call_relay_off`) → les serveurs `turn:` sont ignorés ; l'appel ne réussit que si un chemin direct existe.
 - **Client de test** (`cmd/quarelctl/calls.go`, `pion/webrtc` v4) : `call <ami> [--seconds N] [--relay-only]`, `call-listen [--once]` (répond automatiquement), envoie une tonalité PCMU 440 Hz, mesure l'audio reçu et affiche le chemin (réseau local, pair à pair, relais).
 
+### Inscriptions et serveurs communautaires autorisés (choix du CP, 2026-09-24)
+
+- **Inscriptions** : `QUAREL_REGISTRATION` = `open` (défaut) | `invite` | `closed` ; `QUAREL_REGISTRATION_DOMAINS` (domaines d'email acceptés) ; `QUAREL_MAX_ACCOUNTS` (0 = illimité) ; `QUAREL_USER_INVITES` (invitations que chaque utilisateur peut créer, à vie ; usage unique, 30 jours ; 0 = opérateur seul). Refus : `registration_closed`, `email_domain_not_allowed`, `account_limit_reached`, `invite_required`, `invalid_invite`, `invite_quota_reached`. Table `registration_invites` (migration 8 : code en clair — il ne protège que l'inscription —, `created_by` NULL = opérateur, `max_uses` 0 = illimité, `expires_at`) ; l'invitation est consommée **dans la transaction** qui crée le compte ; `users.invited_by` (id de l'invitant ou `operator`). Invitations de l'opérateur : page d'administration.
+- **Serveurs communautaires** : `QUAREL_SERVER_POLICY` = `open` (défaut) | `approved`.
+  - **Liste noire** (les deux modes) : `blocked_servers` ; publique `GET /v1/servers/blocked` ; **appliquée par l'application** (refus avant la connexion, et au lancement pour les serveurs déjà rejoints) et par le service (`server_blocked` si un jeton est demandé pour ce serveur). En mode `open`, le service ne sait pas où vont ses utilisateurs.
+  - **Mode `approved`** : le jeton se demande pour un serveur (`POST /v1/identity/token {audience}` ; sinon `audience_required`), seulement approuvé et non bloqué (`server_not_approved`), marqué `aud` et **chiffré pour ce serveur** (`idtoken.Seal` : HPKE RFC 9180, DHKEM(X25519), HKDF-SHA256, ChaCha20-Poly1305, `info` = contexte + ID du serveur ; préfixe `qe1.`). Une application modifiée ne peut donc pas le réutiliser ailleurs : seul le serveur approuvé peut le lire. Le service voit alors les connexions (sans les conserver).
+  - **Approbation** : le serveur communautaire envoie `POST /v1/servers/requests` (`idtoken.ApprovalRequest` : clé d'identité Ed25519, clé X25519, nom, adresse, contact, **signés par la clé du serveur** et liés au nom du service) depuis sa page d'administration ; `GET /v1/servers/requests/{id}` (public) → `{status: none|pending|approved|rejected, blocked}` ; une nouvelle clé de chiffrement repasse en `pending`. Table `server_approvals`. L'opérateur approuve, refuse, bloque dans sa page (journal `admin_log` : `server_block|unblock|approve|reject`).
+- `GET /v1/policy` (public) → `{issuer, registration, email_domains, server_policy}` : l'application affiche le bon formulaire d'inscription et sait si le jeton doit nommer le serveur.
+
 ### Endpoints (Identity)
 
 | Méthode | Chemin | Rôle |
@@ -221,7 +230,7 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 |---|---|---|---|
 | GET | `/.well-known/quarel-identity` | — | Clés publiques de signature |
 | GET | `/v1/health` | — | Santé |
-| POST | `/v1/auth/register` | — | `{email, pseudo, password}` |
+| POST | `/v1/auth/register` | — | `{email, pseudo, password, invite?}` |
 | POST | `/v1/auth/verify-email` | — | `{email, code}` |
 | POST | `/v1/auth/resend-verification` | — | `{email}` |
 | POST | `/v1/auth/login` | — | `{login, password, totp_code?, device_name, device_key}` |
@@ -232,7 +241,11 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | POST | `/v1/me/2fa/setup` | session | `{password}` → secret + URI otpauth |
 | POST | `/v1/me/2fa/enable` | session | `{code}` → codes de secours |
 | POST | `/v1/me/2fa/disable` | session | `{password, code}` |
-| POST | `/v1/identity/token` | session | Jeton d'identité portable |
+| POST | `/v1/identity/token` | session | Jeton d'identité portable ; `{audience}` = serveur visé (mode « serveurs approuvés » : jeton chiffré pour lui) |
+| GET | `/v1/policy` | — | Règles d'inscription et politique des serveurs |
+| GET | `/v1/servers/blocked` | — | Liste noire des serveurs communautaires |
+| POST/GET | `/v1/servers/requests`, `/v1/servers/requests/{id}` | — (signé par le serveur) | Demande d'approbation / état |
+| GET/POST/DELETE | `/v1/me/invites[/{code}]` | session | Mes invitations (quota) |
 | POST | `/v1/auth/forgot-password` | — | `{email}` → 202 toujours |
 | POST | `/v1/auth/reset-password` | — | `{email, code, password, totp_code?}` |
 | PATCH/DELETE | `/v1/me` | session | `{pseudo}` / `{password, totp_code?}` : suppression définitive |
@@ -248,12 +261,13 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 
 ### Configuration (variables d'environnement)
 
-`QUAREL_ADDR` (`:8080`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_ISSUER` (`localhost:8080` — **doit être le domaine public en production**), `QUAREL_TOKEN_TTL` (`12h`), `QUAREL_DM_FILE_MAX_MB` (25), `QUAREL_DM_FILE_TTL` (`168h`), `QUAREL_DM_GROUP_MAX` (10), `QUAREL_TURN` (`off`), `QUAREL_TURN_PUBLIC_IP`, `QUAREL_TURN_LISTEN` (`:3478`), `QUAREL_TURN_PORTS` (`49160-49200`), `QUAREL_SMTP_HOST/PORT/USER/PASSWORD/FROM` (sans `QUAREL_SMTP_HOST`, les emails sont écrits dans le log : mode dev).
+`QUAREL_ADDR` (`:8080`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_ISSUER` (`localhost:8080` — **doit être le domaine public en production**), `QUAREL_TOKEN_TTL` (`12h`), `QUAREL_DM_FILE_MAX_MB` (25), `QUAREL_DM_FILE_TTL` (`168h`), `QUAREL_DM_GROUP_MAX` (10), `QUAREL_REGISTRATION` (`open`), `QUAREL_REGISTRATION_DOMAINS`, `QUAREL_MAX_ACCOUNTS` (0), `QUAREL_USER_INVITES` (0), `QUAREL_SERVER_POLICY` (`open`), `QUAREL_TURN` (`off`), `QUAREL_TURN_PUBLIC_IP`, `QUAREL_TURN_LISTEN` (`:3478`), `QUAREL_TURN_PORTS` (`49160-49200`), `QUAREL_SMTP_HOST/PORT/USER/PASSWORD/FROM` (sans `QUAREL_SMTP_HOST`, les emails sont écrits dans le log : mode dev).
 
 ## Serveur communautaire (jalon 2)
 
 - **Identité du serveur** : clé Ed25519 `$QUAREL_DATA_DIR/server.key` (1er démarrage). `server_id` = base32(SHA-256(clé publique)[:16]). Les liens d'invitation portent le `sid` ; le client (quarelctl) épingle le `server_id` au 1er contact et refuse s'il change. Prévu (P1) : certificat TLS lié à cette clé, pour empêcher un intermédiaire.
 - **Connexion** : `POST /v1/auth/challenge` → `{server_id, nonce}` (usage unique, 2 min, en mémoire) ; `POST /v1/auth/login {identity_token, nonce, proof, invite?, claim?}`. Le serveur vérifie le jeton hors ligne avec les clés de l'émetteur (`QUAREL_TRUSTED_ISSUERS`), puis la preuve `SignProof(device, server_id, nonce)`. Session = jeton porteur (SHA-256 stocké) qui **expire avec le jeton d'identité** ; le client se reconnecte alors avec un nouveau jeton.
+- **Jetons chiffrés** (services d'identité en mode « serveurs approuvés ») : clé X25519 du serveur **dérivée de sa clé d'identité** (HKDF-SHA256, `approval.go` : pas de fichier en plus, une sauvegarde restaurée la garde) ; `verifyIdentity` ouvre les jetons `qe1.` puis refuse un jeton marqué pour un autre serveur (`wrong_audience`). `IdentityServices` / `RequestApproval` : état et demande d'approbation auprès de chaque service accepté (page d'administration).
 - **Clés des services Identity** (`keys.go`) : récupérées sur `https://<issuer>/.well-known/quarel-identity` (`http://` pour localhost/127.x), cache 1 h, re-téléchargement forcé si `kid` inconnu (1/min max), anciennes clés conservées si l'Identity est injoignable.
 - **Membres** : identifiés par `(issuer, subject)`. Départ, expulsion ou bannissement = `left_at` + suppression des sessions et des rôles (`removeMember`) ; la ligne reste : les messages gardent leur auteur, les bans leur cible, même `id` au retour. Le propriétaire (`is_owner`) ne peut pas partir.
 - **Propriétaire** : tant qu'il n'y en a pas, un code de revendication est généré (et affiché) à chaque démarrage ; `login` avec `claim` le consomme.
@@ -420,6 +434,7 @@ Messages : `QUAREL_MAX_UPLOAD_MB` (25), `QUAREL_LINK_PREVIEWS` (`on`). Limites s
   - **Liste des serveurs** : secret `servers:<id utilisateur>` (adresse, `sid`, session). Invitation : `quarel://hôte:port/CODE?sid=…` (`src/lib/invite.ts`).
   - **Affichage des messages** : rendu sans HTML (`MessageContent` : blocs de code, code, gras, italique, liens, mentions) ; `@pseudo` tapé → `<@id>` à l'envoi (`encodeMentions`) ; pièces jointes téléchargées avec le jeton puis affichées en URL locale (`blob:`) ; aperçus de liens **sans image** (charger l'image révélerait l'adresse IP au site). Regroupement des messages d'un même auteur à moins de 7 min, séparateurs de jour.
   - **Écrans d'arrivée** : règles (`rules_not_accepted`), téléphone (`phone_not_verified`), exclusion temporaire (lecture seule), serveur retiré (expulsion, bannissement).
+  - **Règles du service d'identité** : `serverRules` (politique + liste noire, cache 10 min) ; serveur bloqué refusé à l'aperçu et marqué « retiré » au lancement ; jeton demandé avec `audience` en mode « serveurs approuvés » ; inscription : champ « Code d'invitation », domaines, inscriptions fermées ; paramètres « Invitations » (quota de l'utilisateur).
   - **Pas encore** : fils (affichés, pas créés), épingles, recherche, réglages de notification, modération et administration (étape 6), vocal (étape 3).
 
 ## Administration web et réglages (installation légère)
@@ -432,7 +447,8 @@ Messages : `QUAREL_MAX_UPLOAD_MB` (25), `QUAREL_LINK_PREVIEWS` (`on`). Limites s
   - sessions en mémoire (cookie `HttpOnly`, `SameSite=Strict`, 12 h) ; écritures : en-tête `X-Quarel-Admin: 1` obligatoire et `Origin` identique (anti-CSRF) ; 10 échecs / 15 min par IP ; CSP stricte (aucun style ni script en ligne) ;
   - API : `/api/session|setup|login|logout|password`, `/api/status` (état + `Status(r)` du service), `/api/settings` (champs décrits par le service : `Field{Key, Label, Help, Group, Kind: text|number|bool|select|secret|list, ShowIf}` ; secrets jamais renvoyés, vide = inchangé, `null` = défaut ; **validation avant d'enregistrer, retour arrière si invalide**, puis redémarrage), `/api/restart`, `/api/logs`, `/api/backup` (archive), `/api/restore` (arrêt, restauration forcée, redémarrage), `/api/x/…` (propre au service).
   - **Communautaire** : tableau de bord (nom, identifiant, adresse, membres, vocal, UPnP), **lien propriétaire** `quarel://hôte:port/<code>?sid=…&claim=1` (l'application le reconnaît : connexion avec `claim`), `POST /api/x/rename`.
-  - **Identity** : tableau de bord (nom public, comptes, SMTP, relais), `GET /api/x/accounts?q=`, `POST /api/x/accounts/{id}/disable|enable {reason}`, `GET /api/x/log`, `POST /api/x/rotate-key` (puis redémarrage).
+  - **Identity** : tableau de bord (nom public, inscriptions, serveurs, comptes, SMTP, relais ; alerte si des serveurs attendent une approbation), `GET /api/x/accounts?q=`, `POST /api/x/accounts/{id}/disable|enable {reason}`, `GET /api/x/log`, `POST /api/x/rotate-key` (puis redémarrage) ; **invitations** `GET/POST /api/x/invites`, `POST /api/x/invites/{code}/revoke` ; **serveurs** `GET /api/x/servers`, `POST /api/x/servers/block {id, reason}`, `POST /api/x/servers/{id}/unblock|approve|reject`.
+  - **Communautaire** (suite) : `GET /api/x/identity` (état auprès de chaque service accepté), `POST /api/x/identity/request {issuer, contact}` (demande d'approbation, adresse = celle sous laquelle la page est ouverte).
 - **Sauvegardes** : `settings.json` inclus ; `admin.json` jamais archivé et laissé en place par une restauration (`backup.Spec.Keep`).
 - **Version** : `backup.Release` fixé à la construction (`make build`, `--build-arg VERSION` pour Docker), sinon révision Git.
 - Les **messages d'erreur de configuration sont en français** (affichés dans la page).
@@ -475,7 +491,7 @@ make e2e-accounts     # comptes : mots de passe, email, pseudo, profil, blocage,
 make client-dev       # application desktop en développement (lancer d'abord make run-identity)
 make client-build     # construit l'interface et les processus Electron
 make client-test      # types et tests unitaires du client
-make e2e-client       # application Electron réelle contre de vrais services (xvfb-run) : comptes, serveurs et messages, lien propriétaire
+make e2e-client       # application Electron réelle contre de vrais services (xvfb-run) : comptes, serveurs et messages, lien propriétaire, invitations et serveurs approuvés/bloqués
 make windows          # installateurs Windows des deux serveurs (NSIS requis) → dist/windows/
 ./bin/quarel-server backup f.tar.gz   # sauvegarde à chaud (idem quarel-identity), restore f.tar.gz [--force], version
 ./bin/quarelctl help  # client de test

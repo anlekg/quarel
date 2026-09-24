@@ -15,7 +15,7 @@ export class Identity {
   proc!: ChildProcess
   log = ''
   dir = mkdtempSync(join(tmpdir(), 'quarel-id-'))
-  constructor(public port: number) {}
+  constructor(public port: number, public env: Record<string, string> = {}) {}
 
   get url() {
     return 'http://127.0.0.1:' + this.port
@@ -29,6 +29,8 @@ export class Identity {
         QUAREL_ISSUER: 'localhost:' + this.port,
         QUAREL_DATA_DIR: this.dir,
         QUAREL_RATE_LIMITS: 'off',
+        QUAREL_ADMIN_ADDR: 'off',
+        ...this.env,
       },
     })
     this.proc.stdout!.on('data', (d) => (this.log += d))
@@ -108,7 +110,7 @@ export class Community {
   proc!: ChildProcess
   log = ''
   dir = mkdtempSync(join(tmpdir(), 'quarel-srv-'))
-  constructor(public port: number, public issuer: string) {}
+  constructor(public port: number, public issuer: string, public env: Record<string, string> = {}) {}
 
   async start() {
     this.proc = spawn(join(repo, 'bin', 'quarel-server'), [], {
@@ -122,6 +124,7 @@ export class Community {
         QUAREL_RATE_LIMITS: 'off',
         QUAREL_LINK_PREVIEWS: 'off',
         QUAREL_ADMIN_ADDR: 'off',
+        ...this.env,
       },
     })
     this.proc.stdout!.on('data', (d) => (this.log += d))
@@ -168,4 +171,32 @@ export class Ctl {
   stop() {
     rmSync(this.dir, { recursive: true, force: true })
   }
+}
+
+// Signs in to a server's administration page (choosing its password on first
+// use, allowed from this machine) and returns a JSON caller for its API.
+export async function adminAPI(base: string) {
+  let cookie = ''
+  const call = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
+    const res = await fetch(base + '/api' + path, {
+      method,
+      headers: { 'X-Quarel-Admin': '1', 'Content-Type': 'application/json', Cookie: cookie },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    const set = res.headers.get('set-cookie')
+    if (set) cookie = set.split(';')[0]
+    const text = await res.text()
+    if (!res.ok) throw new Error(method + ' ' + path + ': ' + res.status + ' ' + text)
+    return (text ? JSON.parse(text) : undefined) as T
+  }
+  for (let i = 0; i < 50; i++) {
+    try {
+      await fetch(base + '/api/session')
+      break
+    } catch {
+      await new Promise((r) => setTimeout(r, 100))
+    }
+  }
+  await call('POST', '/setup', { password: 'motdepasse-admin' })
+  return call
 }

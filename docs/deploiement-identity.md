@@ -38,6 +38,14 @@ Au premier passage, choisissez le mot de passe administrateur. On y trouve :
 - **Comptes** : rechercher, désactiver ou réactiver un compte (raison obligatoire, consignée), journal de l'opérateur, changement de la clé de signature ;
 - **Sauvegardes** et **Journal**.
 
+### Qui peut s'inscrire, quels serveurs sont autorisés
+
+Dans **Réglages** :
+- **Inscriptions** : ouvertes, **sur invitation** (codes créés dans la page « Invitations », et par vos utilisateurs si vous leur en accordez), ou fermées ; éventuellement limitées à certains domaines d'email et à un nombre de comptes.
+- **Serveurs communautaires** :
+  - **tous, sauf ceux que vous bloquez** (recommandé) : la page « Serveurs » tient une liste noire que l'application respecte ; vous ne savez pas où vont vos utilisateurs ;
+  - **seulement les serveurs approuvés** : un serveur demande l'accès depuis sa propre page d'administration, vous l'approuvez dans « Serveurs ». Les jetons d'identité sont alors chiffrés pour ce seul serveur : aucun autre ne peut accepter vos comptes. En contrepartie, votre service voit à quels serveurs chacun se connecte (il ne le conserve pas).
+
 Pour que des serveurs communautaires acceptent vos comptes, leurs hébergeurs ajoutent votre domaine : `QUAREL_TRUSTED_ISSUERS=identity.quarel.app,identity.mon-asso.fr`.
 
 ### Sous Windows

@@ -252,6 +252,36 @@ CREATE TABLE conv_file_pending (
 );
 CREATE INDEX conv_file_pending_session ON conv_file_pending(session_id);
 `,
+	// 8: registration invitations, blocked and approved community servers.
+	`
+CREATE TABLE registration_invites (
+	code       TEXT PRIMARY KEY,
+	created_by TEXT REFERENCES users(id) ON DELETE CASCADE, -- NULL: the operator
+	note       TEXT NOT NULL DEFAULT '',
+	max_uses   INTEGER NOT NULL DEFAULT 1,                  -- 0: unlimited
+	uses       INTEGER NOT NULL DEFAULT 0,
+	created_at INTEGER NOT NULL,
+	expires_at INTEGER                                      -- NULL: never
+);
+CREATE INDEX registration_invites_creator ON registration_invites(created_by);
+ALTER TABLE users ADD COLUMN invited_by TEXT; -- inviting user id, 'operator', or NULL (open registration)
+CREATE TABLE blocked_servers (
+	server_id  TEXT PRIMARY KEY,
+	reason     TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL
+);
+CREATE TABLE server_approvals (
+	server_id    TEXT PRIMARY KEY,
+	server_key   TEXT NOT NULL,
+	enc_key      TEXT NOT NULL,
+	name         TEXT NOT NULL,
+	url          TEXT NOT NULL DEFAULT '',
+	contact      TEXT NOT NULL DEFAULT '',
+	status       TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
+	requested_at INTEGER NOT NULL,
+	decided_at   INTEGER
+);
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

@@ -135,6 +135,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 // verifyIdentity checks an identity token against its issuer's published keys.
 func (s *Server) verifyIdentity(ctx context.Context, token string) (*idtoken.Claims, error) {
+	if idtoken.IsSealed(token) { // from an Identity service that approved this server
+		plain, err := idtoken.Open(token, s.enc, s.id)
+		if err != nil {
+			return nil, errf(http.StatusUnauthorized, "invalid_token", "sealed identity token not meant for this server")
+		}
+		token = plain
+	}
 	issuer, err := idtoken.PeekIssuer(token)
 	if err != nil {
 		return nil, errf(http.StatusUnauthorized, "invalid_token", "malformed identity token")
@@ -157,6 +164,9 @@ func (s *Server) verifyIdentity(ctx context.Context, token string) (*idtoken.Cla
 	}
 	if err != nil {
 		return nil, errf(http.StatusUnauthorized, "invalid_token", "identity token rejected: %v", err)
+	}
+	if !claims.ForAudience(s.id) {
+		return nil, errf(http.StatusUnauthorized, "wrong_audience", "this identity token is for another server")
 	}
 	return claims, nil
 }

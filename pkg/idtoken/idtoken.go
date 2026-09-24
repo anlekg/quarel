@@ -6,10 +6,14 @@
 // service's published key set, so the Identity service never learns which
 // servers a user connects to.
 //
-// Tokens carry no audience. To stop a server from replaying a token against
-// another server, the holder must also present a proof: a signature, made
-// with the device key, over the target server's audience and a nonce chosen
-// by that server.
+// Tokens carry no audience by default. To stop a server from replaying a
+// token against another server, the holder must also present a proof: a
+// signature, made with the device key, over the target server's audience and
+// a nonce chosen by that server.
+//
+// An Identity service that only lets approved servers use its accounts issues
+// tokens for one server (audience) and encrypts them for it (see Seal): only
+// that server can read and verify them.
 package idtoken
 
 import (
@@ -124,6 +128,11 @@ func (s *Signer) KeySet() KeySet {
 
 // Issue creates a token for userID bound to deviceKey.
 func (s *Signer) Issue(userID, handle string, deviceKey ed25519.PublicKey, ttl time.Duration, now time.Time) (string, time.Time, error) {
+	return s.IssueFor(userID, handle, deviceKey, ttl, now, "")
+}
+
+// IssueFor is Issue with an audience: the ID of the only server that may accept the token ("" for none).
+func (s *Signer) IssueFor(userID, handle string, deviceKey ed25519.PublicKey, ttl time.Duration, now time.Time, audience string) (string, time.Time, error) {
 	jti := make([]byte, 16)
 	if _, err := rand.Read(jti); err != nil {
 		return "", time.Time{}, err
@@ -139,6 +148,9 @@ func (s *Signer) Issue(userID, handle string, deviceKey ed25519.PublicKey, ttl t
 			ExpiresAt: jwt.NewNumericDate(exp),
 			ID:        b64.EncodeToString(jti),
 		},
+	}
+	if audience != "" {
+		claims.Audience = jwt.ClaimStrings{audience}
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	t.Header["kid"] = s.kid

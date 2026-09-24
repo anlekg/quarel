@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/anlekg/quarel/internal/adminui"
 	"github.com/anlekg/quarel/internal/community"
@@ -177,6 +178,33 @@ func (l *live) api() http.Handler {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("GET /identity", func(w http.ResponseWriter, r *http.Request) {
+		srv, _, _, _, _, _ := l.get()
+		if srv == nil {
+			adminui.WriteJSON(w, http.StatusOK, []any{})
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+		defer cancel()
+		adminui.WriteJSON(w, http.StatusOK, srv.IdentityServices(ctx))
+	})
+	mux.HandleFunc("POST /identity/request", func(w http.ResponseWriter, r *http.Request) {
+		srv, cfg, _, _, _, _ := l.get()
+		var req struct{ Issuer, Contact string }
+		if err := adminui.DecodeJSON(r, &req); err != nil || srv == nil {
+			http.Error(w, "service not running", http.StatusServiceUnavailable)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		url := "https://" + net.JoinHostPort(hostOf(r, cfg), strconv.Itoa(publicPort(cfg)))
+		status, err := srv.RequestApproval(ctx, req.Issuer, url, strings.TrimSpace(req.Contact))
+		if err != nil {
+			adminui.WriteJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]string{"code": "request_failed", "message": err.Error()}})
+			return
+		}
+		adminui.WriteJSON(w, http.StatusOK, map[string]string{"status": status})
 	})
 	return mux
 }

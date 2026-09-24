@@ -120,7 +120,7 @@ func (u *user) token(now time.Time, ttl time.Duration) string {
 	return tok
 }
 
-type loginOpts struct{ invite, claim string }
+type loginOpts struct{ invite, claim, token string }
 
 type loginResp struct {
 	SessionToken string     `json:"session_token"`
@@ -139,8 +139,12 @@ func (e *testEnv) login(u *user, o loginOpts, out *loginResp) result {
 	if ch.ServerID != e.srv.id {
 		e.t.Fatalf("challenge server_id = %q", ch.ServerID)
 	}
+	tok := o.token
+	if tok == "" {
+		tok = u.token(e.clock, time.Hour)
+	}
 	return e.call("POST", "/v1/auth/login", "", map[string]string{
-		"identity_token": u.token(e.clock, time.Hour),
+		"identity_token": tok,
 		"nonce":          ch.Nonce,
 		"proof":          idtoken.SignProof(u.device, ch.ServerID, ch.Nonce),
 		"invite":         o.invite,

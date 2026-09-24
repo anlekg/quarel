@@ -32,7 +32,7 @@ const usage = `quarelctl — client de test Quarel
 Usage : quarelctl [-s URL] [-p PROFIL] <commande> [arguments]
 
 Compte
-  register <email> <pseudo>        créer un compte (mot de passe demandé)
+  register <email> <pseudo> [invit] créer un compte (mot de passe demandé ; code d'invitation si le service l'exige)
   verify-email <email> <code>      valider l'email avec le code reçu
   resend-code <email>              renvoyer un code de vérification
   login <email|pseudo> [appareil]  se connecter (code 2FA demandé si besoin)
@@ -311,15 +311,19 @@ func need(args []string, n int, names string) error {
 func (c *cli) run(cmd string, args []string) error {
 	switch cmd {
 	case "register":
-		if err := need(args, 2, "<email> <pseudo>"); err != nil {
+		if err := need(args, 2, "<email> <pseudo> [invitation]"); err != nil {
 			return err
 		}
 		pw, err := c.password("Mot de passe (10 caractères min.) : ", true)
 		if err != nil {
 			return err
 		}
+		invite := ""
+		if len(args) > 2 {
+			invite = args[2]
+		}
 		var out struct{ UserID, Handle string }
-		if err := c.do("POST", "/v1/auth/register", map[string]string{"email": args[0], "pseudo": args[1], "password": pw}, &out); err != nil {
+		if err := c.do("POST", "/v1/auth/register", map[string]string{"email": args[0], "pseudo": args[1], "password": pw, "invite": invite}, &out); err != nil {
 			return err
 		}
 		fmt.Printf("Compte créé : %s\nUn code de vérification a été envoyé à %s.\nEnsuite : quarelctl verify-email %s <code>\n", out.Handle, args[0], args[0])
@@ -511,6 +515,38 @@ func (c *cli) login(args []string) error {
 	c.st.SessionID, c.st.SessionToken, c.st.Handle = out.SessionID, out.SessionToken, out.User.Handle
 	fmt.Printf("Connexion réussie : %s (appareil « %s »).\n", out.User.Handle, deviceName)
 	return c.save()
+}
+
+// tokenFor gets an identity token to join community server sid, following the
+// identity service's rules: refused for blocked servers, named for the server
+// (and sealed to it) when only approved servers may be used.
+func (c *cli) tokenFor(sid string) (string, error) {
+	var pol struct {
+		ServerPolicy string `json:"server_policy"`
+	}
+	var blocked struct {
+		Servers []struct{ ID, Reason string }
+	}
+	if err := c.do("GET", "/v1/policy", nil, &pol); err != nil {
+		return "", err
+	}
+	if err := c.do("GET", "/v1/servers/blocked", nil, &blocked); err != nil {
+		return "", err
+	}
+	for _, b := range blocked.Servers {
+		if b.ID == sid {
+			return "", fmt.Errorf("ce serveur est bloqué par votre service d'identité (%s)", b.Reason)
+		}
+	}
+	var body any
+	if pol.ServerPolicy == "approved" {
+		body = map[string]string{"audience": sid}
+	}
+	var out struct {
+		Token string `json:"token"`
+	}
+	err := c.do("POST", "/v1/identity/token", body, &out)
+	return out.Token, err
 }
 
 func (c *cli) token() (string, time.Time, error) {

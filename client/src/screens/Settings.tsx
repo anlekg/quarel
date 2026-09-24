@@ -1,7 +1,7 @@
 // User settings. Account details and devices for now; editing the profile,
 // password, email and 2FA comes with the settings step.
 import { useCallback, useEffect, useState } from 'react'
-import type { SessionInfo } from '../api/identity'
+import type { MyInvites, SessionInfo } from '../api/identity'
 import { ApiError } from '../api/http'
 import { Alert, Dialog } from '../components/ui'
 import { Close, Monitor } from '../components/icons'
@@ -9,7 +9,7 @@ import { errorMessage } from '../lib/errors'
 import { identityLabel } from '../lib/identityURL'
 import { identityClient, signOut, type Account } from '../state/account'
 
-type Section = 'account' | 'devices'
+type Section = 'account' | 'devices' | 'invites'
 
 const dateFmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long' })
 const dateTimeFmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
@@ -30,11 +30,12 @@ export function Settings({ account, onClose }: { account: Account; onClose: () =
         <span className="group">MON COMPTE</span>
         <button className={section === 'account' ? 'active' : ''} onClick={() => setSection('account')}>Compte</button>
         <button className={section === 'devices' ? 'active' : ''} onClick={() => setSection('devices')}>Appareils</button>
+        <button className={section === 'invites' ? 'active' : ''} onClick={() => setSection('invites')}>Invitations</button>
         <span className="group" />
         <button className="danger" onClick={() => setConfirmLogout(true)}>Se déconnecter</button>
       </nav>
       <main className="settings-main">
-        {section === 'account' ? <AccountSection account={account} /> : <DevicesSection account={account} />}
+        {section === 'account' ? <AccountSection account={account} /> : section === 'devices' ? <DevicesSection account={account} /> : <InvitesSection account={account} />}
       </main>
       <button className="icon-btn settings-close" aria-label="Fermer les paramètres" title="Fermer (Échap)" onClick={onClose}>
         <Close />
@@ -135,6 +136,53 @@ function DevicesSection({ account }: { account: Account }) {
             </div>
           ))}
         </div>
+      )}
+    </>
+  )
+}
+
+function InvitesSection({ account }: { account: Account }) {
+  const [data, setData] = useState<MyInvites | null>(null)
+  const [error, setError] = useState('')
+  const load = useCallback(() => {
+    identityClient(account).myInvites().then(setData, (e) => setError(errorMessage(e)))
+  }, [account])
+  useEffect(load, [load])
+  const left = data ? Math.max(0, data.quota - data.created) : 0
+  return (
+    <>
+      <h2>Invitations</h2>
+      <Alert kind="error">{error}</Alert>
+      {data && (
+        <>
+          <p className="muted" style={{ lineHeight: 1.5 }}>
+            {data.registration === 'invite'
+              ? 'Votre service d\u2019identité est sur invitation : pour qu\u2019une personne crée un compte, donnez-lui un code (usage unique, valable 30 jours).'
+              : data.registration === 'closed' ? 'Votre service d\u2019identité n\u2019accepte plus de nouveaux comptes.'
+                : 'Votre service d\u2019identité est ouvert : pas besoin d\u2019invitation pour créer un compte.'}
+          </p>
+          {data.registration !== 'closed' && data.quota > 0 && (
+            <div className="card-row" style={{ border: '1px solid var(--line)', borderRadius: 10 }}>
+              <div className="grow"><span className="title">{left} invitation{left > 1 ? 's' : ''} restante{left > 1 ? 's' : ''}</span><span className="sub">sur {data.quota}</span></div>
+              <button className="btn btn-primary btn-sm" disabled={left === 0} onClick={() =>
+                identityClient(account).createInvite().then(load, (e) => setError(errorMessage(e)))}>Créer une invitation</button>
+            </div>
+          )}
+          {data.quota === 0 && data.registration === 'invite' && <p className="muted small">Seule l&apos;équipe du service peut inviter.</p>}
+          {data.invites.length > 0 && (
+            <div className="card" data-testid="my-invites">
+              {data.invites.map((i) => (
+                <div className="card-row" key={i.code}>
+                  <div className="grow">
+                    <span className="title" style={{ fontFamily: 'ui-monospace, monospace' }}>{i.code}</span>
+                    <span className="sub">{i.uses >= i.max_uses && i.max_uses > 0 ? 'Utilisée' : i.expires_at && Date.parse(i.expires_at) < Date.now() ? 'Expirée' : 'Valable jusqu\u2019au ' + dateFmt.format(new Date(i.expires_at!))}</span>
+                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard.writeText(i.code)}>Copier</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </>
   )

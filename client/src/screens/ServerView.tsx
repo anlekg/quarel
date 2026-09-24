@@ -41,7 +41,7 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
       </aside>
       <main className="content">
         {state.status === 'removed' ? (
-          <Removed conn={conn} reason={state.removed} />
+          <Removed conn={conn} reason={state.removed} blockedReason={state.blockedReason} />
         ) : !r ? (
           <div className="empty-state"><span className="spinner" />Connexion à {conn.saved.name}…</div>
         ) : r.restriction === 'rules_not_accepted' ? (
@@ -230,8 +230,10 @@ export function MemberList({ ready }: { ready: Ready }) {
   )
 }
 
-function Removed({ conn, reason }: { conn: ServerConn; reason?: ServerState['removed'] }) {
+function Removed({ conn, reason, blockedReason }: { conn: ServerConn; reason?: ServerState['removed']; blockedReason?: string }) {
   const text = {
+    blocked: 'Ce serveur est bloqué par votre service d\u2019identité' + (blockedReason ? ' : ' + blockedReason : '') + '.',
+    not_approved: 'Ce serveur n\u2019est pas (ou plus) approuvé par votre service d\u2019identité : vous ne pouvez pas vous y connecter.',
     kicked: 'Vous avez été expulsé de ce serveur. Vous pourrez revenir avec une nouvelle invitation.',
     banned: 'Vous avez été banni de ce serveur.',
     left: 'Vous avez quitté ce serveur.',

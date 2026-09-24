@@ -245,10 +245,6 @@ func (c *cli) communityLogin(base, invite, claim, expectSID string) (*loginResul
 	if c.st.SessionToken == "" {
 		return nil, errors.New("connectez-vous d'abord au service Identity : quarelctl login <email|pseudo>")
 	}
-	tok, _, err := c.token()
-	if err != nil {
-		return nil, fmt.Errorf("obtention du jeton d'identité : %w", err)
-	}
 	var ch struct {
 		ServerID string `json:"server_id"`
 		Nonce    string `json:"nonce"`
@@ -265,6 +261,10 @@ func (c *cli) communityLogin(base, invite, claim, expectSID string) (*loginResul
 	// The identity proven by the TLS certificate must be the one the server claims.
 	if seen := c.tlsSeen[base]; seen != "" && seen != ch.ServerID {
 		return nil, fmt.Errorf("ATTENTION : le certificat de %s prouve l'identité %s mais le serveur annonce %s ; connexion refusée (possible interception)", base, seen, ch.ServerID)
+	}
+	tok, err := c.tokenFor(ch.ServerID)
+	if err != nil {
+		return nil, fmt.Errorf("obtention du jeton d'identité : %w", err)
 	}
 	var res loginResult
 	err = c.request(base, "", "POST", "/v1/auth/login", map[string]string{

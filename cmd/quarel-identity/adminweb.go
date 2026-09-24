@@ -41,6 +41,19 @@ var fields = []adminui.Field{
 	{Group: "Service", Key: "QUAREL_TRUSTED_PROXIES", Label: "Proxys de confiance", Kind: "list", Placeholder: "aucun",
 		Help: "Plages d'adresses (CIDR) de vos proxys HTTPS, dont l'en-tête X-Forwarded-For est cru."},
 
+	{Group: "Inscriptions", Key: "QUAREL_REGISTRATION", Label: "Création de comptes", Kind: "select", Default: "open",
+		Options: []adminui.Option{opt("open", "Ouverte à tous"), opt("invite", "Sur invitation (code à saisir)"), opt("closed", "Fermée")},
+		Help:    "Les invitations se créent dans la page « Invitations »."},
+	{Group: "Inscriptions", Key: "QUAREL_REGISTRATION_DOMAINS", Label: "Domaines d'email autorisés", Kind: "list", Placeholder: "tous",
+		Help: "Par exemple « asso.fr, ecole.fr » : seules ces adresses peuvent créer un compte."},
+	{Group: "Inscriptions", Key: "QUAREL_MAX_ACCOUNTS", Label: "Nombre maximum de comptes", Kind: "number", Default: "0", Help: "0 : pas de limite."},
+	{Group: "Inscriptions", Key: "QUAREL_USER_INVITES", Label: "Invitations par utilisateur", Kind: "number", Default: "0",
+		Help: "Nombre d'invitations que chaque utilisateur peut créer (usage unique, 30 jours). 0 : seul l'opérateur invite."},
+
+	{Group: "Serveurs communautaires", Key: "QUAREL_SERVER_POLICY", Label: "Serveurs autorisés", Kind: "select", Default: "open",
+		Options: []adminui.Option{opt("open", "Tous, sauf ceux de la liste noire (recommandé)"), opt("approved", "Seulement les serveurs approuvés")},
+		Help:    "« Tous » : l'application refuse les serveurs bloqués, et ce service ne sait pas où vont ses utilisateurs. « Approuvés » : les jetons d'identité sont chiffrés pour les seuls serveurs approuvés (contrôle réel), mais ce service voit à quels serveurs chacun se connecte (sans le conserver)."},
+
 	{Group: "HTTPS", Key: "QUAREL_TLS", Label: "Certificat", Kind: "select", Default: "off",
 		Options: []adminui.Option{opt("off", "Aucun (derrière un proxy HTTPS, ou tests)"), opt("acme", "Let's Encrypt (port 443 ouvert vers ce service)"), opt("files", "Mes fichiers de certificat")},
 		Help:    "Les serveurs communautaires vérifient ce service avec les autorités publiques : un certificat reconnu est obligatoire en production."},
@@ -90,8 +103,12 @@ func (l *live) status(r *http.Request) map[string]any {
 	if cfg.TURN.Enabled {
 		relay = fmt.Sprintf("actif sur %s (UDP %s, ports %d-%d)", cfg.TURN.PublicIP, strings.TrimPrefix(cfg.TURN.Listen, ":"), cfg.TURN.MinPort, cfg.TURN.MaxPort)
 	}
+	regLabels := map[string]string{"open": "ouverte", "invite": "sur invitation", "closed": "fermée"}
+	polLabels := map[string]string{"open": "tous, sauf liste noire", "approved": "approuvés seulement"}
 	items := []map[string]any{
 		{"label": "Nom public", "value": cfg.Issuer, "mono": true},
+		{"label": "Inscriptions", "value": regLabels[cfg.Registration]},
+		{"label": "Serveurs communautaires", "value": polLabels[cfg.ServerPolicy]},
 		{"label": "Comptes", "value": fmt.Sprintf("%d (dont %d désactivé(s))", total, disabled)},
 		{"label": "Certificat", "value": tlsLabels[cfg.TLS.Mode]},
 		{"label": "Emails", "value": mail},
@@ -105,7 +122,22 @@ func (l *live) status(r *http.Request) map[string]any {
 	if cfg.SMTP.Host == "" {
 		notices = append(notices, map[string]string{"level": "warn", "text": "Aucun serveur d'emails : les utilisateurs ne recevront pas leurs codes de vérification."})
 	}
+	if servers, err := srv.Admin().Servers(r.Context()); err == nil {
+		pending := 0
+		for _, sv := range servers {
+			if sv.Status == "pending" && !sv.Blocked {
+				pending++
+			}
+		}
+		if pending > 0 {
+			notices = append(notices, map[string]string{"level": "info", "text": fmt.Sprintf("%d serveur(s) communautaire(s) attendent votre approbation (page « Serveurs »).", pending)})
+		}
+	}
 	return map[string]any{"items": items, "notices": notices}
+}
+
+func fail(w http.ResponseWriter, code, msg string) {
+	adminui.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": code, "message": msg}})
 }
 
 func (l *live) api() http.Handler {
@@ -160,6 +192,93 @@ func (l *live) api() http.Handler {
 			adminui.WriteJSON(w, http.StatusOK, out)
 		}
 	})
+	mux.HandleFunc("GET /invites", func(w http.ResponseWriter, r *http.Request) {
+		if a := admin(w, r); a != nil {
+			list, err := a.Invites(r.Context())
+			if err != nil {
+				adminui.WriteError(w, r, err)
+				return
+			}
+			adminui.WriteJSON(w, http.StatusOK, list)
+		}
+	})
+	mux.HandleFunc("POST /invites", func(w http.ResponseWriter, r *http.Request) {
+		a := admin(w, r)
+		if a == nil {
+			return
+		}
+		var req struct {
+			Note      string `json:"note"`
+			MaxUses   int    `json:"max_uses"`
+			ValidDays int    `json:"valid_days"`
+		}
+		if err := adminui.DecodeJSON(r, &req); err != nil || req.MaxUses < 0 || req.ValidDays < 0 {
+			fail(w, "invalid_request", "valeurs invalides")
+			return
+		}
+		inv, err := a.CreateInvite(r.Context(), req.Note, req.MaxUses, time.Duration(req.ValidDays)*24*time.Hour)
+		if err != nil {
+			fail(w, "failed", err.Error())
+			return
+		}
+		adminui.WriteJSON(w, http.StatusOK, inv)
+	})
+	mux.HandleFunc("POST /invites/{code}/revoke", func(w http.ResponseWriter, r *http.Request) {
+		if a := admin(w, r); a != nil {
+			if err := a.RevokeInvite(r.Context(), r.PathValue("code")); err != nil {
+				adminui.WriteError(w, r, err)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})
+	mux.HandleFunc("GET /servers", func(w http.ResponseWriter, r *http.Request) {
+		if a := admin(w, r); a != nil {
+			list, err := a.Servers(r.Context())
+			if err != nil {
+				adminui.WriteError(w, r, err)
+				return
+			}
+			_, cfg := l.get()
+			adminui.WriteJSON(w, http.StatusOK, map[string]any{"policy": cfg.ServerPolicy, "servers": list})
+		}
+	})
+	mux.HandleFunc("POST /servers/block", func(w http.ResponseWriter, r *http.Request) {
+		a := admin(w, r)
+		if a == nil {
+			return
+		}
+		var req struct{ ID, Reason string }
+		if err := adminui.DecodeJSON(r, &req); err != nil {
+			fail(w, "invalid_request", "requête invalide")
+			return
+		}
+		if err := a.BlockServer(r.Context(), req.ID, req.Reason, "administration web"); err != nil {
+			fail(w, "failed", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	for _, action := range []string{"unblock", "approve", "reject"} {
+		mux.HandleFunc("POST /servers/{id}/"+action, func(w http.ResponseWriter, r *http.Request) {
+			a := admin(w, r)
+			if a == nil {
+				return
+			}
+			var err error
+			switch action {
+			case "unblock":
+				err = a.UnblockServer(r.Context(), r.PathValue("id"), "administration web")
+			default:
+				err = a.DecideServer(r.Context(), r.PathValue("id"), action == "approve", "administration web")
+			}
+			if err != nil {
+				fail(w, "failed", err.Error())
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})
+	}
 	mux.HandleFunc("POST /rotate-key", func(w http.ResponseWriter, r *http.Request) {
 		a := admin(w, r)
 		if a == nil {

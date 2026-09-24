@@ -1,6 +1,6 @@
 // The signed-in account (one at a time for now), kept in the secret store.
 import { useSyncExternalStore } from 'react'
-import { IdentityClient, type User } from '../api/identity'
+import { IdentityClient, type Policy, type User } from '../api/identity'
 import { ApiError } from '../api/http'
 import { secrets } from '../platform'
 
@@ -83,4 +83,23 @@ export async function restoreAccount(): Promise<Restore> {
   }
   await signIn(a)
   return { state: 'ok' }
+}
+
+// The identity service's rules for community servers: its block list, and
+// whether tokens must name the server they are for. Cached 10 minutes.
+export interface ServerRules {
+  policy: Policy
+  blocked: Map<string, string> // server ID → reason
+}
+
+const rulesCache = new Map<string, { at: number; rules: ServerRules }>()
+
+export async function serverRules(a: Account, fresh = false): Promise<ServerRules> {
+  const hit = rulesCache.get(a.identity)
+  if (!fresh && hit && Date.now() - hit.at < 10 * 60_000) return hit.rules
+  const c = identityClient(a)
+  const [policy, list] = await Promise.all([c.policy(), c.blockedServers()])
+  const rules = { policy, blocked: new Map(list.servers.map((s) => [s.id, s.reason ?? ''])) }
+  rulesCache.set(a.identity, { at: Date.now(), rules })
+  return rules
 }

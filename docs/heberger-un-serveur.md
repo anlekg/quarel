@@ -34,6 +34,7 @@ Ouvrez **`http://<adresse de la machine>:8091`** depuis n'importe quel appareil 
 3. **Réglages** : services d'identité acceptés, réseau et UPnP, certificat HTTPS, vocal, taille des fichiers, aperçus de liens, SMS. **Enregistrer** vérifie les réglages (refusés avec explication s'ils sont incohérents, rien n'est changé) puis redémarre le service en quelques secondes.
 4. **Sauvegardes** : télécharger une archive complète, ou en restaurer une (les données actuelles sont mises de côté, jamais effacées).
 5. **Journal** : les derniers messages du serveur.
+6. **Services d'identité acceptés** (bas du tableau de bord) : pour chacun, si votre serveur est accepté. Certains services n'autorisent que les serveurs qu'ils ont approuvés : bouton **Demander l'accès** (on vous demande un moyen de vous contacter), puis attendre l'approbation de leur opérateur. Un service peut aussi avoir **bloqué** votre serveur : ses utilisateurs ne peuvent plus le rejoindre.
 
 La page n'est **jamais ouverte vers Internet** : l'UPnP ne l'ouvre pas et elle refuse toute adresse qui ne vient pas du réseau local. Mot de passe oublié : arrêtez le serveur, supprimez `admin.json` dans le volume de données, relancez.
 

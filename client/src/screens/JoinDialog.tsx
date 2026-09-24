@@ -36,6 +36,8 @@ export function JoinDialog({ account, onClose, onJoined }: {
         setError(isDesktop
           ? 'Serveur injoignable, ou son certificat ne correspond pas au lien d’invitation.'
           : 'Serveur injoignable. Dans un navigateur, seuls les serveurs avec un certificat reconnu (nom de domaine) sont accessibles : utilisez l’application.')
+      } else if (e instanceof ApiError && e.code === 'server_blocked') {
+        setError(errorMessage(e) + (e.message ? ' Raison : ' + e.message : ''))
       } else setError(errorMessage(e))
     } finally {
       setBusy(false)
@@ -49,7 +51,7 @@ export function JoinDialog({ account, onClose, onJoined }: {
           e.preventDefault()
           run(async () => {
             const inv = parseInvite(link)
-            setPreview({ inv, info: await previewServer(inv) })
+            setPreview({ inv, info: await previewServer(account, inv) })
           })
         }}>
           <p className="muted small" style={{ lineHeight: 1.5 }}>Collez le lien d&apos;invitation reçu d&apos;un membre du serveur.</p>

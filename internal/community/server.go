@@ -4,6 +4,7 @@ package community
 
 import (
 	"context"
+	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/tls"
 	"database/sql"
@@ -44,6 +45,7 @@ type Server struct {
 	voice     *voiceRegistry // who is in which voice channel
 
 	key      ed25519.PrivateKey
+	enc      *ecdh.PrivateKey                            // tokens sealed for this server (Identity services that approve servers)
 	network  func(ctx context.Context) netdiag.Diagnosis // nil: no diagnosis available
 	proxies  ratelimit.Proxies
 	limit    struct{ global, auth, messages, uploads, typing, phone *ratelimit.Limiter }
@@ -88,6 +90,7 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, keys KeySource) *Server
 		hub:     realtime.NewHub(),
 		now:     time.Now,
 		key:     key,
+		enc:     deriveEncKey(key),
 		proxies: cfg.TrustedProxies,
 	}
 	s.limit.global = ratelimit.New(cfg.Limits.Global, time.Minute)

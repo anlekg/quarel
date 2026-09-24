@@ -93,3 +93,4 @@ th { color: var(--text-4); font-size: 12px; font-weight: 700; text-transform: up
 .empty { padding: 14px 16px; }
 [hidden] { display: none !important; }
 .toolbar .input.mono { max-width: none; flex: 1; }
+.tag { white-space: nowrap; }
