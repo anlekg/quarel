@@ -210,7 +210,12 @@ func TestPhoneVerification(t *testing.T) {
 	v := newLogVerifier()
 	var mu sync.Mutex
 	codes := map[string]string{}
-	v.sent = func(phone, code string) { mu.Lock(); codes[phone] = code; mu.Unlock() }
+	v.send = func(_ context.Context, phone, code string) error {
+		mu.Lock()
+		codes[phone] = code
+		mu.Unlock()
+		return nil
+	}
 	c.srv.phone = v
 	c.expect(200, "", c.call("PATCH", "/v1/server", c.owner, map[string]any{"require_phone": true}, nil))
 	c.expect(403, "phone_not_verified", c.call("POST", fmt.Sprint("/v1/channels/", gen, "/messages"), c.tok("bob"), map[string]any{"content": "x"}, nil))

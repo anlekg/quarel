@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # P1 scenario, moderation and access: timeout, purge, audit log, rules screen,
-# phone verification (development provider), bots with the example bot.
+# phone verification (generic webhook provider), bots with the example bot.
 # Run from the repo: make e2e-moderation
 set -uo pipefail
 REPO=$(cd "$(dirname "$0")/../.." && pwd); B=$REPO/bin
@@ -10,8 +10,18 @@ export XDG_CONFIG_HOME=$D/cfg QUAREL_PASSWORD=motdepasse-solide
 QUAREL_ADDR=127.0.0.1:18080 QUAREL_ISSUER=localhost:18080 QUAREL_DATA_DIR=$D/id QUAREL_RATE_LIMITS=off \
   $B/quarel-identity > $D/id.log 2>&1 &
 PIDS+=($!); sleep 0.5
+# Fake SMS gateway behind the generic webhook provider: it records what it receives.
+python3 -c '
+import http.server, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        open(sys.argv[1], "ab").write(self.rfile.read(int(self.headers["Content-Length"])) + b"\n")
+        self.send_response(200); self.end_headers()
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", 18095), H).serve_forever()' $D/sms.log & PIDS+=($!)
 QUAREL_ADDR=127.0.0.1:18090 QUAREL_TRUSTED_ISSUERS=localhost:18080 QUAREL_DATA_DIR=$D/srv QUAREL_UPNP=off QUAREL_VOICE=off \
-  QUAREL_RATE_LIMITS=off QUAREL_PHONE_VERIFY=log $B/quarel-server > $D/srv.log 2>&1 &
+  QUAREL_RATE_LIMITS=off QUAREL_PHONE_VERIFY=webhook QUAREL_PHONE_WEBHOOK_URL=http://127.0.0.1:18095/sms \
+  $B/quarel-server > $D/srv.log 2>&1 &
 PIDS+=($!); sleep 0.7
 Q() { local p=$1; shift; $B/quarelctl -s http://127.0.0.1:18080 -p "$p" "$@" 2>&1; }
 FAIL=0
@@ -49,7 +59,7 @@ expect "après acceptation : peut écrire" "$(Q carol send général bonjour)" "
 expect "téléphone exigé" "$(Q alice srv-set require_phone=true)" "téléphone vérifié exigé"
 expect "sans numéro vérifié : lecture seule" "$(Q carol send général re)" "phone_not_verified"
 Q carol phone +33 6 12 34 56 78 >/dev/null; sleep 0.2
-SMS=$(grep -o 'code=[0-9]*' $D/srv.log | tail -1 | cut -d= -f2)
+SMS=$(grep -o '"code":"[0-9]*"' $D/sms.log | tail -1 | grep -o '[0-9]*')
 expect "mauvais code refusé" "$(Q carol phone-verify +33612345678 000000)" "invalid_code"
 expect "bon code accepté" "$(Q carol phone-verify +33612345678 $SMS)" "Numéro vérifié"
 expect "numéro vérifié : peut écrire" "$(Q carol send général re)" "carol : re"
@@ -57,7 +67,7 @@ grep -q '612345678' $D/srv/server.db && { echo "✘ numéro en clair dans la bas
 Q alice ban carol >/dev/null
 Q dave join "$LINK" >/dev/null; Q dave accept-rules >/dev/null
 Q dave phone +33612345678 >/dev/null; sleep 0.2
-SMS=$(grep -o 'code=[0-9]*' $D/srv.log | tail -1 | cut -d= -f2)
+SMS=$(grep -o '"code":"[0-9]*"' $D/sms.log | tail -1 | grep -o '[0-9]*')
 expect "le numéro d'un banni ne peut pas resservir" "$(Q dave phone-verify +33612345678 $SMS)" "phone_banned"
 Q alice srv-set require_phone=false >/dev/null
 

@@ -239,12 +239,14 @@ func (s *Server) handlePhoneVerify(w http.ResponseWriter, r *http.Request) {
 	s.memberChanged(ctx, w, r, me)
 }
 
-// logVerifier is the development provider: codes are written to the log.
-type logVerifier struct {
+// codeVerifier generates and checks the codes itself (6 digits, 10 minutes,
+// 5 attempts) and only delegates sending them: to the log (development), a
+// webhook, or OVHcloud SMS. Twilio Verify, instead, handles the codes itself.
+type codeVerifier struct {
 	mu    sync.Mutex
 	codes map[string]*pendingCode
 	now   func() time.Time
-	sent  func(phone, code string) // tests capture codes here
+	send  func(ctx context.Context, phone, code string) error
 }
 
 type pendingCode struct {
@@ -253,26 +255,46 @@ type pendingCode struct {
 	attempts int
 }
 
-func newLogVerifier() *logVerifier {
-	return &logVerifier{codes: map[string]*pendingCode{}, now: time.Now, sent: func(phone, code string) {
-		slog.Warn("phone verification code (QUAREL_PHONE_VERIFY=log, development only)", "phone", phone, "code", code)
-	}}
+const phoneCodeTTL = 10 * time.Minute
+
+func newCodeVerifier(send func(ctx context.Context, phone, code string) error) *codeVerifier {
+	return &codeVerifier{codes: map[string]*pendingCode{}, now: time.Now, send: send}
 }
 
-func (v *logVerifier) Start(_ context.Context, phone string) error {
+// newLogVerifier is the development provider: codes are written to the log.
+func newLogVerifier() *codeVerifier {
+	return newCodeVerifier(func(_ context.Context, phone, code string) error {
+		slog.Warn("phone verification code (QUAREL_PHONE_VERIFY=log, development only)", "phone", phone, "code", code)
+		return nil
+	})
+}
+
+// smsText is the message sent to the member.
+func smsText(code string) string {
+	return fmt.Sprintf("Quarel : votre code de vérification est %s (valable %d min). Ne le communiquez à personne.", code, int(phoneCodeTTL.Minutes()))
+}
+
+func (v *codeVerifier) Start(ctx context.Context, phone string) error {
 	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
 	if err != nil {
 		return err
 	}
 	code := fmt.Sprintf("%06d", n.Int64())
+	if err := v.send(ctx, phone, code); err != nil {
+		return err
+	}
 	v.mu.Lock()
-	v.codes[phone] = &pendingCode{code: code, expires: v.now().Add(10 * time.Minute)}
-	v.mu.Unlock()
-	v.sent(phone, code)
+	defer v.mu.Unlock()
+	for p, c := range v.codes { // forget expired codes
+		if v.now().After(c.expires) {
+			delete(v.codes, p)
+		}
+	}
+	v.codes[phone] = &pendingCode{code: code, expires: v.now().Add(phoneCodeTTL)}
 	return nil
 }
 
-func (v *logVerifier) Check(_ context.Context, phone, code string) (bool, error) {
+func (v *codeVerifier) Check(_ context.Context, phone, code string) (bool, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	p := v.codes[phone]
@@ -339,12 +361,18 @@ func (t *twilioVerifier) Check(ctx context.Context, phone, code string) (bool, e
 
 // newPhoneVerifier builds the provider chosen in the configuration (nil: none).
 func newPhoneVerifier(cfg Config) PhoneVerifier {
+	client := &http.Client{Timeout: 15 * time.Second}
 	switch cfg.PhoneVerify {
 	case "log":
 		return newLogVerifier()
+	case "webhook":
+		return newCodeVerifier(webhookSender{url: cfg.PhoneWebhookURL, secret: cfg.PhoneWebhookSecret, client: client}.send)
+	case "ovh":
+		return newCodeVerifier((&ovhSender{endpoint: cfg.OVHEndpoint, appKey: cfg.OVHAppKey, appSecret: cfg.OVHAppSecret,
+			consumerKey: cfg.OVHConsumerKey, service: cfg.OVHSMSService, sender: cfg.OVHSMSSender, client: client}).send)
 	case "twilio":
 		return &twilioVerifier{accountSID: cfg.TwilioAccountSID, authToken: cfg.TwilioAuthToken, serviceSID: cfg.TwilioVerifySID,
-			baseURL: "https://verify.twilio.com", client: &http.Client{Timeout: 15 * time.Second}}
+			baseURL: "https://verify.twilio.com", client: client}
 	}
 	return nil
 }

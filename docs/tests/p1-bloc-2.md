@@ -4,7 +4,7 @@
 
 ## Préparation
 
-Comme au bloc 1 (`make build`, `make run-identity`, `make run-server`, comptes `alice` propriétaire et `bob` membre, `-p alice listen` dans un terminal). Pour tester le téléphone sans compte Twilio, lancer le serveur avec le fournisseur de développement :
+Comme au bloc 1 (`make build`, `make run-identity`, `make run-server`, comptes `alice` propriétaire et `bob` membre, `-p alice listen` dans un terminal). Pour tester le téléphone sans fournisseur de SMS, lancer le serveur avec le fournisseur de développement :
 
 ```sh
 QUAREL_PHONE_VERIFY=log make run-server
@@ -35,7 +35,7 @@ Les codes « SMS » apparaissent alors dans le journal du serveur (`code=123456`
 2. bob ne peut plus écrire (`phone_not_verified`). `-p bob phone +33 6 12 34 56 78` → code dans le journal du serveur ; `-p bob phone-verify +33612345678 <code>` → vérifié, il peut écrire.
 3. Le même numéro ne peut pas vérifier un 2e membre présent (`phone_in_use`), ni jamais resservir après un bannissement (`phone_banned`).
 4. La base ne contient pas le numéro, seulement une empreinte.
-5. En production : compte Twilio de l'hébergeur, `QUAREL_PHONE_VERIFY=twilio` et les trois variables `QUAREL_TWILIO_*` (voir `CLAUDE.md`). **Non testé avec le vrai Twilio.**
+5. En production : fournisseur **webhook** (passerelle de l'hébergeur) ou **OVHcloud SMS**, recommandés ; Twilio en option (voir `docs/heberger-un-serveur.md`). Le test automatique passe par le vrai fournisseur webhook avec une passerelle de test. **Non testés avec les vrais OVH et Twilio** (comptes nécessaires).
 
 ## 6. Bots
 1. `-p alice bot-create Pingbot` → jeton affiché une seule fois, avec la commande pour lancer le bot d'exemple.

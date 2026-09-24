@@ -46,9 +46,18 @@ type Config struct {
 	MaxUploadBytes int64 // attachment size limit
 	LinkPreviews   bool  // fetch previews of posted links (the server contacts the linked sites)
 
-	// Phone verification provider: "off" (default), "twilio", or "log" (development: codes in the log).
-	PhoneVerify      string
-	TwilioAccountSID string
+	// Phone verification provider: "off" (default), "webhook", "ovh", "twilio",
+	// or "log" (development: codes in the log).
+	PhoneVerify        string
+	PhoneWebhookURL    string
+	PhoneWebhookSecret string
+	OVHEndpoint        string
+	OVHAppKey          string
+	OVHAppSecret       string
+	OVHConsumerKey     string
+	OVHSMSService      string
+	OVHSMSSender       string
+	TwilioAccountSID   string
 	TwilioAuthToken  string
 	TwilioVerifySID  string // Verify service ("VA…")
 
@@ -115,14 +124,30 @@ func ConfigFromEnv() (Config, error) {
 	c.TwilioAccountSID = os.Getenv("QUAREL_TWILIO_ACCOUNT_SID")
 	c.TwilioAuthToken = os.Getenv("QUAREL_TWILIO_AUTH_TOKEN")
 	c.TwilioVerifySID = os.Getenv("QUAREL_TWILIO_VERIFY_SID")
+	c.PhoneWebhookURL = os.Getenv("QUAREL_PHONE_WEBHOOK_URL")
+	c.PhoneWebhookSecret = os.Getenv("QUAREL_PHONE_WEBHOOK_SECRET")
+	c.OVHEndpoint = strings.TrimRight(env("QUAREL_OVH_ENDPOINT", "https://eu.api.ovh.com/1.0"), "/")
+	c.OVHAppKey = os.Getenv("QUAREL_OVH_APP_KEY")
+	c.OVHAppSecret = os.Getenv("QUAREL_OVH_APP_SECRET")
+	c.OVHConsumerKey = os.Getenv("QUAREL_OVH_CONSUMER_KEY")
+	c.OVHSMSService = os.Getenv("QUAREL_OVH_SMS_SERVICE")
+	c.OVHSMSSender = os.Getenv("QUAREL_OVH_SMS_SENDER")
 	switch c.PhoneVerify {
 	case "off", "log":
+	case "webhook":
+		if !strings.HasPrefix(c.PhoneWebhookURL, "https://") && !strings.HasPrefix(c.PhoneWebhookURL, "http://127.") && !strings.HasPrefix(c.PhoneWebhookURL, "http://localhost") {
+			return c, fmt.Errorf("QUAREL_PHONE_VERIFY=webhook needs QUAREL_PHONE_WEBHOOK_URL in https:// (http:// only on this machine)")
+		}
+	case "ovh":
+		if c.OVHAppKey == "" || c.OVHAppSecret == "" || c.OVHConsumerKey == "" || c.OVHSMSService == "" {
+			return c, fmt.Errorf("QUAREL_PHONE_VERIFY=ovh needs QUAREL_OVH_APP_KEY, QUAREL_OVH_APP_SECRET, QUAREL_OVH_CONSUMER_KEY and QUAREL_OVH_SMS_SERVICE")
+		}
 	case "twilio":
 		if c.TwilioAccountSID == "" || c.TwilioAuthToken == "" || c.TwilioVerifySID == "" {
 			return c, fmt.Errorf("QUAREL_PHONE_VERIFY=twilio needs QUAREL_TWILIO_ACCOUNT_SID, QUAREL_TWILIO_AUTH_TOKEN and QUAREL_TWILIO_VERIFY_SID")
 		}
 	default:
-		return c, fmt.Errorf("QUAREL_PHONE_VERIFY: unknown provider %q (off, twilio, log)", c.PhoneVerify)
+		return c, fmt.Errorf("QUAREL_PHONE_VERIFY: unknown provider %q (off, webhook, ovh, twilio, log)", c.PhoneVerify)
 	}
 	for _, iss := range c.TrustedIssuers {
 		if strings.HasPrefix(iss, "#") {

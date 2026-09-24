@@ -82,7 +82,7 @@
 - [x] **P0** Mode d'accès : public ou privé (sur invitation)
 - [x] **P0** Liens d'invitation (expiration, nombre d'utilisations)
 - [x] **P0** Liste des membres, pseudo local (surnom sur le serveur)
-- [x] **P1** Vérification supplémentaire configurable (ex. téléphone via le fournisseur choisi par le serveur) *(Twilio Verify, ou mode développement)*
+- [x] **P1** Vérification supplémentaire configurable (ex. téléphone via le fournisseur choisi par le serveur) *(webhook générique ou OVHcloud SMS recommandés, Twilio en option)*
 - [x] **P1** Écran de règles à accepter avant d'entrer
 
 ### B3. Salons

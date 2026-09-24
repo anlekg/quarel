@@ -21,6 +21,19 @@ Le journal affiche un **code de revendication** : la première personne qui l'ut
 - Comptes acceptés : ceux de `identity.quarel.app` par défaut ; ajoutez d'autres services avec `-e QUAREL_TRUSTED_ISSUERS=identity.quarel.app,identity.mon-asso.fr`.
 - Toutes les options sont décrites dans `CLAUDE.md` (variables `QUAREL_*`).
 
+## Exiger un numéro de téléphone (facultatif)
+
+Pour limiter les faux comptes et les retours de bannis, un serveur peut exiger un numéro vérifié par SMS (`quarelctl srv-set require_phone=true`). Le serveur ne garde jamais le numéro, seulement une empreinte. Choisissez comment les SMS partent :
+
+- **Webhook (recommandé)** : le serveur envoie `{phone, code, text}` à une adresse de votre choix, qui fait partir le SMS. Vous pouvez y brancher votre propre téléphone Android (application « passerelle SMS »), un modem GSM ou n'importe quel fournisseur : aucun tiers imposé.
+  `-e QUAREL_PHONE_VERIFY=webhook -e QUAREL_PHONE_WEBHOOK_URL=https://… -e QUAREL_PHONE_WEBHOOK_SECRET=…`
+  Avec un secret, chaque requête porte `X-Quarel-Signature: sha256=<HMAC-SHA256 du corps>` : vérifiez-la côté passerelle.
+- **OVHcloud SMS (recommandé)** : fournisseur européen. Créez un compte SMS et des clés d'API (droit `POST /sms/*/jobs`), puis
+  `-e QUAREL_PHONE_VERIFY=ovh -e QUAREL_OVH_APP_KEY=… -e QUAREL_OVH_APP_SECRET=… -e QUAREL_OVH_CONSUMER_KEY=… -e QUAREL_OVH_SMS_SERVICE=sms-xx00000-1` (et `QUAREL_OVH_SMS_SENDER` si vous avez un nom d'expéditeur validé).
+- **Twilio (option)** : fournisseur américain ; les numéros de vos membres transitent chez lui. `QUAREL_PHONE_VERIFY=twilio` et les variables `QUAREL_TWILIO_*`.
+
+Les SMS sont à vos frais selon le fournisseur.
+
 ## Sauvegarder
 
 La sauvegarde se fait **serveur en marche** ; elle contient la base (messages, membres, rôles…), la **clé du serveur** (son identité : sans elle, les membres verraient un autre serveur) et les fichiers envoyés :
