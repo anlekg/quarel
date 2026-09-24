@@ -131,13 +131,13 @@ Légende : 🔑 = permission requise.
 | `GET /v1/bans` ; `PUT /v1/bans/{id}` ; `DELETE /v1/bans/{id}` | 🔑 `ban_members` | PUT : `{reason?, delete_messages?: secondes, -1 = tout}` |
 | `PUT /v1/members/{id}/timeout` ; `DELETE …` | 🔑 `moderate_members` | `{duration: secondes (≤ 28 j), reason?}` |
 | `POST /v1/members/{id}/purge` | 🔑 `manage_messages` | `{window: secondes ou -1, channel_id?, reason?}` → `{deleted}` |
-| `GET /v1/audit-log` | 🔑 `view_audit_log` | `?limit=&before=&action=&actor_id=&target_id=` ; conservé 90 jours |
+| `GET /v1/audit-log` | 🔑 `view_audit_log` | `?limit=&before=&action=&actor_id=&target_id=` → `[{id, actor_id, action, target_id, reason, details, created_at, actor_name?, target_name?}]` (noms des membres concernés, même partis) ; conservé 90 jours |
 
 On n'agit que sur un membre dont le rôle le plus haut est **strictement sous** le vôtre ; le propriétaire est intouchable, les administrateurs ne peuvent pas être exclus temporairement.
 
 ### Invitations, bots, vocal
 - `GET /v1/invites`, `POST /v1/invites {max_uses?, expires_in?}` (🔑 `create_invite`), `DELETE /v1/invites/{code}`.
-- `GET /v1/bots`, `POST /v1/bots {name}`, `POST /v1/bots/{id}/token`, `DELETE /v1/bots/{id}` — 🔑 `manage_server`.
+- `GET /v1/bots` → `[{member}]`, `POST /v1/bots {name}` → `{member, token}` (jeton affiché une seule fois), `POST /v1/bots/{id}/token` → `{member, token}`, `DELETE /v1/bots/{id}` — 🔑 `manage_server`.
 - **Vocal et vidéo** : `POST /v1/channels/{id}/voice/join` (🔑 `connect`) → `{url, token, room, can_speak, can_stream, server_mute, server_deaf}` pour se connecter au serveur média LiveKit (SDK `livekit-client` ou équivalent) ; micro = 🔑 `speak`, caméra et partage d'écran = 🔑 `stream`. `GET /v1/voice/states` → `[{member_id, channel_id, self_mute, self_deaf, server_mute, server_deaf, can_speak, can_stream, video, screen, joined_at}]`, `PATCH /v1/voice/state {self_mute?, self_deaf?}`, `POST /v1/voice/leave`.
 - **Modération vocale** : `PATCH /v1/voice/states/{member} {mute?, deaf?, channel_id?, reason?}` (🔑 `mute_members`, `deafen_members`, `move_members`) ; micro et son coupés par la modération persistent jusqu'à levée. Un client déplacé par la modération reçoit `VOICE_MOVE {channel_id, from_channel_id}` et doit rejoindre ce salon (il a déjà été retiré de l'ancien). `DELETE /v1/voice/states/{member}` (🔑 `move_members`) le déconnecte.
 

@@ -159,6 +159,7 @@ p { margin: 0; }
   display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px;
 }
 .dialog {
+  max-height: calc(100vh - 32px); overflow-y: auto;
   width: 460px; max-width: 100%; background: var(--bg-1); border: 1px solid var(--bg-3);
   border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 16px;
 }
@@ -521,3 +522,48 @@ code.secret { font-family: ui-monospace, monospace; letter-spacing: .06em; word-
 .settings-main > * { flex-shrink: 0; }
 .presence-menu button, .userbar .me-btn { border: none; background: transparent; color: inherit; cursor: pointer; }
 .presence-menu button:hover, .presence-menu button.active, .userbar .me-btn:hover { background: var(--bg-2); }
+
+/* Server administration (step 6b) */
+.ch-wrap { position: relative; }
+.ch-edit { position: absolute; right: 6px; top: 6px; width: 24px; height: 24px; display: none; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--text-3); border-radius: 4px; cursor: pointer; }
+.ch-group.ch-wrap .ch-edit { top: 50%; transform: translateY(-50%); }
+.ch-wrap:hover > .ch-edit, .ch-edit:focus-visible { display: flex; }
+.ch-edit:hover { color: var(--text); background: var(--bg-3); }
+.member[role="button"] { cursor: pointer; }
+.roles-layout { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
+.role-list { display: flex; flex-direction: column; gap: 2px; }
+.role-list button[role="option"] { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; border: none; background: transparent;
+  color: var(--text-2); text-align: left; cursor: pointer; }
+.role-list button[role="option"]:hover, .role-list button.active { background: var(--bg-3); color: var(--text); }
+.role-list .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-list .btn { margin-top: 8px; }
+.role-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+.role-editor { display: flex; flex-direction: column; gap: 14px; }
+.color-row { display: flex; align-items: center; gap: 10px; }
+.color-row input[type="color"] { width: 44px; height: 32px; border: 1px solid var(--line); border-radius: 6px; background: none; padding: 2px; cursor: pointer; }
+.perm-groups { display: flex; flex-direction: column; gap: 12px; }
+.perm-group { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+.perm-group legend { font-size: 12px; font-weight: 700; color: var(--text-3); padding: 0 6px; text-transform: uppercase; letter-spacing: .05em; }
+.perm-group .check-line { font-size: 13px; }
+.role-chips { display: flex; flex-wrap: wrap; gap: 4px; max-width: 40%; justify-content: flex-end; }
+.role-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--bg-2); }
+.mod-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.danger-text { color: var(--danger-text) !important; }
+.ban-box { border: 1px solid var(--danger); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tabs button { border: none; background: none; color: var(--text-3); padding: 8px 12px; cursor: pointer; border-bottom: 2px solid transparent; }
+.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+.ov-list { display: flex; flex-direction: column; max-height: 340px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
+.ov-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--bg-3); font-size: 13px; }
+.ov-row:first-child { border-top: none; }
+.ov-row .grow { flex: 1; }
+.tri { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.tri button { width: 30px; height: 26px; border: none; background: transparent; color: var(--text-4); cursor: pointer; font-weight: 700; }
+.tri button + button { border-left: 1px solid var(--line); }
+.tri button.deny.on { background: var(--danger); color: #fff; }
+.tri button.inherit.on { background: var(--bg-3); color: var(--text); }
+.tri button.allow.on { background: var(--ok); color: #0e1a17; }
+.tri button:disabled { opacity: .45; cursor: not-allowed; }
+.channel-row.cat .title { font-size: 12px; letter-spacing: .05em; color: var(--text-3); }
+@media (max-width: 800px) { .roles-layout { grid-template-columns: 1fr; } }

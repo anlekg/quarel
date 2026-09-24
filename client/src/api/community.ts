@@ -47,6 +47,42 @@ export interface Channel {
   parent_id: number | null
   position: number
   thread_starter?: number
+  overrides?: Override[]
+}
+
+export interface Override {
+  type: 'role' | 'member'
+  id: string // role id (as a string) or member id
+  allow: string[]
+  deny: string[]
+}
+
+export interface Invite {
+  code: string
+  creator_id: string | null
+  max_uses: number | null
+  uses: number
+  expires_at: string | null
+  created_at: string
+}
+
+export interface Ban {
+  member: Member
+  reason: string
+  banned_by: string | null
+  created_at: string
+}
+
+export interface AuditEntry {
+  id: number
+  actor_id: string | null
+  action: string
+  target_id: string | null
+  reason: string
+  details: Record<string, unknown> | null
+  created_at: string
+  actor_name?: string // kept even after the member left
+  target_name?: string
 }
 
 export interface Attachment {
@@ -229,6 +265,111 @@ export class CommunityClient {
 
   voiceLeave() {
     return this.call<void>('POST', '/v1/voice/leave')
+  }
+
+  // --- administration and moderation ---
+
+  updateServer(body: Partial<Pick<ServerInfo, 'name' | 'access' | 'rules' | 'require_phone'>>) {
+    return this.call<ServerInfo>('PATCH', '/v1/server', body)
+  }
+
+  createRole(body: { name: string; color?: number; permissions?: string[]; mentionable?: boolean; hoist?: boolean }) {
+    return this.call<Role>('POST', '/v1/roles', body)
+  }
+
+  updateRole(id: number, body: Partial<Omit<Role, 'id'>>) {
+    return this.call<Role>('PATCH', '/v1/roles/' + id, body)
+  }
+
+  deleteRole(id: number) {
+    return this.call<void>('DELETE', '/v1/roles/' + id)
+  }
+
+  setMemberRole(member: string, role: number, on: boolean) {
+    return this.call<void>(on ? 'PUT' : 'DELETE', '/v1/members/' + encodeURIComponent(member) + '/roles/' + role)
+  }
+
+  createChannel(body: { type: string; name: string; topic?: string; parent_id?: number | null; position?: number }) {
+    return this.call<Channel>('POST', '/v1/channels', body)
+  }
+
+  updateChannel(id: number, body: { name?: string; topic?: string; parent_id?: number | null; position?: number }) {
+    return this.call<Channel>('PATCH', '/v1/channels/' + id, body)
+  }
+
+  deleteChannel(id: number) {
+    return this.call<void>('DELETE', '/v1/channels/' + id)
+  }
+
+  setOverride(channel: number, type: 'role' | 'member', target: string, allow: string[], deny: string[]) {
+    return this.call<void>('PUT', '/v1/channels/' + channel + '/overrides/' + type + '/' + encodeURIComponent(target), { allow, deny })
+  }
+
+  deleteOverride(channel: number, type: 'role' | 'member', target: string) {
+    return this.call<void>('DELETE', '/v1/channels/' + channel + '/overrides/' + type + '/' + encodeURIComponent(target))
+  }
+
+  kick(member: string, reason?: string) {
+    return this.call<void>('POST', '/v1/members/' + encodeURIComponent(member) + '/kick', { reason })
+  }
+
+  ban(member: string, reason?: string, deleteMessages = 0) {
+    return this.call<void>('PUT', '/v1/bans/' + encodeURIComponent(member), { reason, delete_messages: deleteMessages })
+  }
+
+  unban(member: string) {
+    return this.call<void>('DELETE', '/v1/bans/' + encodeURIComponent(member))
+  }
+
+  bans() {
+    return this.call<Ban[]>('GET', '/v1/bans')
+  }
+
+  timeout(member: string, duration: number, reason?: string) {
+    return this.call<void>('PUT', '/v1/members/' + encodeURIComponent(member) + '/timeout', { duration, reason })
+  }
+
+  removeTimeout(member: string) {
+    return this.call<void>('DELETE', '/v1/members/' + encodeURIComponent(member) + '/timeout')
+  }
+
+  invites() {
+    return this.call<Invite[]>('GET', '/v1/invites')
+  }
+
+  deleteInvite(code: string) {
+    return this.call<void>('DELETE', '/v1/invites/' + encodeURIComponent(code))
+  }
+
+  auditLog(opts: { before?: number; action?: string } = {}) {
+    const q = new URLSearchParams({ limit: '50' })
+    if (opts.before) q.set('before', String(opts.before))
+    if (opts.action) q.set('action', opts.action)
+    return this.call<AuditEntry[]>('GET', '/v1/audit-log?' + q)
+  }
+
+  async bots(): Promise<Member[]> {
+    return (await this.call<{ member: Member }[]>('GET', '/v1/bots')).map((b) => b.member)
+  }
+
+  createBot(name: string) {
+    return this.call<{ member: Member; token: string }>('POST', '/v1/bots', { name })
+  }
+
+  resetBotToken(id: string) {
+    return this.call<{ member: Member; token: string }>('POST', '/v1/bots/' + encodeURIComponent(id) + '/token')
+  }
+
+  deleteBot(id: string) {
+    return this.call<void>('DELETE', '/v1/bots/' + encodeURIComponent(id))
+  }
+
+  moderateVoice(member: string, body: { mute?: boolean; deaf?: boolean; channel_id?: number; reason?: string }) {
+    return this.call<void>('PATCH', '/v1/voice/states/' + encodeURIComponent(member), body)
+  }
+
+  disconnectVoice(member: string) {
+    return this.call<void>('DELETE', '/v1/voice/states/' + encodeURIComponent(member))
   }
 
   gatewayURL() {

@@ -111,6 +111,9 @@ func TestAuditLog(t *testing.T) {
 	if len(list) != 1 || list[0].Reason != "récidive" || *list[0].TargetID != c.id("carol") || list[0].ActorID == nil {
 		t.Fatalf("ban entry = %+v", list)
 	}
+	if list[0].TargetName != "carol" || list[0].ActorName == "" { // carol is gone: her name is still given
+		t.Fatalf("names = %q, %q", list[0].ActorName, list[0].TargetName)
+	}
 	c.expect(200, "", c.call("GET", fmt.Sprint("/v1/audit-log?limit=2&before=", list[0].ID), c.tok("bob"), nil, &list))
 	if len(list) != 2 || list[0].Action != auditMemberKick {
 		t.Fatalf("pagination = %+v", list)

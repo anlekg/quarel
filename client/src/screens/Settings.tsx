@@ -25,7 +25,7 @@ export function Settings({ account, onClose }: { account: Account; onClose: () =
   const nav = (id: Section, label: string) => <button className={section === id ? 'active' : ''} onClick={() => setSection(id)}>{label}</button>
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !confirmLogout && onClose()
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.dialog') && onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose, confirmLogout])

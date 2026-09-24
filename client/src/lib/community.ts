@@ -61,3 +61,60 @@ export function memberAvatar(m: Member): string | undefined {
   const local = host === 'localhost' || /^127\./.test(host) || host === '[::1]'
   return (local ? 'http://' : 'https://') + m.issuer + '/v1/users/' + encodeURIComponent(m.subject) + '/avatar'
 }
+
+// --- administration ---
+
+export const permGroups: { title: string; perms: [string, string][] }[] = [
+  { title: 'Général', perms: [
+    ['administrator', 'Administrateur (toutes les permissions, ignore les salons)'],
+    ['manage_server', 'Gérer le serveur (nom, accès, règles, bots)'],
+    ['manage_roles', 'Gérer les rôles et les droits des salons'],
+    ['manage_channels', 'Gérer les salons'],
+    ['view_audit_log', 'Voir le journal de modération'],
+    ['create_invite', 'Créer des invitations'],
+    ['view_channel', 'Voir les salons'],
+  ] },
+  { title: 'Membres', perms: [
+    ['kick_members', 'Expulser'],
+    ['ban_members', 'Bannir'],
+    ['moderate_members', 'Exclure temporairement'],
+  ] },
+  { title: 'Messages', perms: [
+    ['send_messages', 'Envoyer des messages'],
+    ['manage_messages', 'Gérer les messages (supprimer, épingler, annonces)'],
+    ['mention_everyone', 'Mentionner @everyone et tous les rôles'],
+    ['add_reactions', 'Ajouter des réactions'],
+    ['attach_files', 'Joindre des fichiers'],
+  ] },
+  { title: 'Vocal', perms: [
+    ['connect', 'Se connecter'],
+    ['speak', 'Parler'],
+    ['stream', 'Caméra et partage d’écran'],
+    ['mute_members', 'Couper le micro des autres'],
+    ['deafen_members', 'Mettre les autres en sourdine'],
+    ['move_members', 'Déplacer et déconnecter'],
+  ] },
+]
+
+// Permissions that channels can override.
+export const channelPerms = new Set(['view_channel', 'send_messages', 'manage_messages', 'mention_everyone', 'manage_channels', 'connect', 'speak',
+  'stream', 'add_reactions', 'attach_files', 'mute_members', 'deafen_members', 'move_members'])
+
+export const isAdmin = (r: Ready) => r.member.owner || r.permissions.server.includes('administrator')
+
+// Position of my highest role (the owner is above everything).
+export function myTop(r: Ready): number {
+  if (r.member.owner) return Infinity
+  return Math.max(0, ...r.roles.filter((x) => r.member.roles.includes(x.id)).map((x) => x.position))
+}
+
+export function memberTop(r: Ready, m: Member): number {
+  if (m.owner) return Infinity
+  return Math.max(0, ...r.roles.filter((x) => m.roles.includes(x.id)).map((x) => x.position))
+}
+
+// Whether I may act on this member (strictly above them, never on the owner or myself).
+export const outranks = (r: Ready, m: Member) => !m.owner && m.id !== r.member.id && myTop(r) > memberTop(r, m)
+
+// A permission I may grant (I must have it myself).
+export const mayGrant = (r: Ready, perm: string) => isAdmin(r) || r.permissions.server.includes(perm)

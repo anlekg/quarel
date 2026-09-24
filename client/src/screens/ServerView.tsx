@@ -14,6 +14,8 @@ import { ChannelView } from './ChannelView'
 import { VoiceMembers, VoiceView } from './Voice'
 import { joinVoice, useVoice } from '../state/voice'
 import { can } from '../lib/community'
+import { ChannelDialog, MemberDialog, sectionsFor, ServerSettings } from './ServerSettings'
+import { Gear } from '../components/icons'
 
 export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React.ReactNode }) {
   const state = useServerState(conn)
@@ -69,7 +71,7 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
           <ChannelView key={channel.id} conn={conn} ready={r} state={state} channel={channel}
             showMembers={showMembers}
             onToggleMembers={() => { setShowMembers(!showMembers); prefs.set('show-members', !showMembers) }}
-            members={showMembers ? <MemberList ready={r} /> : null} />
+            members={showMembers ? <MemberList ready={r} conn={conn} /> : null} />
         ) : (
           <div className="empty-state"><h2>Aucun salon textuel</h2><p>Vous ne voyez encore aucun salon sur ce serveur.</p></div>
         )}
@@ -80,7 +82,7 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
 
 function ServerMenu({ conn, ready }: { conn: ServerConn; ready?: Ready }) {
   const [open, setOpen] = useState(false)
-  const [dialog, setDialog] = useState<'invite' | 'leave' | null>(null)
+  const [dialog, setDialog] = useState<'invite' | 'leave' | 'settings' | 'channel' | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -90,6 +92,8 @@ function ServerMenu({ conn, ready }: { conn: ServerConn; ready?: Ready }) {
   }, [open])
   const canInvite = ready && canServer(ready, 'create_invite')
   const owner = ready?.member.owner
+  const canAdmin = !!ready && sectionsFor(ready).length > 0
+  const canChannels = !!ready && canServer(ready, 'manage_channels')
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button className="sidebar-head server" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu">
@@ -99,12 +103,16 @@ function ServerMenu({ conn, ready }: { conn: ServerConn; ready?: Ready }) {
       {open && (
         <div className="menu" role="menu" style={{ left: 10, right: 10, top: 52 }}>
           {canInvite && <button role="menuitem" onClick={() => { setOpen(false); setDialog('invite') }}>Inviter des personnes</button>}
+          {canAdmin && <button role="menuitem" onClick={() => { setOpen(false); setDialog('settings') }}>Paramètres du serveur</button>}
+          {canChannels && <button role="menuitem" onClick={() => { setOpen(false); setDialog('channel') }}>Créer un salon</button>}
           {!owner && <button role="menuitem" className="danger" onClick={() => { setOpen(false); setDialog('leave') }}>Quitter le serveur</button>}
-          {owner && !canInvite && <span className="muted small" style={{ padding: 8 }}>Aucune action disponible</span>}
+          {owner && !canInvite && !canAdmin && <span className="muted small" style={{ padding: 8 }}>Aucune action disponible</span>}
         </div>
       )}
       {dialog === 'invite' && <InviteDialog conn={conn} onClose={() => setDialog(null)} />}
       {dialog === 'leave' && <LeaveDialog conn={conn} onClose={() => setDialog(null)} />}
+      {dialog === 'settings' && <ServerSettings conn={conn} onClose={() => setDialog(null)} />}
+      {dialog === 'channel' && ready && <ChannelDialog conn={conn} ready={ready} channel={null} onClose={() => setDialog(null)} />}
     </div>
   )
 }
@@ -198,24 +206,32 @@ function ChannelList({ conn, ready, state, active, onPick }: {
       </button>
     )
   }
+  // Editing a channel: a gear next to it, for whoever manages channels or their permissions.
+  const editable = (c: Channel) => can(ready, c.id, 'manage_channels') || canServer(ready, 'manage_roles')
+  const gear = (c: Channel) => editable(c) && (
+    <button className="ch-edit" aria-label={'Modifier ' + c.name} title="Modifier le salon" onClick={() => setEditing(c)}><Gear size={14} /></button>
+  )
+  const [editing, setEditing] = useState<Channel | null>(null)
   return (
     <nav aria-label="Salons">
       {tree.map((g) => (
         <div key={g.category?.id ?? 0}>
-          {g.category && <div className="ch-group">{g.category.name}</div>}
+          {g.category && <div className="ch-group ch-wrap">{g.category.name}{gear(g.category)}</div>}
           {g.items.map((n) => (
             <div key={n.channel.id}>
-              {button(n.channel)}
+              <div className="ch-wrap">{button(n.channel)}{n.channel.type !== 'thread' && gear(n.channel)}</div>
               {n.threads.map(button)}
             </div>
           ))}
         </div>
       ))}
+      {editing && <ChannelDialog conn={conn} ready={ready} channel={editing} onClose={() => setEditing(null)} />}
     </nav>
   )
 }
 
-export function MemberList({ ready }: { ready: Ready }) {
+export function MemberList({ ready, conn }: { ready: Ready; conn: ServerConn }) {
+  const [open, setOpen] = useState<Member | null>(null)
   const groups = useMemo(() => {
     const hoisted = ready.roles.filter((r) => r.hoist && r.id !== 1).sort((a, b) => b.position - a.position)
     const byName = (a: Member, b: Member) => a.display_name.localeCompare(b.display_name, 'fr')
@@ -236,7 +252,8 @@ export function MemberList({ ready }: { ready: Ready }) {
         <div key={g.title}>
           <div className="group">{g.title} — {g.members.length}</div>
           {g.members.map((m) => (
-            <div className="member" key={m.id} title={m.handle}>
+            <div className="member" key={m.id} title={m.handle} role="button" tabIndex={0} aria-label={m.display_name}
+              onClick={() => setOpen(m)} onKeyDown={(e) => e.key === 'Enter' && setOpen(m)}>
               <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={32} />
               <span className="name" style={{ color: memberColor(ready, m) }}>{m.display_name}</span>
               {m.bot && <span className="bot-tag">BOT</span>}
@@ -245,6 +262,7 @@ export function MemberList({ ready }: { ready: Ready }) {
           ))}
         </div>
       ))}
+      {open && <MemberDialog conn={conn} ready={ready} member={open} onClose={() => setOpen(null)} />}
     </aside>
   )
 }

@@ -61,12 +61,25 @@ export function Alert({ kind, children }: { kind: 'error' | 'info' | 'warn'; chi
 
 export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
+  const close = useRef(onClose)
+  close.current = onClose
+  // Focus once when opening, not at every re-render of the caller.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    if (ref.current?.contains(document.activeElement)) return // a field with autoFocus
+    ref.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus()
+  }, [])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Only the topmost dialog closes.
+      const all = document.querySelectorAll('.dialog')
+      if (e.key === 'Escape' && all[all.length - 1] === ref.current) {
+        e.preventDefault() // full-screen settings behind stay open
+        close.current()
+      }
+    }
     window.addEventListener('keydown', onKey)
-    ref.current?.querySelector<HTMLElement>('input, button')?.focus()
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [])
   return (
     <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dialog" role="dialog" aria-modal="true" aria-label={title} ref={ref}>

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -52,6 +53,9 @@ type auditEntry struct {
 	Reason    string         `json:"reason"`
 	Details   map[string]any `json:"details"`
 	CreatedAt time.Time      `json:"created_at"`
+	// Names of the members involved, even if they left since (for display).
+	ActorName  string `json:"actor_name,omitempty"`
+	TargetName string `json:"target_name,omitempty"`
 }
 
 // audit records an action. q may be a transaction (never s.db inside one).
@@ -134,6 +138,31 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 	if err := rows.Err(); err != nil {
 		writeErr(w, r, err)
 		return
+	}
+	rows.Close()
+	names := map[string]string{}
+	name := func(id *string) string {
+		if id == nil {
+			return ""
+		}
+		if n, ok := names[*id]; ok {
+			return n
+		}
+		var handle string
+		var nick sql.NullString
+		if s.db.QueryRowContext(r.Context(), `SELECT handle, nickname FROM members WHERE id = ?`, *id).Scan(&handle, &nick) == nil {
+			names[*id], _, _ = strings.Cut(handle, "@")
+			if nick.Valid && nick.String != "" {
+				names[*id] = nick.String
+			}
+		} else {
+			names[*id] = ""
+		}
+		return names[*id]
+	}
+	for i := range list {
+		list[i].ActorName = name(list[i].ActorID)
+		list[i].TargetName = name(list[i].TargetID) // "" when the target is not a member (role, channel…)
 	}
 	writeJSON(w, http.StatusOK, list)
 }
