@@ -49,6 +49,7 @@ type Server struct {
 	limit    struct{ global, auth, messages, uploads, typing, phone *ratelimit.Limiter }
 	previews *previewer    // nil: link previews disabled
 	phone    PhoneVerifier // nil: phone verification unavailable
+	disabled disabledSet   // accounts disabled by their identity service
 }
 
 // ServerID derives the public server identifier from its key.

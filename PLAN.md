@@ -12,9 +12,9 @@
 - [x] **P0** Vérification de l'email (lien ou code)
 - [x] **P0** Connexion / déconnexion, sessions par appareil
 - [x] **P0** 2FA TOTP (application d'authentification) + codes de secours
-- [ ] **P1** Mot de passe oublié (via email)
-- [ ] **P1** Changement d'email, de pseudo, de mot de passe
-- [ ] **P1** Suppression de compte par l'utilisateur (effacement réel des données)
+- [x] **P1** Mot de passe oublié (via email)
+- [x] **P1** Changement d'email, de pseudo, de mot de passe
+- [x] **P1** Suppression de compte par l'utilisateur (effacement réel des données)
 - [x] **P1** Anti-bruteforce : blocage du compte après 15 échecs de connexion par heure *(avancé au jalon 1 à la demande du CP)*
 - [x] **P1** Limitation de débit par IP (anti-spam d'inscriptions, anti-blocage malveillant de comptes)
 - [ ] **P2** 2FA par clé matérielle / passkey (WebAuthn)
@@ -23,9 +23,9 @@
 - [x] **P0** Identifiant unique au format `pseudo@domaine-du-service`
 - [x] **P0** Émission d'un jeton d'identité signé (ID, pseudo, clé publique, expiration)
 - [x] **P0** Publication de la clé publique de signature du service (vérification hors ligne par les serveurs)
-- [ ] **P1** Rotation des clés de signature du service
-- [ ] **P1** Liste des comptes désactivés, consultable par les serveurs (réquisition judiciaire)
-- [ ] **P1** Profil public minimal : pseudo, avatar, bio
+- [x] **P1** Rotation des clés de signature du service
+- [x] **P1** Liste des comptes désactivés, consultable par les serveurs (réquisition judiciaire)
+- [x] **P1** Profil public minimal : pseudo, avatar, bio
 
 ### A3. Appareils et clés E2E
 - [x] **P0** Enregistrement du premier appareil (génération des clés côté client)
@@ -37,8 +37,8 @@
 ### A4. Amis
 - [x] **P0** Envoyer / accepter / refuser / annuler une demande d'ami
 - [x] **P0** Liste d'amis, retrait d'un ami
-- [ ] **P1** Bloquer un utilisateur
-- [ ] **P1** Présence entre amis (en ligne / absent / ne pas déranger / invisible)
+- [x] **P1** Bloquer un utilisateur
+- [x] **P1** Présence entre amis (en ligne / absent / ne pas déranger / invisible)
 - [ ] **P2** Réglages de confidentialité (qui peut m'envoyer une demande)
 
 ### A5. Messages privés (chiffrés E2E)
@@ -59,8 +59,8 @@
 - [ ] **P2** Appels de groupe entre amis
 
 ### A7. Administration du service central
-- [ ] **P1** Désactivation / réactivation d'un compte (outil admin, journalisé)
-- [ ] **P1** Déploiement Docker du service central (auto-hébergeable)
+- [x] **P1** Désactivation / réactivation d'un compte (outil admin, journalisé)
+- [x] **P1** Déploiement Docker du service central (auto-hébergeable)
 
 ---
 

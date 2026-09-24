@@ -93,6 +93,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, errf(http.StatusUnauthorized, "invalid_proof", "device proof does not match the identity token"))
 		return
 	}
+	if s.isDisabled(claims.Issuer, claims.Subject) {
+		writeErr(w, r, errf(http.StatusForbidden, "account_disabled", "this account has been disabled by its identity service"))
+		return
+	}
 
 	m, joined, err := s.admit(ctx, claims, strings.TrimSpace(req.Invite), strings.TrimSpace(req.Claim))
 	if err != nil {

@@ -83,6 +83,8 @@ func run() error {
 		return netdiag.Diagnose(st, ip, ports)
 	})
 
+	go srv.WatchDisabled(ctx, cfg.DisabledPoll) // accounts disabled by their identity service
+
 	go func() { // unsent uploads, orphaned files, old audit entries, expired sessions
 		for {
 			if err := srv.Housekeeping(ctx); err != nil {

@@ -1,0 +1,26 @@
+# Quarel Identity service behind an existing HTTPS reverse proxy (Caddy,
+# nginx, Traefik…) that forwards https://<QUAREL_ISSUER> to 127.0.0.1:8080,
+# WebSockets included (/v1/gateway).
+#
+#   docker compose -f compose.proxy.yaml up -d --build
+services:
+  identity:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.identity
+    image: quarel-identity
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      QUAREL_ADDR: ":8080"
+      QUAREL_TLS: "off"
+      # The proxy's address as seen from the container, so rate limits apply
+      # to real client addresses (X-Forwarded-For).
+      QUAREL_TRUSTED_PROXIES: ${QUAREL_TRUSTED_PROXIES:-172.16.0.0/12}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - identity-data:/data
+
+volumes:
+  identity-data:

@@ -49,15 +49,28 @@ type conn struct {
 	Auth
 	send   chan []byte
 	reason string // why the hub dropped this connection
+	gone   bool   // no longer counted in its group
 }
 
 // Hub fans events out to connected clients.
 type Hub struct {
-	mu    sync.Mutex
-	conns map[*conn]struct{}
+	mu     sync.Mutex
+	conns  map[*conn]struct{}
+	groups map[string]int // open connections per group
+
+	// OnGroup, if set, is called when a group gets its first connection
+	// (online) or loses its last one (offline). Set it before serving.
+	OnGroup func(group string, online bool)
 }
 
-func NewHub() *Hub { return &Hub{conns: map[*conn]struct{}{}} }
+func NewHub() *Hub { return &Hub{conns: map[*conn]struct{}{}, groups: map[string]int{}} }
+
+// GroupOnline reports whether a group has at least one open connection.
+func (h *Hub) GroupOnline(group string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.groups[group] > 0
+}
 
 // Broadcast sends an event to every connection.
 func (h *Hub) Broadcast(t string, d any) { h.BroadcastTo(t, d, nil) }
@@ -134,13 +147,31 @@ func (h *Hub) dropLocked(c *conn, reason string) {
 func (h *Hub) add(c *conn) {
 	h.mu.Lock()
 	h.conns[c] = struct{}{}
+	h.groups[c.Group]++
+	first := h.groups[c.Group] == 1
 	h.mu.Unlock()
+	if first && h.OnGroup != nil {
+		h.OnGroup(c.Group, true)
+	}
 }
 
 func (h *Hub) remove(c *conn) {
 	h.mu.Lock()
-	delete(h.conns, c)
+	delete(h.conns, c) // already gone if the hub dropped it
+	if c.gone {
+		h.mu.Unlock()
+		return
+	}
+	c.gone = true
+	h.groups[c.Group]--
+	last := h.groups[c.Group] == 0
+	if last {
+		delete(h.groups, c.Group)
+	}
 	h.mu.Unlock()
+	if last && h.OnGroup != nil {
+		h.OnGroup(c.Group, false)
+	}
 }
 
 // Serve upgrades the request to a WebSocket, authenticates the first frame

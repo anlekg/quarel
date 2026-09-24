@@ -122,23 +122,30 @@ func Open(cfg Config) (*Server, error) {
 		db.Close()
 		return nil, err
 	}
+	retired, err := liveRetiredKeys(cfg.DataDir, cfg.TokenTTL, time.Now())
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("%s: %w", retiredKeysFile, err)
+	}
 	var mailer Mailer = LogMailer{}
 	if cfg.SMTP.Host != "" {
 		mailer = cfg.SMTP
 	}
-	return New(cfg, db, key, mailer), nil
+	return New(cfg, db, key, mailer, retired...), nil
 }
 
-// New builds a Server from already-opened dependencies.
-func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer) *Server {
+// New builds a Server from already-opened dependencies. retired keys are
+// former signing keys still published (see Admin.RotateSigningKey).
+func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer, retired ...ed25519.PublicKey) *Server {
 	s := &Server{
 		cfg:    cfg,
 		db:     db,
-		signer: idtoken.NewSigner(cfg.Issuer, key),
+		signer: idtoken.NewSigner(cfg.Issuer, key, retired...),
 		mailer: mailer,
 		hub:    realtime.NewHub(),
 		now:    time.Now,
 	}
+	s.hub.OnGroup = s.presenceHook
 	s.proxies = cfg.TrustedProxies
 	s.limit.global = ratelimit.New(cfg.Limits.Global, time.Minute)
 	s.limit.register = ratelimit.New(cfg.Limits.Register, time.Hour)
@@ -177,8 +184,26 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/auth/resend-verification", s.limited(s.limit.email, s.handleResendVerification))
 	mux.HandleFunc("POST /v1/auth/login", s.limited(s.limit.login, s.handleLogin))
 	mux.HandleFunc("POST /v1/auth/logout", s.authed(s.handleLogout))
+	mux.HandleFunc("POST /v1/auth/forgot-password", s.limited(s.limit.email, s.handleForgotPassword))
+	mux.HandleFunc("POST /v1/auth/reset-password", s.limited(s.limit.login, s.handleResetPassword))
+	mux.HandleFunc("GET /v1/disabled-accounts", s.handleDisabledAccounts)
 
 	mux.HandleFunc("GET /v1/me", s.authed(s.handleMe))
+	mux.HandleFunc("PATCH /v1/me", s.authed(s.handleChangePseudo))
+	mux.HandleFunc("DELETE /v1/me", s.authed(s.handleDeleteAccount))
+	mux.HandleFunc("POST /v1/me/password", s.authed(s.handleChangePassword))
+	mux.HandleFunc("POST /v1/me/email", s.authed(s.handleChangeEmail))
+	mux.HandleFunc("POST /v1/me/email/confirm", s.authed(s.handleConfirmEmail))
+	mux.HandleFunc("PATCH /v1/me/profile", s.authed(s.handleUpdateProfile))
+	mux.HandleFunc("PUT /v1/me/avatar", s.authed(s.handleSetAvatar))
+	mux.HandleFunc("DELETE /v1/me/avatar", s.authed(s.handleDeleteAvatar))
+	mux.HandleFunc("PUT /v1/me/presence", s.authed(s.handleSetPresence))
+	mux.HandleFunc("GET /v1/users/{id}/profile", s.handleProfile)
+	mux.HandleFunc("GET /v1/users/{id}/avatar", s.handleAvatar)
+	mux.HandleFunc("GET /v1/blocks", s.authed(s.handleListBlocks))
+	mux.HandleFunc("POST /v1/blocks", s.authed(s.handleBlock))
+	mux.HandleFunc("PUT /v1/blocks/{id}", s.authed(s.handleBlock))
+	mux.HandleFunc("DELETE /v1/blocks/{id}", s.authed(s.handleUnblock))
 	mux.HandleFunc("GET /v1/me/sessions", s.authed(s.handleListSessions))
 	mux.HandleFunc("DELETE /v1/me/sessions/{id}", s.authed(s.handleRevokeSession))
 	mux.HandleFunc("POST /v1/me/2fa/setup", s.authed(s.handle2FASetup))

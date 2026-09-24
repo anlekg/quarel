@@ -18,9 +18,10 @@ const (
 )
 
 type publicUser struct {
-	ID     string `json:"id"`
-	Handle string `json:"handle"`
-	Pseudo string `json:"pseudo"`
+	ID       string `json:"id"`
+	Handle   string `json:"handle"`
+	Pseudo   string `json:"pseudo"`
+	Presence string `json:"presence,omitempty"` // friends only: online, idle, dnd, offline
 }
 
 func (s *Server) publicUser(u *user) publicUser {
@@ -104,7 +105,11 @@ func (s *Server) handleListFriends(w http.ResponseWriter, r *http.Request) {
 				key = "outgoing"
 			}
 		}
-		out[key] = append(out[key], s.publicUser(u))
+		pu := s.publicUser(u)
+		if key == "friends" {
+			pu.Presence = s.presenceOf(r.Context(), u.ID)
+		}
+		out[key] = append(out[key], pu)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -152,6 +157,20 @@ func (s *Server) handleAddFriend(w http.ResponseWriter, r *http.Request) {
 	}
 	if other.ID == me.ID {
 		writeErr(w, r, errf(http.StatusBadRequest, "self_friend", "you cannot befriend yourself"))
+		return
+	}
+	var blocker string
+	err = s.db.QueryRowContext(ctx, `SELECT user_id FROM blocks WHERE (user_id = ? AND blocked_id = ?) OR (user_id = ? AND blocked_id = ?)`,
+		me.ID, other.ID, other.ID, me.ID).Scan(&blocker)
+	switch {
+	case err == nil && blocker == me.ID:
+		writeErr(w, r, errf(http.StatusForbidden, "blocked", "you blocked this user: unblock them first"))
+		return
+	case err == nil: // they blocked me: answer as if they did not exist
+		writeErr(w, r, errf(http.StatusNotFound, "not_found", "no such user"))
+		return
+	case !errors.Is(err, sql.ErrNoRows):
+		writeErr(w, r, err)
 		return
 	}
 	rel, err := s.relation(ctx, s.db, me.ID, other.ID)

@@ -16,6 +16,9 @@ import (
 //	INBOX           [inbox items] for this device (then acknowledge them)
 //	FRIENDS_UPDATE  {user, status: friends|incoming|outgoing|none}
 //	DEVICES_UPDATE  {user_id}: that user's device list changed
+//	PRESENCE_UPDATE {user_id, status}: a friend's presence (online, idle, dnd, offline)
+//	PRESENCE_SETTING {status}: my own presence setting changed on another device
+//	USER_UPDATE     profile: my or a friend's pseudo, bio or avatar changed
 
 // sessionForToken resolves a bearer token to its session, or nil.
 func (s *Server) sessionForToken(ctx context.Context, token string) (*session, bool, error) {
@@ -56,7 +59,10 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return nil, err
 			}
-			return map[string]any{"user": s.userResp(u), "device_id": a.Key, "inbox_pending": pending, "one_time_keys": otks}, nil
+			var presence string
+			s.db.QueryRowContext(ctx, `SELECT presence FROM users WHERE id = ?`, u.ID).Scan(&presence)
+			return map[string]any{"user": s.userResp(u), "device_id": a.Key, "inbox_pending": pending, "one_time_keys": otks,
+				"presence": presence}, nil
 		})
 }
 

@@ -1,0 +1,28 @@
+# Quarel Identity service — self-hosted deployment with Docker Compose.
+#
+#   cp .env.example .env    # then edit it: domain, email, SMTP
+#   docker compose up -d --build
+#
+# HTTPS comes from Let's Encrypt (TLS-ALPN-01): the domain must point to this
+# machine and port 443 must reach it. Behind an existing reverse proxy, use
+# compose.proxy.yaml instead. Operator tools:
+#   docker compose exec identity /quarel-identity admin help
+services:
+  identity:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.identity
+    image: quarel-identity
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      QUAREL_ADDR: ":8443"
+      QUAREL_TLS: acme
+    ports:
+      - "443:8443"
+    volumes:
+      - identity-data:/data
+
+volumes:
+  # Holds the database and the signing key: back it up (see docs/deploiement-identity.md).
+  identity-data:

@@ -93,14 +93,17 @@ func (ks KeySet) lookup(kid string) (ed25519.PublicKey, error) {
 
 // Signer issues tokens for one Identity service.
 type Signer struct {
-	issuer string
-	key    ed25519.PrivateKey
-	kid    string
+	issuer  string
+	key     ed25519.PrivateKey
+	kid     string
+	retired []ed25519.PublicKey // still published: tokens they signed are still valid
 }
 
-// NewSigner returns a Signer for issuer using key.
-func NewSigner(issuer string, key ed25519.PrivateKey) *Signer {
-	return &Signer{issuer: issuer, key: key, kid: KeyID(key.Public().(ed25519.PublicKey))}
+// NewSigner returns a Signer for issuer using key. Retired keys (after a
+// rotation) keep being published so the tokens they signed remain verifiable
+// until they expire; they never sign again.
+func NewSigner(issuer string, key ed25519.PrivateKey, retired ...ed25519.PublicKey) *Signer {
+	return &Signer{issuer: issuer, key: key, kid: KeyID(key.Public().(ed25519.PublicKey)), retired: retired}
 }
 
 // Issuer returns the issuer name.
@@ -109,10 +112,14 @@ func (s *Signer) Issuer() string { return s.issuer }
 // KeySet returns the public key set to publish at WellKnownPath.
 func (s *Signer) KeySet() KeySet {
 	pub := s.key.Public().(ed25519.PublicKey)
-	return KeySet{
+	ks := KeySet{
 		Issuer: s.issuer,
 		Keys:   []PublicKey{{KID: s.kid, Alg: "EdDSA", Crv: "Ed25519", X: EncodeKey(pub)}},
 	}
+	for _, k := range s.retired {
+		ks.Keys = append(ks.Keys, PublicKey{KID: KeyID(k), Alg: "EdDSA", Crv: "Ed25519", X: EncodeKey(k)})
+	}
+	return ks
 }
 
 // Issue creates a token for userID bound to deviceKey.

@@ -15,9 +15,10 @@ import (
 )
 
 type publicUser struct {
-	ID     string `json:"id"`
-	Handle string `json:"handle"`
-	Pseudo string `json:"pseudo"`
+	ID       string `json:"id"`
+	Handle   string `json:"handle"`
+	Pseudo   string `json:"pseudo"`
+	Presence string `json:"presence"`
 }
 
 func (c *cli) runSocial(cmd string, args []string) (bool, error) {
@@ -54,7 +55,7 @@ func (c *cli) runSocial(cmd string, args []string) (bool, error) {
 	case "dm-listen":
 		err = c.dmListen()
 	default:
-		return c.runRecovery(cmd, args)
+		return c.runAccount(cmd, args)
 	}
 	return true, err
 }
@@ -78,7 +79,7 @@ func (c *cli) printFriends() error {
 	section := func(title string, users []publicUser, hint string) {
 		fmt.Printf("%s (%d)\n", title, len(users))
 		for _, u := range users {
-			fmt.Printf("  %-20s %s\n", u.Pseudo, u.Handle)
+			fmt.Printf("  %-20s %-32s %s\n", u.Pseudo, u.Handle, presenceText[u.Presence])
 		}
 		if len(users) > 0 && hint != "" {
 			fmt.Println("  " + hint)
@@ -337,6 +338,25 @@ func (c *cli) dmListen() error {
 			}
 			json.Unmarshal(ev.D, &d)
 			out(fmt.Sprintf("👥 %s : %s", d.User.Pseudo, relationText[d.Status]))
+		case "PRESENCE_UPDATE":
+			var d struct {
+				UserID string `json:"user_id"`
+				Status string `json:"status"`
+			}
+			json.Unmarshal(ev.D, &d)
+			name := d.UserID
+			if l, err := c.friendLists(); err == nil {
+				for _, f := range l.Friends {
+					if f.ID == d.UserID {
+						name = f.Pseudo
+					}
+				}
+			}
+			out(fmt.Sprintf("%s : %s", name, presenceText[d.Status]))
+		case "USER_UPDATE":
+			var p profileInfo
+			json.Unmarshal(ev.D, &p)
+			out(fmt.Sprintf("✎ profil mis à jour : %s", p.Handle))
 		case "DEVICES_UPDATE":
 			var d struct {
 				UserID string `json:"user_id"`

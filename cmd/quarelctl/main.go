@@ -38,6 +38,19 @@ Compte
   login <email|pseudo> [appareil]  se connecter (code 2FA demandé si besoin)
   logout                           fermer la session courante
   me                               afficher le compte connecté
+  forgot-password <email>          recevoir un code pour choisir un nouveau mot de passe
+  reset-password <email> <code>    nouveau mot de passe (tous les appareils sont déconnectés)
+  passwd                           changer de mot de passe (les autres appareils sont déconnectés)
+  email-change <adresse>           changer d'adresse (code envoyé à la nouvelle), puis email-confirm <code>
+  pseudo <nouveau>                 changer de pseudo (une fois par jour ; l'identité ne change pas)
+  delete-account                   supprimer définitivement le compte et ses données
+
+Profil, blocage, présence
+  profile [pseudo|id]              profil public (bio, avatar)
+  bio <texte…>                     changer sa bio (vide : l'effacer)
+  avatar <image>|--remove          changer d'avatar (PNG, JPEG, GIF, WebP ; 1 Mo max)
+  block <pseudo> / unblock <pseudo> / blocks
+  status online|idle|dnd|invisible statut vu par les amis (invisible = hors ligne)
 
 Appareils
   sessions                         lister les sessions ouvertes

@@ -41,17 +41,18 @@ Alternative à Discord **auto-hébergeable** : chaque serveur tourne chez son pr
 ## Arborescence
 
 ```
-cmd/quarel-identity/    binaire du service Identity
+cmd/quarel-identity/    binaire du service Identity (+ sous-commandes « admin » de l'opérateur, admin.go)
 cmd/quarel-server/      binaire du serveur communautaire
 cmd/quarelctl/          client de test en ligne de commande (sorties en français, neutres en genre, pour le CP) :
-                        main.go (Identity), community.go (serveurs communautaires), messages.go (réponses, réactions,
+                        main.go (Identity), account.go (compte, profil, blocage, présence), community.go (serveurs communautaires), messages.go (réponses, réactions,
                         fichiers, recherche, fils, non-lus), access.go (exclusion, purge, journal, règles, téléphone,
                         bots), roles.go (rôles, modération),
                         voice.go (vocal), social.go (amis, MP), e2e.go (chiffrement Olm/Megolm côté client),
                         recovery.go (phrase de récupération, sauvegarde), network.go (diagnostic réseau)
 internal/identity/      service Identity : HTTP (server.go), endpoints (handlers.go), SQLite (store.go),
                         argon2id (crypto.go), TOTP (totp.go), emails (mail.go), anti-bruteforce (lockout.go),
-                        amis et conversations (social.go), clés E2E et boîtes aux lettres (e2e.go), temps réel (gateway.go)
+                        amis et conversations (social.go), clés E2E et boîtes aux lettres (e2e.go), temps réel (gateway.go),
+                        gestion du compte (account.go), profil/blocage/présence (profile.go), opérateur et rotation de clé (admin.go)
 internal/community/     serveur communautaire : config, clés des Identity (keys.go), auth (auth.go),
                         membres, invitations, salons + droits par salon (channels.go), messages,
                         permissions (permissions.go), rôles (roles.go), expulsion/bannissement
@@ -75,6 +76,7 @@ docs/tests/             guides de test par jalon, destinés au CP
 test/e2e/               tests de bout en bout : vocal (Playwright), MP chiffrés, sécurité (récupération, HTTPS,
                         limites), messages P1 (messages.sh), modération P1 (moderation.sh), ACME contre Pebble (acmeshim : corrige une différence de Pebble avec Let's Encrypt)
 examples/pingbot/       bot d'exemple (répond « pong » à « !ping ») : jeton de bot, passerelle, REST
+deploy/identity/        déploiement Docker Compose du service Identity (Let's Encrypt ou derrière un proxy)
 docs/api.md             documentation publique de l'API des serveurs communautaires (bots, clients)
 Dockerfile.identity     image distroless (~23 Mo), volume /data, port 8080
 Dockerfile.server       image distroless + livekit-server (~141 Mo), volume /data, ports 8090/tcp, 7881/tcp, 7882/udp
@@ -117,7 +119,7 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | POST | `/v1/to-device` | `{messages: [{device_id, payload}]}` (8 Mo max) |
 | GET | `/v1/inbox` | Éléments en attente pour cet appareil |
 | POST | `/v1/inbox/ack` | `{ids}` |
-| GET | `/v1/gateway` | WebSocket : READY, INBOX, FRIENDS_UPDATE, DEVICES_UPDATE |
+| GET | `/v1/gateway` | WebSocket : READY, INBOX, FRIENDS_UPDATE, DEVICES_UPDATE, PRESENCE_UPDATE, PRESENCE_SETTING, USER_UPDATE |
 
 ## Mise en ligne (jalon 6) : HTTPS, UPnP, limites, récupération
 
@@ -152,7 +154,23 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 - **Email** : code à 6 chiffres, 15 min, 5 essais, renvoi limité à 1/min ; `resend-verification` répond toujours 202. La connexion exige un email vérifié.
 - **2FA** : TOTP RFC 6238 (SHA1, 30 s, 6 chiffres, ±1 pas), chaque code utilisable une seule fois (`totp_last_step`) ; 10 codes de secours de 80 bits (SHA-256 stocké), usage unique.
 - **Anti-bruteforce** (`lockout.go`) : 15 échecs (mauvais mot de passe ou mauvais code 2FA) en 1 h glissante → `429 account_locked` + `Retry-After`, même avec le bon mot de passe. Compté par compte (email et pseudo partagent le compteur), ou par identifiant tapé si le compte n'existe pas (pas d'énumération). Les re-vérifications de mot de passe/2FA (`2fa/setup`, `2fa/disable`) passent par le même compteur (`s.guarded`). Remise à zéro après une connexion réussie complète. Table `auth_failures`.
-- **Compte désactivé** (`users.disabled_at`, réquisition judiciaire) : login, sessions et émission de jetons refusés. Pas encore d'outil admin (P1).
+- **Compte désactivé** (`users.disabled_at`, réquisition judiciaire) : login, sessions, jetons et profil public refusés ; appareils et données **conservés** (réactivation = retour à l'identique). Posé uniquement par l'outil de l'opérateur (voir « Comptes »).
+
+### Comptes (P1 bloc 4)
+
+- **Codes par email** (`account_codes`, un par utilisateur et usage `reset` | `email`) : 6 chiffres, 15 min, 5 essais, renvoi 1/min ; mêmes règles que la vérification d'email.
+- **Mot de passe oublié** : `POST /v1/auth/forgot-password {email}` (répond toujours 202 : pas d'énumération) puis `POST /v1/auth/reset-password {email, code, password, totp_code?}` — **la 2FA reste exigée** (une boîte mail seule ne suffit pas) ; **toutes les sessions sont fermées** (les appareils sont à revalider, avec la phrase de récupération). Email de confirmation.
+- **Changer de mot de passe** : `POST /v1/me/password {current_password, new_password}` → les autres sessions sont fermées (`closeSessions`), email d'alerte.
+- **Changer d'email** : `POST /v1/me/email {password, new_email}` → code à la nouvelle adresse → `POST /v1/me/email/confirm {code}` ; l'ancienne adresse est prévenue.
+- **Changer de pseudo** : `PATCH /v1/me {pseudo}`, **une fois par 24 h** (changer seulement la casse est libre) ; l'ancien pseudo redevient libre. L'identité `(iss, sub)` ne change pas : les serveurs communautaires mettent le handle à jour à la connexion suivante. `USER_UPDATE` aux amis et à soi.
+- **Supprimer son compte** : `DELETE /v1/me {password, totp_code?}` → suppression **immédiate et définitive** de la ligne `users`, les clés étrangères effacent en cascade sessions, clés, amitiés, conversations, boîtes, sauvegarde, avatar, blocages. Restent : les messages chiffrés déjà dans les boîtes d'autres personnes (leurs copies), et `admin_log` (sans FK). Les amis reçoivent `FRIENDS_UPDATE none`.
+- **Profil public** : `GET /v1/users/{id}/profile` et `/avatar` **sans session** (les clients des serveurs communautaires affichent les avatars de membres non amis) ; `PATCH /v1/me/profile {bio}` (500 caractères), `PUT /v1/me/avatar` (corps = image PNG/JPEG/GIF/WebP détectée sur le contenu, 1 Mo, stockée en base), `DELETE /v1/me/avatar`. `avatar_url` contient une version (`?v=`) → cache long. Comptes désactivés ou non vérifiés : 404.
+- **Blocage** (`blocks`) : `POST /v1/blocks {pseudo}` ou `PUT /v1/blocks/{id}`, `DELETE`, `GET`. Supprime amitié/demande ; le bloqué reçoit `404 not_found` en demandant en ami (il ne sait pas qu'il est bloqué), le bloqueur `403 blocked`. Masquer les messages sur les serveurs communautaires : au client (liste `GET /v1/blocks`).
+- **Présence** : réglage `users.presence` (`online|idle|dnd|invisible`, `PUT /v1/me/presence`) ; présence **vue par les amis** = `offline` si aucun appareil connecté à la passerelle ou `invisible`, sinon le réglage. Le hub signale le 1er appareil connecté / le dernier déconnecté (`realtime.Hub.OnGroup`, `GroupOnline`) → `PRESENCE_UPDATE {user_id, status}` aux amis ; `presence` dans `GET /v1/friends` (amis seulement) et READY (réglage propre) ; `PRESENCE_SETTING` à ses autres appareils.
+- **Liste publique des comptes désactivés** : `GET /v1/disabled-accounts` → `{issuer, accounts: [{sub, since}]}`. Les serveurs communautaires l'interrogent (`QUAREL_DISABLED_POLL`, 10 min) : sessions des membres concernés supprimées, connexions fermées, vocal coupé, connexion refusée (`account_disabled`) ; ils restent membres (retour possible après réactivation).
+- **Outil de l'opérateur** (`quarel-identity admin …`, sur la machine : jamais par le réseau ; ouvre la base SQLite en parallèle du service grâce au WAL) : `disable|enable <pseudo|email|id> --reason … [--by …]` (raison et opérateur obligatoires), `log`, `rotate-signing-key`. Tout est consigné dans `admin_log`. Le service ferme les connexions des comptes désactivés sous 15 s (`WatchDisabled`).
+- **Rotation de la clé de signature** : `rotate-signing-key` ajoute la clé publique actuelle à `data/retired-keys.json`, **détruit la clé privée**, en crée une nouvelle ; au redémarrage, les clés retirées depuis moins de `QUAREL_TOKEN_TTL` + 1 h restent publiées (les jetons qu'elles ont signés restent valides), puis disparaissent. Les serveurs communautaires rechargent les clés dès qu'ils voient un `kid` inconnu.
+- **Déploiement** : `deploy/identity/compose.yaml` (Let's Encrypt direct, port 443) et `compose.proxy.yaml` (derrière un proxy HTTPS), `.env.example` ; guide `docs/deploiement-identity.md`. `QUAREL_SMTP_FROM` peut contenir un nom (`Quarel <quarel@…>`).
 - **Erreurs API** : `{"error":{"code":"...","message":"..."}}` ; les codes (`invalid_credentials`, `mfa_required`, `email_not_verified`…) sont stables, les messages sont indicatifs.
 - **Migrations SQLite** : liste `migrations` dans `store.go`, version dans `PRAGMA user_version`. Ne jamais modifier une migration existante, seulement en ajouter.
 
@@ -174,6 +192,18 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | POST | `/v1/me/2fa/enable` | session | `{code}` → codes de secours |
 | POST | `/v1/me/2fa/disable` | session | `{password, code}` |
 | POST | `/v1/identity/token` | session | Jeton d'identité portable |
+| POST | `/v1/auth/forgot-password` | — | `{email}` → 202 toujours |
+| POST | `/v1/auth/reset-password` | — | `{email, code, password, totp_code?}` |
+| PATCH/DELETE | `/v1/me` | session | `{pseudo}` / `{password, totp_code?}` : suppression définitive |
+| POST | `/v1/me/password` | session | `{current_password, new_password}` |
+| POST | `/v1/me/email`, `/v1/me/email/confirm` | session | `{password, new_email}` puis `{code}` |
+| PATCH | `/v1/me/profile` | session | `{bio}` |
+| PUT/DELETE | `/v1/me/avatar` | session | Image brute (1 Mo) |
+| PUT | `/v1/me/presence` | session | `{status}` |
+| GET | `/v1/users/{id}/profile`, `/v1/users/{id}/avatar` | — | Profil public |
+| GET/POST | `/v1/blocks` | session | Liste / `{pseudo}` |
+| PUT/DELETE | `/v1/blocks/{id}` | session | Bloquer / débloquer |
+| GET | `/v1/disabled-accounts` | — | `{issuer, accounts: [{sub, since}]}` |
 
 ### Configuration (variables d'environnement)
 
@@ -321,6 +351,8 @@ Vocal : `QUAREL_VOICE` (`embedded` par défaut, `external`, `off`) ; embarqué :
 
 Messages : `QUAREL_MAX_UPLOAD_MB` (25), `QUAREL_LINK_PREVIEWS` (`on`). Limites serveur : 10 envois de fichiers/min/membre, 5 codes SMS/h/membre en plus des précédentes. Téléphone : `QUAREL_PHONE_VERIFY` et `QUAREL_TWILIO_*` (voir « Modération et accès »).
 
+`QUAREL_DISABLED_POLL` (`10m`) : fréquence de lecture des comptes désactivés des services Identity.
+
 `QUAREL_ADDR` (`:8090`), `QUAREL_DATA_DIR` (`./data`), `QUAREL_SERVER_NAME` (nom au 1er démarrage seulement), `QUAREL_TRUSTED_ISSUERS` (liste séparée par des virgules ; défaut `identity.quarel.app`, instance officielle — domaine `quarel.app` choisi par le CP ; **ce nom ne doit jamais changer**, il fait partie de chaque identité).
 
 ## Commandes
@@ -340,6 +372,7 @@ make e2e-security     # récupération, HTTPS lié à l'identité, limites (18 v
 make e2e-acme         # HTTPS via ACME contre Pebble (Docker)
 make e2e-messages     # réponses, réactions, fichiers, recherche, fils, non-lus (18 vérifications)
 make e2e-moderation   # exclusion, purge, journal, règles, téléphone, bots avec examples/pingbot (24 vérifications)
+make e2e-accounts     # comptes : mots de passe, email, pseudo, profil, blocage, présence, suppression, outil opérateur (30 vérifications)
 ./bin/quarelctl help  # client de test
 ```
 

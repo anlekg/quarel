@@ -62,7 +62,7 @@ Les événements d'un salon ne sont envoyés qu'à ceux qui le voient. **Fermetu
 
 ## 4. Objets
 
-**Membre** : `{id, handle, issuer, subject, nickname?, display_name, owner, roles: [ids], joined_at, bot, timeout_until, rules_accepted, phone_verified}`. L'identité stable d'une personne est `(issuer, subject)` ; `handle` (`pseudo@service`) peut changer. `timeout_until` : lecture seule jusqu'à cette date si elle est future.
+**Membre** : `{id, handle, issuer, subject, nickname?, display_name, owner, roles: [ids], joined_at, bot, timeout_until, rules_accepted, phone_verified}`. L'identité stable d'une personne est `(issuer, subject)` ; `handle` (`pseudo@service`) peut changer. Profil public et avatar : `GET https://<issuer>/v1/users/<subject>/profile` sur son service Identity (sans session) → `{handle, pseudo, bio, avatar_url}` (`avatar_url` relative à ce service). Les bots n'ont pas de profil Identity. `timeout_until` : lecture seule jusqu'à cette date si elle est future.
 
 **Salon** : `{id, type, name, topic, parent_id, position, thread_starter?, overrides}`. Types : `text`, `voice`, `category`, `announcement` (écrire exige aussi `manage_messages`), `thread` (fil : `parent_id` = salon textuel, mêmes droits que lui). La liste est plate, triée par `(position, id)` ; l'arbre se reconstruit avec `parent_id`.
 

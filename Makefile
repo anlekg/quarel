@@ -1,6 +1,6 @@
 export PATH := $(HOME)/.local/go/bin:$(HOME)/.local/bin:$(PATH)
 
-.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages e2e-moderation clean
+.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages e2e-moderation e2e-accounts clean
 
 build:
 	go build -o bin/ ./cmd/... ./examples/...
@@ -54,6 +54,10 @@ e2e-messages: build
 # P1 scenario: timeout, purge, audit log, rules, phone verification, bots.
 e2e-moderation: build
 	test/e2e/moderation.sh
+
+# P1 scenario: account changes, profile, blocks, presence, deletion, operator tool.
+e2e-accounts: build
+	test/e2e/accounts.sh
 
 # HTTPS through ACME (Let's Encrypt protocol) against Pebble in Docker.
 e2e-acme: build

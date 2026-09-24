@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/anlekg/quarel/internal/ratelimit"
 	"github.com/anlekg/quarel/internal/tlsconf"
@@ -50,6 +51,10 @@ type Config struct {
 	TwilioAccountSID string
 	TwilioAuthToken  string
 	TwilioVerifySID  string // Verify service ("VA…")
+
+	// DisabledPoll is how often the lists of disabled accounts of the trusted
+	// Identity services are fetched.
+	DisabledPoll time.Duration
 }
 
 // Limits caps request rates (0 disables a limit).
@@ -103,6 +108,9 @@ func ConfigFromEnv() (Config, error) {
 	c.MaxUploadBytes = int64(envInt("QUAREL_MAX_UPLOAD_MB", 25)) << 20
 	c.LinkPreviews = env("QUAREL_LINK_PREVIEWS", "on") != "off"
 	c.PublicPort = envInt("QUAREL_PUBLIC_PORT", 0)
+	if c.DisabledPoll, err = time.ParseDuration(env("QUAREL_DISABLED_POLL", "10m")); err != nil || c.DisabledPoll < time.Second {
+		return c, fmt.Errorf("QUAREL_DISABLED_POLL: invalid duration")
+	}
 	c.PhoneVerify = env("QUAREL_PHONE_VERIFY", "off")
 	c.TwilioAccountSID = os.Getenv("QUAREL_TWILIO_ACCOUNT_SID")
 	c.TwilioAuthToken = os.Getenv("QUAREL_TWILIO_AUTH_TOKEN")

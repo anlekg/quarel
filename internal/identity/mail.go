@@ -3,6 +3,7 @@ package identity
 import (
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"net/smtp"
 	"strings"
 )
@@ -20,7 +21,8 @@ func (LogMailer) Send(to, subject, body string) error {
 	return nil
 }
 
-// SMTPMailer sends through an SMTP relay (STARTTLS when offered).
+// SMTPMailer sends through an SMTP relay (STARTTLS when offered). From may
+// carry a display name ("Quarel <quarel@example.org>").
 type SMTPMailer struct {
 	Host, Port, User, Password, From string
 }
@@ -41,5 +43,9 @@ func (m SMTPMailer) Send(to, subject, body string) error {
 	if m.User != "" {
 		auth = smtp.PlainAuth("", m.User, m.Password, m.Host)
 	}
-	return smtp.SendMail(m.Host+":"+m.Port, auth, m.From, []string{to}, []byte(msg))
+	sender, err := mail.ParseAddress(m.From)
+	if err != nil {
+		return fmt.Errorf("mail: QUAREL_SMTP_FROM: %w", err)
+	}
+	return smtp.SendMail(m.Host+":"+m.Port, auth, sender.Address, []string{to}, []byte(msg))
 }

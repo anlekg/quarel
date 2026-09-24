@@ -17,6 +17,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "admin" {
+		if err := admin(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "erreur :", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -54,6 +61,7 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go srv.WatchDisabled(ctx, 15*time.Second) // accounts disabled by "quarel-identity admin" lose their live connections
 	go func() {
 		<-ctx.Done()
 		srv.DisconnectAll() // Shutdown does not wait for WebSocket (hijacked) connections

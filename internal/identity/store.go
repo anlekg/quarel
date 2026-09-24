@@ -140,6 +140,52 @@ CREATE TABLE backups (
 	updated_at INTEGER NOT NULL
 );
 `,
+	// P1 block 4: account management, public profile, blocks, presence,
+	// administration log.
+	`
+-- One pending code per user and purpose: 'reset' (forgotten password) or
+-- 'email' (address change; data = the new address).
+CREATE TABLE account_codes (
+	user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	purpose    TEXT NOT NULL CHECK (purpose IN ('reset', 'email')),
+	code_hash  TEXT NOT NULL,
+	data       TEXT NOT NULL DEFAULT '',
+	attempts   INTEGER NOT NULL DEFAULT 0,
+	created_at INTEGER NOT NULL,
+	expires_at INTEGER NOT NULL,
+	PRIMARY KEY (user_id, purpose)
+);
+
+ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN pseudo_changed_at INTEGER;
+ALTER TABLE users ADD COLUMN presence TEXT NOT NULL DEFAULT 'online' CHECK (presence IN ('online', 'idle', 'dnd', 'invisible'));
+
+CREATE TABLE avatars (
+	user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	content_type TEXT NOT NULL,
+	data         BLOB NOT NULL,
+	updated_at   INTEGER NOT NULL
+);
+
+CREATE TABLE blocks (
+	user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	blocked_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	created_at INTEGER NOT NULL,
+	PRIMARY KEY (user_id, blocked_id)
+);
+CREATE INDEX blocks_blocked ON blocks(blocked_id);
+
+-- Operator actions (account disable/enable, key rotation). No foreign key:
+-- the record outlives the account.
+CREATE TABLE admin_log (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	action     TEXT NOT NULL,
+	user_id    TEXT,
+	reason     TEXT NOT NULL DEFAULT '',
+	operator   TEXT NOT NULL,
+	created_at INTEGER NOT NULL
+);
+`,
 }
 
 // OpenDB opens (creating if needed) the SQLite database at path and applies migrations.

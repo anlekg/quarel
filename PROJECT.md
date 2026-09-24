@@ -172,6 +172,13 @@ Deux types de serveurs :
 | 2026-09-24 | *(à valider par le CP)* Micro et son coupés par la modération **persistants** jusqu'à levée (même après reconnexion) | Sinon il suffirait de se reconnecter pour contourner la sanction. |
 | 2026-09-24 | Déplacement vocal = éjection de la salle + consigne `VOICE_MOVE` au client | Le déplacement natif de LiveKit n'est pas garanti hors de son offre cloud ; l'éjection, elle, est garantie par le serveur. |
 | 2026-09-24 | Caméra et partage d'écran sous une seule permission `stream` | Simple à comprendre pour les administrateurs ; séparable plus tard sans casser l'API. |
+| 2026-09-24 | *(à valider par le CP)* Mot de passe oublié : la **2FA reste exigée**, et **tous les appareils sont déconnectés** | Sinon l'accès à la boîte mail suffirait à prendre le compte, et un intrus déjà connecté le resterait. Contrepartie : il faut revalider ses appareils (phrase de récupération). |
+| 2026-09-24 | *(à valider par le CP)* Suppression de compte **immédiate et définitive**, sans délai de grâce | « Effacement réel des données » ; confirmation par mot de passe, 2FA et saisie du pseudo. |
+| 2026-09-24 | *(à valider par le CP)* Changement de pseudo limité à **une fois par 24 h** ; l'ancien pseudo redevient libre | Limite l'usurpation en cascade ; les bans reposent sur l'identité, pas sur le pseudo. |
+| 2026-09-24 | Profils et avatars **publics** (sans session) | Les clients des serveurs communautaires affichent les avatars des membres qui ne sont pas des amis. Seul ce que la personne choisit de publier y figure. |
+| 2026-09-24 | Présence visible **des amis seulement** ; « invisible » = hors ligne | Privacy. Les serveurs communautaires ne reçoivent aucune présence du service central. |
+| 2026-09-24 | Désactivation : outil **local** de l'opérateur (pas d'API réseau), raison et nom obligatoires, journalisée ; liste publique des identifiants désactivés lue par les serveurs toutes les 10 min | Aucune surface d'attaque réseau pour une action aussi grave ; traçabilité ; effet rapide sur les serveurs. |
+| 2026-09-24 | Rotation de clé : l'ancienne clé privée est détruite, sa clé publique reste publiée le temps de vie des jetons | Pas de coupure pour les membres connectés, et une clé compromise ne peut plus rien signer. |
 
 ---
 
@@ -334,4 +341,14 @@ Demande du CP : « on finit la P1 ! ». Découpage annoncé en 7 blocs (messages
 **Validation :** tests d'intégration (droits LiveKit selon `speak`/`stream`/modération, persistance, hiérarchie, déplacement et événement `VOICE_MOVE`, déconnexion, journal) ; `make e2e-voice` passe de 10 à **18 vérifications** avec deux navigateurs réels : vidéo de caméra et partage d'écran reçus, retrait de `stream` → LiveKit coupe caméra et écran, micro coupé par la modération, sourdine imposée (plus d'audio reçu) puis levée (audio de retour sans reconnexion), déplacement suivi par la page. Bugs trouvés et corrigés : tuiles vidéo et éléments audio restant affichés après un retrait par LiveKit.
 
 **Guide de test du CP :** `docs/tests/p1-bloc-3.md`.
+
+### P1 — Bloc 4 : comptes (livré le 2026-09-24)
+
+**Livré :** mot de passe oublié (code par email, 2FA exigée, déconnexion de tous les appareils), changement de mot de passe, d'email (code sur la nouvelle adresse, ancienne prévenue) et de pseudo (identité inchangée), suppression définitive du compte, profil public (bio, avatar), blocage, présence entre amis, outil de l'opérateur (désactivation/réactivation journalisées, rotation de la clé de signature), liste publique des comptes désactivés appliquée par les serveurs communautaires, déploiement Docker Compose du service central.
+
+**Validation :** tests d'intégration (réinitialisation avec et sans 2FA, codes à usage unique, fermeture des sessions, changements d'email et de pseudo, suppression et absence de restes en base, avatar : types refusés, taille, en-têtes, blocage, présence en temps réel, désactivation, rotation de clé : ancien jeton encore valide puis clé retirée) ; côté serveur communautaire : liste des comptes désactivés (session fermée, connexion refusée, retour après réactivation) ; `make e2e-accounts` (30/30) avec les vrais binaires et l'outil `quarel-identity admin` ; déploiement Compose testé (santé, clés publiées, rotation de clé puis redémarrage : deux clés publiées).
+
+**Non testé en conditions réelles :** Let's Encrypt avec le vrai domaine `identity.quarel.app` (nécessite le DNS) ; envoi d'emails par un vrai serveur SMTP.
+
+**Guide de test du CP :** `docs/tests/p1-bloc-4.md` ; déploiement : `docs/deploiement-identity.md`.
 
