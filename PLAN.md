@@ -144,7 +144,7 @@
 ## C. Client (en dernier)
 
 - [x] **P0** Client de test en ligne de commande (pour valider l'API pendant le dev backend)
-- [ ] **P1** Application desktop (multi-serveurs, multi-services d'identité) — *en cours : étapes 1 (comptes), 2 (serveurs, salons, messages), 3 (vocal, vidéo), 4a (amis, MP chiffrés), 4b (validation des appareils, phrase de récupération) 4c (fichiers chiffrés), 5 (appels entre amis), 6a (paramètres de la personne) et 6b (administration des serveurs) livrées le 2026-09-24*
+- [x] **P1** Application desktop (multi-serveurs, multi-services d'identité) *(livrée le 2026-09-25 : étapes 1 à 7 du jalon 7, recherche, épingles, fils, notifications, liste des serveurs partagée entre appareils, installateurs Windows / Linux non signés ; un seul compte connecté à la fois)*
 - [x] **P1** Client web *(livré le 2026-09-25, `docs/tests/client-etape-7.md` : serveurs à certificat reconnu, liens d'invitation web, stockage chiffré, application installable, affichage téléphone)*
 - [ ] **P2** Application mobile
 
