@@ -236,6 +236,8 @@ async function pageDashboard(main) {
         h('div', { class: 'form-grid' },
           h('p', { class: 'muted' }, 'Ce serveur n\u2019a pas encore de propriétaire. Dans l\u2019application Quarel, choisissez « Rejoindre un serveur » et collez ce lien : vous en deviendrez propriétaire. Il ne sert qu\u2019une fois ; un nouveau est créé à chaque démarrage tant que personne ne l\u2019a utilisé.'),
           copyRow(svc.owner_link),
+          svc.owner_web_link ? h('p', { class: 'muted small' }, 'Même lien pour la version web (navigateur) :') : null,
+          svc.owner_web_link ? copyRow(svc.owner_web_link) : null,
           h('p', { class: 'muted small' }, 'Si l\u2019application se connecte depuis Internet, remplacez l\u2019adresse du lien par l\u2019adresse publique ou le nom de domaine du serveur.'))) : null,
       ...(svc.notices || []).map((n) => alertBox(n.level, n.text)),
       h('div', { class: 'panel' }, h('h3', {}, 'Service'), rows.map(([k, v]) => h('div', { class: 'row' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v)))),

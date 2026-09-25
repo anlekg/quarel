@@ -11,6 +11,34 @@ if (process.env.QUAREL_USER_DATA) app.setPath('userData', process.env.QUAREL_USE
 
 let win: BrowserWindow | null = null
 
+// --- quarel:// invite links opened from the browser or another app ---
+// One instance per data folder: a second launch (the system opening a link)
+// hands the link to the running one.
+const findInvite = (args: string[]) => args.find((a) => /^quarel:\/\//i.test(a))
+let pendingInvite = findInvite(process.argv) ?? ''
+if (!app.requestSingleInstanceLock()) app.exit(0)
+app.on('second-instance', (_e, argv) => {
+  const link = findInvite(argv)
+  if (link) deliverInvite(link)
+  if (win) {
+    if (win.isMinimized()) win.restore()
+    win.focus()
+  }
+})
+app.on('open-url', (e, url) => { // macOS
+  e.preventDefault()
+  deliverInvite(url)
+})
+function deliverInvite(link: string) {
+  if (link.length > 2048) return
+  pendingInvite = link
+  win?.webContents.send('invite:open', link)
+}
+if (!process.env.QUAREL_USER_DATA) { // not while testing: it would change the system's link handler
+  if (process.defaultApp && process.argv[1]) app.setAsDefaultProtocolClient('quarel', process.execPath, [join(process.cwd(), process.argv[1])])
+  else app.setAsDefaultProtocolClient('quarel')
+}
+
 // The UI is served from app://quarel/ (not file://): a real origin, fetch()
 // works (WebAssembly), and nothing outside the built UI can be read.
 const APP_ORIGIN = 'app://quarel'
@@ -19,6 +47,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 const mimeTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm',
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
 }
 
 function serveApp() {
@@ -254,6 +283,14 @@ ipcMain.handle('screen:sources', async (e) => {
   fromApp(e)
   const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 } })
   return sources.map((s) => ({ id: s.id, name: s.name, thumbnail: s.thumbnail.toDataURL() }))
+})
+
+// The link the app was started with (or received before the UI listened).
+ipcMain.handle('invite:take', (e) => {
+  fromApp(e)
+  const link = pendingInvite
+  pendingInvite = ''
+  return link
 })
 
 ipcMain.handle('screen:choose', (e, id) => {

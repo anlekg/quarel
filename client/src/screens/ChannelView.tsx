@@ -4,7 +4,7 @@ import { fetchBlob } from '../api/http'
 import type { Attachment, Channel, Message, Ready } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { encodeMentions, MessageContent, type MentionNames } from '../components/MessageContent'
-import { Alert, Dialog } from '../components/ui'
+import { Alert, BackButton, Dialog } from '../components/ui'
 import { Close, Download, FileIcon, Hash, Megaphone, Paperclip, Pencil, Reply, Send, Smile, Thread, Trash, Users } from '../components/icons'
 import { can, canPost, memberAvatar, memberColor } from '../lib/community'
 import { errorMessage } from '../lib/errors'
@@ -47,6 +47,7 @@ export function ChannelView({ conn, ready, state, channel, members, showMembers,
     <div className="channel-body">
       <div className="channel-main">
         <header className="channel-head">
+          <BackButton />
           {channel.type === 'announcement' ? <Megaphone /> : channel.type === 'thread' ? <Thread /> : <Hash />}
           <span className="title">{channel.name}</span>
           {channel.topic ? <span className="topic" title={channel.topic}>{channel.topic}</span> : <span style={{ flex: 1 }} />}
@@ -376,11 +377,18 @@ function AutoTextarea({ value, onChange, ...rest }: Omit<React.TextareaHTMLAttri
   onChange: (v: string) => void
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
-  useLayoutEffect(() => {
-    const el = ref.current!
+  const fit = () => {
+    const el = ref.current
+    if (!el || !el.offsetParent) return // hidden (phone layout): measured once shown
     el.style.height = 'auto'
     el.style.height = el.scrollHeight + 'px'
-  }, [value])
+  }
+  useLayoutEffect(fit, [value])
+  useEffect(() => {
+    const ro = new ResizeObserver(() => fit())
+    if (ref.current) ro.observe(ref.current)
+    return () => ro.disconnect()
+  }, [])
   return <textarea ref={ref} rows={1} value={value} onChange={(e) => onChange(e.target.value)} {...rest} />
 }
 

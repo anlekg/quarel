@@ -507,3 +507,10 @@ Découpage : **4a** amis, conversations et groupes chiffrés ; **4b** validation
 | 2026-09-24 | Appels en tête à tête, audio + caméra (entre applications), sans renégociation | La caméra s'allume par `replaceTrack` sur un émetteur vidéo prévu dès l'invitation ; le protocole reste celui de `quarelctl` (invite/answer/reject/hangup), qui ne fait que de l'audio. |
 
 **5 livré (2026-09-24)** : appeler un ami depuis sa conversation, sonnerie sur tous ses appareils, réponse / refus, micro, caméra, chemin affiché (direct, réseau local, relais) ; vérifié face à `quarelctl` dans les deux sens, par le relais seul, et entre deux applications avec vidéo (`e2e/calls.spec.ts`). Au passage : les scripts de test du serveur utilisent les ports 28080/28090 (18080/18090 sont pris par le déploiement de test).
+
+### Étape 7 : version web (2026-09-25)
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-09-25 | **La version web n'accepte que les serveurs à certificat reconnu** (Let's Encrypt intégré, ou derrière un proxy HTTPS) ; les serveurs auto-signés restent accessibles depuis l'application de bureau (choix du CP) | Un navigateur ne peut pas vérifier le certificat lié à l'identité du serveur. Pas de service central à héberger (écarté : noms `*.quarel.direct` à la Plex). L'application web explique le refus, la page d'administration du serveur prévient l'hébergeur. |
+| 2026-09-25 | Périmètre de l'étape 7 (choix du CP) : **liens d'invitation web**, **stockage chiffré dans le navigateur**, **application installable (PWA)**, **affichage téléphone** | Rendre la version web utilisable au quotidien, y compris sur mobile. |

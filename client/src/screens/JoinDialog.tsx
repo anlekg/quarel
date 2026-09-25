@@ -1,5 +1,5 @@
 // "Rejoindre un serveur": paste an invite link, check the server, join.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ApiError } from '../api/http'
 import type { ServerInfo } from '../api/community'
 import { Alert, Dialog, Field, Submit } from '../components/ui'
@@ -15,12 +15,13 @@ export function initials(name: string) {
   return ((words[0]?.[0] ?? '?') + (words[1]?.[0] ?? '')).toUpperCase()
 }
 
-export function JoinDialog({ account, onClose, onJoined }: {
+export function JoinDialog({ account, onClose, onJoined, initialLink = '' }: {
   account: Account
   onClose: () => void
   onJoined: (conn: ServerConn) => void
+  initialLink?: string // opened from a link: checked at once
 }) {
-  const [link, setLink] = useState('')
+  const [link, setLink] = useState(initialLink)
   const [preview, setPreview] = useState<{ inv: Invite; info: ServerInfo } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -44,6 +45,13 @@ export function JoinDialog({ account, onClose, onJoined }: {
     }
   }
 
+  useEffect(() => {
+    if (initialLink) run(async () => {
+      const inv = parseInvite(initialLink)
+      setPreview({ inv, info: await previewServer(account, inv) })
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <Dialog title="Rejoindre un serveur" onClose={onClose}>
       {!preview ? (
@@ -56,7 +64,7 @@ export function JoinDialog({ account, onClose, onJoined }: {
         }}>
           <p className="muted small" style={{ lineHeight: 1.5 }}>Collez le lien d&apos;invitation reçu d&apos;un membre du serveur.</p>
           <Field label="Lien d'invitation" value={link} onChange={(e) => setLink(e.target.value)}
-            placeholder="quarel://hôte:port/CODE?sid=…" autoFocus />
+            placeholder="https://app.quarel.app/join#… ou quarel://…" autoFocus />
           <Alert kind="error">{error}</Alert>
           <div className="dialog-actions">
             <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Annuler</button>

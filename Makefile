@@ -106,6 +106,10 @@ client-test:
 	cd client && npx tsc --noEmit && npx vitest run
 
 # End-to-end: the real desktop app (virtual display) against a real Identity service.
+e2e-web: build     # the web client only, in Chromium (invite links, encrypted storage, installable app, phone layout)
+	cd client && [ -d node_modules ] || npm ci
+	cd client && npx vite build && npx playwright test --project=web
+
 e2e-client: build
 	cd client && [ -d node_modules ] || npm ci
 	cd client && npx vite build && node scripts/build-electron.mjs && xvfb-run -a npx playwright test

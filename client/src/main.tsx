@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './styles/app.css'
 import { App } from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { isDesktop } from './platform'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -11,3 +12,8 @@ createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </StrictMode>,
 )
+
+// Web: installable app (see public/sw.js). Not in the desktop app.
+if (!isDesktop && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {})
+}

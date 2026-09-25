@@ -8,6 +8,7 @@ import { Close, Monitor } from '../components/icons'
 import { errorMessage } from '../lib/errors'
 import { identityLabel } from '../lib/identityURL'
 import { identityClient, signOut, type Account } from '../state/account'
+import { canInstall, install, onInstallChange } from '../platform'
 import type { OwnDevice } from '../e2e/engine'
 import { listDevices, useSocial } from '../state/social'
 import { ApproveDialog, RecoverySection } from './Security'
@@ -42,6 +43,7 @@ export function Settings({ account, onClose }: { account: Account; onClose: () =
         {nav('invites', 'Invitations')}
         <span className="group">APPLICATION</span>
         {nav('media', 'Voix et vidéo')}
+        <InstallButton />
         <span className="group" />
         <button className="danger" onClick={() => setConfirmLogout(true)}>Se déconnecter</button>
       </nav>
@@ -211,4 +213,12 @@ function InvitesSection({ account }: { account: Account }) {
       )}
     </>
   )
+}
+
+// Web: install the app (icon, own window) when the browser offers it.
+function InstallButton() {
+  const [can, setCan] = useState(canInstall)
+  useEffect(() => onInstallChange(() => setCan(canInstall())), [])
+  if (!can) return null
+  return <button onClick={() => install()}>Installer l&apos;application</button>
 }

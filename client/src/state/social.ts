@@ -170,6 +170,8 @@ function handle(t: string, d: any) {
       refreshConversations().catch(() => {})
       return
     case 'INBOX':
+      // A message in a conversation this device does not know yet: fetch the list.
+      if ((d as InboxItem[]).some((it) => it.dm_id && !state.conversations.some((c) => c.id === it.dm_id))) refreshConversations().catch(() => {})
       e2e?.sync(d as InboxItem[]).catch(() => {})
       return
     case 'FRIENDS_UPDATE':

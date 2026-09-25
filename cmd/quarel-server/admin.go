@@ -92,6 +92,9 @@ var fields = []adminui.Field{
 	{Group: "Vérification du téléphone", Key: "QUAREL_TWILIO_VERIFY_SID", Label: "Service Verify (VA…)", Kind: "text", ShowIf: "QUAREL_PHONE_VERIFY=twilio"},
 }
 
+// The official web app (invite links open it).
+const webApp = "https://app.quarel.app"
+
 var tlsLabels = map[string]string{"self-signed": "automatique (lié à l'identité du serveur)", "acme": "Let's Encrypt", "files": "fichiers fournis", "off": "aucun (proxy HTTPS)"}
 
 // status fills the dashboard.
@@ -137,10 +140,18 @@ func (l *live) status(r *http.Request) map[string]any {
 			notices = append(notices, map[string]string{"level": "warn", "text": "Certains ports n'ont pas pu être ouverts : " + strings.Join(st.Errors, " ; ")})
 		}
 	}
+	if cfg.TLS.Mode == "self-signed" {
+		notices = append(notices, map[string]string{"level": "info", "text": "Certificat automatique : l'application de bureau vérifie ce serveur grâce à son identité, mais les navigateurs le refusent. " +
+			"Pour que la version web (" + webApp + ") puisse aussi le rejoindre, donnez-lui un nom de domaine et choisissez Let's Encrypt (réglages › HTTPS), ou placez-le derrière un proxy HTTPS."})
+	}
 	resp := map[string]any{"items": items, "notices": notices}
 	if !ov.HasOwner && claim != "" {
+		addr := strings.TrimPrefix(httpsURL(host, port), "https://")
 		resp["claim_code"] = claim
-		resp["owner_link"] = fmt.Sprintf("quarel://%s/%s?sid=%s&claim=1", strings.TrimPrefix(httpsURL(host, port), "https://"), claim, srv.ID())
+		resp["owner_link"] = fmt.Sprintf("quarel://%s/%s?sid=%s&claim=1", addr, claim, srv.ID())
+		if cfg.TLS.Mode != "self-signed" { // browsers accept this certificate
+			resp["owner_web_link"] = fmt.Sprintf("%s/join#%s/%s?sid=%s&claim=1", webApp, addr, claim, srv.ID())
+		}
 	}
 	return resp
 }

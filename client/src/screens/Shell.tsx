@@ -13,6 +13,8 @@ import { leaveVoice } from '../state/voice'
 import { closeSocial, openSocial, setPresence, useSocial } from '../state/social'
 import type { Presence } from '../api/identity'
 import { Home } from './Home'
+import { clearPendingInvite, usePendingInvite } from '../state/invite'
+import { showNav, useMobilePane } from '../state/mobile'
 import { Settings } from './Settings'
 import { CallBar, IncomingCall } from './Call'
 import { closeCalls } from '../state/calls'
@@ -20,6 +22,8 @@ import { closeCalls } from '../state/calls'
 export function Shell({ account }: { account: Account }) {
   const [settings, setSettings] = useState(false)
   const [joining, setJoining] = useState(false)
+  const invite = usePendingInvite()
+  const pane = useMobilePane()
   const [selected, setSelected] = useState<string>(() => prefs.get('selected', 'home'))
   const servers = useServers()
 
@@ -37,6 +41,7 @@ export function Shell({ account }: { account: Account }) {
   const select = (id: string) => {
     setSelected(id)
     prefs.set('selected', id)
+    showNav()
   }
   const current = servers.find((s) => s.saved.sid === selected)
 
@@ -59,7 +64,7 @@ export function Shell({ account }: { account: Account }) {
   )
 
   return (
-    <div className="shell">
+    <div className={'shell pane-' + pane}>
       <nav className="rail" aria-label="Serveurs">
         <HomeButton active={!current} onClick={() => select('home')} />
         <span className="rail-sep" />
@@ -73,9 +78,9 @@ export function Shell({ account }: { account: Account }) {
       ) : (
         <Home account={account} userbar={userbar} />
       )}
-      {joining && (
-        <JoinDialog account={account} onClose={() => setJoining(false)}
-          onJoined={(c) => { setJoining(false); select(c.saved.sid) }} />
+      {(joining || invite) && (
+        <JoinDialog key={invite} account={account} initialLink={invite} onClose={() => { setJoining(false); clearPendingInvite() }}
+          onJoined={(c) => { setJoining(false); clearPendingInvite(); select(c.saved.sid) }} />
       )}
       {settings && <Settings account={account} onClose={() => setSettings(false)} />}
       <IncomingCall account={account} />

@@ -221,6 +221,7 @@ func (s *Server) handleOpenDM(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, r, err)
 			return
 		}
+		s.convChanged(ctx, convID) // the other person sees it appear
 	} else if err != nil {
 		writeErr(w, r, err)
 		return

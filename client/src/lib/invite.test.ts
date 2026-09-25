@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inviteLink, parseInvite } from './invite'
+import { desktopLink, inviteLink, parseInvite } from './invite'
 
 const sid = 'kzdvvj2umnduyauf35o36k6kw4'
 
@@ -12,6 +12,13 @@ describe('invites', () => {
   it('round-trips', () => {
     const link = inviteLink('https://192.168.1.25:8090', 'abcdef1234', sid)
     expect(parseInvite(link).base).toBe('https://192.168.1.25:8090')
+  })
+  it('makes web links, readable by the app and convertible for the desktop app', () => {
+    const link = inviteLink('https://test.quarel.app', 'abcdef1234', sid)
+    expect(link).toBe(`https://app.quarel.app/join#test.quarel.app/abcdef1234?sid=${sid}`)
+    expect(parseInvite(link)).toMatchObject({ base: 'https://test.quarel.app', code: 'abcdef1234', sid })
+    expect(desktopLink(link)).toBe(`quarel://test.quarel.app/abcdef1234?sid=${sid}`)
+    expect(parseInvite(`https://app.quarel.app/join#192.168.1.25%3A8090/abcdefghij12345?sid=${sid}&claim=1`).claim).toBe(true)
   })
   it('recognizes owner links', () => {
     expect(parseInvite(`quarel://192.168.1.25:8090/abcdefghij12345?sid=${sid}&claim=1`).claim).toBe(true)

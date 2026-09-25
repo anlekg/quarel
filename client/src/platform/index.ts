@@ -36,6 +36,8 @@ interface DesktopBridge {
   vault: Vault
   files: FileStore
   info(): Promise<AppInfo>
+  takeInvite(): Promise<string>
+  onInvite(cb: (link: string) => void): () => void
   pinServer(host: string, sid: string): Promise<void>
   screenSources(): Promise<ScreenSource[]>
   chooseScreenSource(id: string): Promise<void>
@@ -50,17 +52,26 @@ declare global {
 
 const desktop = typeof window !== 'undefined' ? window.quarelDesktop : undefined
 
-// Web fallback: browser storage, readable by anything running on the page.
-// Acceptable for the web client, whose sessions are expected to be shorter-lived.
+// Web: secrets in IndexedDB, encrypted (see "at rest" below). Older versions
+// kept them in localStorage in clear: moved on first read.
 const webSecrets: Secrets = {
   async get(key) {
-    return localStorage.getItem('quarel.secret.' + key)
+    const v = await idbGet<Sealed>('secrets', key)
+    if (v) return unseal(v)
+    const legacy = localStorage.getItem('quarel.secret.' + key)
+    if (legacy !== null) {
+      await webSecrets.set(key, legacy)
+      localStorage.removeItem('quarel.secret.' + key)
+    }
+    return legacy
   },
   async set(key, value) {
-    localStorage.setItem('quarel.secret.' + key, value)
+    const sealed = await seal(value)
+    await idbWrite('secrets', (st) => st.put(sealed, key))
   },
   async delete(key) {
     localStorage.removeItem('quarel.secret.' + key)
+    await idbWrite('secrets', (st) => st.delete(key))
   },
 }
 
@@ -127,9 +138,9 @@ export async function chooseScreenSource(id: string) {
 // encrypted by the OS keychain. Browser: IndexedDB (not encrypted at rest).
 const idb = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
-    const req = indexedDB.open('quarel', 2)
+    const req = indexedDB.open('quarel', 3)
     req.onupgradeneeded = () => {
-      for (const store of ['vault', 'files']) if (!req.result.objectStoreNames.contains(store)) req.result.createObjectStore(store)
+      for (const store of ['vault', 'files', 'secrets', 'keys']) if (!req.result.objectStoreNames.contains(store)) req.result.createObjectStore(store)
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
@@ -154,9 +165,63 @@ async function idbWrite(store: string, fn: (s: IDBObjectStore) => void): Promise
   })
 }
 
+// --- at rest (web) ---
+// Secrets and the private messages' state are encrypted (AES-GCM) with a key
+// the page cannot read (a non-extractable WebCrypto key, kept by the browser
+// in IndexedDB). Their content is no longer in clear in the browser's files or
+// developer tools; code running in the page itself could still use the key.
+
+interface Sealed {
+  v: 1
+  iv: Uint8Array<ArrayBuffer>
+  ct: ArrayBuffer
+}
+
+let keyPromise: Promise<CryptoKey> | null = null
+
+function storageKey(): Promise<CryptoKey> {
+  keyPromise ??= (async () => {
+    const existing = await idbGet<CryptoKey>('keys', 'at-rest')
+    if (existing) return existing
+    const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'])
+    try {
+      await idbWrite('keys', (st) => st.add(key, 'at-rest')) // "add": another tab may have created one meanwhile
+      return key
+    } catch {
+      return (await idbGet<CryptoKey>('keys', 'at-rest'))!
+    }
+  })()
+  keyPromise.catch(() => (keyPromise = null))
+  return keyPromise
+}
+
+async function seal(value: string): Promise<Sealed> {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await storageKey(), new TextEncoder().encode(value))
+  return { v: 1, iv, ct }
+}
+
+async function unseal(s: Sealed): Promise<string | null> {
+  try {
+    return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: s.iv }, await storageKey(), s.ct))
+  } catch {
+    return null // key lost with the browser's data: as if nothing was stored
+  }
+}
+
 const webVault: Vault = {
-  get: (key) => idbGet<string>('vault', key),
-  set: (key, value) => idbWrite('vault', (s) => s.put(value, key)),
+  async get(key) {
+    const v = await idbGet<Sealed | string>('vault', key)
+    if (typeof v === 'string') { // written in clear by an older version
+      await webVault.set(key, v)
+      return v
+    }
+    return v ? unseal(v) : null
+  },
+  async set(key, value) {
+    const sealed = await seal(value)
+    await idbWrite('vault', (st) => st.put(sealed, key))
+  },
 }
 
 export const vault: Vault = desktop?.vault ?? webVault
@@ -169,3 +234,55 @@ const webFiles: FileStore = {
 }
 
 export const files: FileStore = desktop?.files ?? webFiles
+
+// Invite links opened from outside: quarel:// handed over by the system
+// (desktop), or https://<web app>/join#… (web).
+export async function takeLaunchInvite(): Promise<string> {
+  if (desktop) return desktop.takeInvite()
+  if (typeof location !== 'undefined' && location.pathname === '/join' && location.hash.length > 1) {
+    const link = 'quarel://' + decodeURIComponent(location.hash.slice(1))
+    history.replaceState(null, '', '/')
+    return link
+  }
+  return ''
+}
+
+export function onInviteOpened(cb: (link: string) => void): () => void {
+  return desktop ? desktop.onInvite(cb) : () => {}
+}
+
+// Web: the browser's "install this app" prompt, kept until the person asks.
+interface InstallPrompt extends Event {
+  prompt(): Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+}
+let installPrompt: InstallPrompt | null = null
+const installListeners = new Set<() => void>()
+if (!desktop && typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault()
+    installPrompt = e as InstallPrompt
+    installListeners.forEach((l) => l())
+  })
+  window.addEventListener('appinstalled', () => {
+    installPrompt = null
+    installListeners.forEach((l) => l())
+  })
+}
+
+export const canInstall = () => !!installPrompt
+export function onInstallChange(l: () => void) {
+  installListeners.add(l)
+  return () => {
+    installListeners.delete(l)
+  }
+}
+export async function install() {
+  const p = installPrompt
+  if (!p) return false
+  await p.prompt()
+  const { outcome } = await p.userChoice
+  if (outcome === 'accepted') installPrompt = null
+  installListeners.forEach((l) => l())
+  return outcome === 'accepted'
+}

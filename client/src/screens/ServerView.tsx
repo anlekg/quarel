@@ -14,6 +14,7 @@ import { ChannelView } from './ChannelView'
 import { VoiceMembers, VoiceView } from './Voice'
 import { joinVoice, useVoice } from '../state/voice'
 import { can } from '../lib/community'
+import { showContent } from '../state/mobile'
 import { ChannelDialog, MemberDialog, sectionsFor, ServerSettings } from './ServerSettings'
 import { Gear } from '../components/icons'
 
@@ -21,14 +22,19 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
   const state = useServerState(conn)
   const r = state.ready
   const [channelID, setChannelID] = useState<number>(() => prefs.get('channel:' + conn.saved.sid, 0))
-  const [showMembers, setShowMembers] = useState(() => prefs.get('show-members', true))
+  // Phones: the member list covers the channel, so it starts hidden and is not remembered.
+  const narrow = typeof matchMedia !== 'undefined' && matchMedia('(max-width: 700px)').matches
+  const [showMembers, setShowMembers] = useState(() => !narrow && prefs.get('show-members', true))
 
   const channel = r?.channels.find((c) => c.id === channelID && c.type !== 'category')
   // The "Vocal connecté" bar can bring us back to the voice channel.
   useEffect(() => {
     const open = (e: Event) => {
       const d = (e as CustomEvent<{ sid: string; channelId: number }>).detail
-      if (d.sid === conn.saved.sid) setChannelID(d.channelId)
+      if (d.sid === conn.saved.sid) {
+        setChannelID(d.channelId)
+        showContent()
+      }
     }
     window.addEventListener('quarel:open-channel', open)
     return () => window.removeEventListener('quarel:open-channel', open)
@@ -51,6 +57,7 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
         <div className="sidebar-body">
           {r && <ChannelList conn={conn} ready={r} state={state} active={channel?.id} onPick={(c) => {
             setChannelID(c.id)
+            showContent()
             if (c.type === 'voice' && can(r, c.id, 'connect')) joinVoice(conn, c.id)
           }} />}
         </div>
@@ -70,7 +77,7 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
         ) : channel ? (
           <ChannelView key={channel.id} conn={conn} ready={r} state={state} channel={channel}
             showMembers={showMembers}
-            onToggleMembers={() => { setShowMembers(!showMembers); prefs.set('show-members', !showMembers) }}
+            onToggleMembers={() => { setShowMembers(!showMembers); if (!narrow) prefs.set('show-members', !showMembers) }}
             members={showMembers ? <MemberList ready={r} conn={conn} /> : null} />
         ) : (
           <div className="empty-state"><h2>Aucun salon textuel</h2><p>Vous ne voyez encore aucun salon sur ce serveur.</p></div>

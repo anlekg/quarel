@@ -10,6 +10,8 @@ import { errorMessage, isCode } from '../lib/errors'
 import { DEFAULT_IDENTITY, identityBaseURL, identityLabel } from '../lib/identityURL'
 import { appInfo, prefs } from '../platform'
 import { signIn } from '../state/account'
+import { usePendingInvite } from '../state/invite'
+import { parseInvite } from '../lib/invite'
 
 type View = 'login' | 'mfa' | 'register' | 'verify' | 'forgot' | 'reset'
 
@@ -25,6 +27,8 @@ export function Auth({ notice }: { notice?: string }) {
   const [creds, setCreds] = useState({ login: prefs.get('last-login', ''), password: '' })
   const [email, setEmail] = useState('')
 
+  const invite = usePendingInvite()
+  const inviteHost = invite ? parseInvite(invite).host : ''
   const client = new IdentityClient(identity)
   const [policy, setPolicy] = useState<Policy | null>(null)
   useEffect(() => {
@@ -149,6 +153,7 @@ export function Auth({ notice }: { notice?: string }) {
       <WelcomeSide />
       <main className="welcome-main">
         <div className="auth-form">
+          {invite && <Alert kind="info">Connectez-vous (ou créez un compte) pour rejoindre le serveur <b>{inviteHost}</b>.</Alert>}
           {body}
           {(view === 'login' || view === 'register') && (
             <div className="identity-box">

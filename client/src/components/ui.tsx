@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react'
-import { Eye, EyeOff } from './icons'
+import { Back, Eye, EyeOff } from './icons'
+import { showNav } from '../state/mobile'
 
 type InputProps = InputHTMLAttributes<HTMLInputElement> & {
   label: string
@@ -99,4 +100,13 @@ export function useCooldown(): [number, (seconds: number) => void] {
     return () => clearTimeout(t)
   }, [left])
   return [left, setLeft]
+}
+
+// Phones: back from a channel or conversation to the lists (hidden on wide screens).
+export function BackButton() {
+  return (
+    <button className="icon-btn mobile-back" aria-label="Retour aux listes" title="Retour" onClick={showNav}>
+      <Back size={20} />
+    </button>
+  )
 }

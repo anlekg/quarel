@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Channel, Member, Ready, VoiceState } from '../api/community'
 import { Avatar } from '../components/Avatar'
-import { Alert, Dialog } from '../components/ui'
+import { Alert, BackButton, Dialog } from '../components/ui'
 import { Camera, Hangup, Headphones, HeadphonesOff, Mic, MicOff, Monitor, Speaker } from '../components/icons'
 import { can, memberAvatar } from '../lib/community'
 import { errorMessage } from '../lib/errors'
@@ -111,6 +111,7 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
   return (
     <div className="voice-view">
       <header className="channel-head" style={{ background: 'var(--bg-1)' }}>
+        <BackButton />
         <Speaker />
         <span className="title">{channel.name}</span>
         <span className="topic">{inside.length} personne{inside.length > 1 ? 's' : ''}{here?.status === 'reconnecting' ? ' · reconnexion…' : ''}</span>

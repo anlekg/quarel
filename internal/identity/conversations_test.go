@@ -257,3 +257,37 @@ func TestConversationFiles(t *testing.T) {
 		t.Fatalf("expired copy still served: %d", code)
 	}
 }
+
+// A direct conversation opened by a friend appears at once for the other person.
+func TestDirectConversationAnnounced(t *testing.T) {
+	e := newEnv(t)
+	alice, _ := e.registerVerified("alice@example.com", "alice", "mot-de-passe-alice")
+	bob, _ := e.registerVerified("bob@example.com", "bob", "mot-de-passe-bob")
+	e.befriend(alice, bob, "bob")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(e.http.URL, "http")+"/v1/gateway", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	wsjson.Write(ctx, conn, map[string]string{"op": "auth", "token": bob.SessionToken})
+	var ready struct{ T string }
+	if err := wsjson.Read(ctx, conn, &ready); err != nil || ready.T != "READY" {
+		t.Fatalf("READY: %v %v", ready.T, err)
+	}
+	var dm convJSON
+	e.expect(200, "", e.call("POST", "/v1/dms", alice.SessionToken, map[string]string{"user_id": bob.User.ID}, &dm))
+	for {
+		var ev struct {
+			T string
+			D map[string]any
+		}
+		if err := wsjson.Read(ctx, conn, &ev); err != nil {
+			t.Fatal("no DM_UPDATE for bob: ", err)
+		}
+		if ev.T == "DM_UPDATE" && ev.D["id"] == dm.ID {
+			return
+		}
+	}
+}

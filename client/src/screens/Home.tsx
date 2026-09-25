@@ -3,12 +3,13 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type R
 import type { Conversation, PublicUser } from '../api/identity'
 import { Avatar } from '../components/Avatar'
 import { MessageContent, type MentionNames } from '../components/MessageContent'
-import { Alert, Dialog, Field } from '../components/ui'
+import { Alert, BackButton, Dialog, Field } from '../components/ui'
 import { Chat, Download, FileIcon, Lock, Paperclip, Pencil, Phone, Plus, Send, Trash, Users } from '../components/icons'
 import { errorMessage } from '../lib/errors'
 import { formatDay, formatFull, formatSize, formatStamp, formatTime, sameDay } from '../lib/format'
 import { prefs } from '../platform'
 import { SecurityBanner } from './Security'
+import { showContent } from '../state/mobile'
 import { CallPanel } from './Call'
 import { startCall, useCall } from '../state/calls'
 import type { Account } from '../state/account'
@@ -39,9 +40,10 @@ export function Home({ account, userbar }: { account: Account; userbar: ReactNod
   const s = useSocial()
   const [view, setView] = useState<string>(() => prefs.get('home-view', 'friends'))
   const [newGroup, setNewGroup] = useState(false)
-  const go = (v: string) => {
+  const go = (v: string, open = true) => {
     setView(v)
     prefs.set('home-view', v)
+    if (open) showContent()
   }
   const conv = s.conversations.find((c) => c.id === view)
   // The call bar opens the conversation with the person called.
@@ -54,7 +56,7 @@ export function Home({ account, userbar }: { account: Account; userbar: ReactNod
     return () => window.removeEventListener('quarel:open-dm', open)
   }, [])
   useEffect(() => {
-    if (view !== 'friends' && s.status === 'ready' && !conv) go('friends')
+    if (view !== 'friends' && s.status === 'ready' && !conv) go('friends', false)
   }, [view, conv, s.status])
   const me = account.user.id
 
@@ -113,6 +115,7 @@ function FriendsView({ account, onOpen }: { account: Account; onOpen: (c: Conver
   return (
     <div className="channel-main">
       <header className="channel-head">
+        <BackButton />
         <Users />
         <span className="title">Amis</span>
         <nav className="friends-tabs" aria-label="Amis">
@@ -305,6 +308,7 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
     <div className="channel-body">
       <div className="channel-main">
         <header className="channel-head">
+          <BackButton />
           {conv.kind === 'group' ? <Users /> : <Chat />}
           <span className="title">{title}</span>
           <span className="e2e-badge" title="Seuls les appareils validés des participants peuvent lire ces messages. Le serveur ne voit que du chiffré."><Lock size={13} />Chiffré de bout en bout</span>
