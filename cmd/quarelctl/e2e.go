@@ -89,6 +89,9 @@ type e2eStore struct {
 	Names       map[string]string         `json:"names"`                  // user id → pseudo
 	CallSignals []callSignal              `json:"call_signals,omitempty"` // received call signalling, until a call command takes it
 	FileSignals []fileSignal              `json:"file_signals,omitempty"` // received file transfer signalling
+	// Community servers shared by the desktop/web app's devices (sid → entry, latest change wins).
+	// This test client does not use them; it keeps and passes them on so they are not lost.
+	Servers map[string]syncedServer `json:"servers,omitempty"`
 
 	// Encrypted backup (recovery.go).
 	BackupKey     string    `json:"backup_key,omitempty"` // derived from the recovery phrase
@@ -789,7 +792,32 @@ func (e *e2e) addHistory(dmID string, m histMsg) bool {
 
 // --- receiving ---
 
+type syncedServer struct {
+	SID    string    `json:"sid"`
+	Base   string    `json:"base"`
+	Host   string    `json:"host"`
+	Name   string    `json:"name"`
+	Joined bool      `json:"joined"`
+	At     time.Time `json:"at"`
+}
+
+// mergeServers keeps, for each server, its latest change.
+func (e *e2e) mergeServers(in map[string]syncedServer) {
+	for sid, s := range in {
+		if s.SID != sid {
+			continue
+		}
+		if cur, ok := e.st.Servers[sid]; !ok || s.At.After(cur.At) {
+			if e.st.Servers == nil {
+				e.st.Servers = map[string]syncedServer{}
+			}
+			e.st.Servers[sid] = s
+		}
+	}
+}
+
 type historyTransfer struct {
+	Servers map[string]syncedServer  `json:"servers,omitempty"`
 	History map[string][]histMsg     `json:"history"`
 	Inbound map[string]*inboundState `json:"inbound"` // exported sessions (pickles re-encrypted by the receiver)
 	Keys    map[string]string        `json:"keys"`    // session id → exported key
@@ -916,6 +944,13 @@ func (e *e2e) handleSecret(plain *olmPlain, sender *deviceInfo, master string, o
 		}
 		fs.FromUser, fs.FromDevice, fs.At = plain.SenderUser, plain.SenderDevice, time.Now()
 		e.st.FileSignals = append(e.st.FileSignals, fs)
+	case "servers":
+		var sv struct {
+			Servers map[string]syncedServer `json:"servers"`
+		}
+		if json.Unmarshal(plain.Content, &sv) == nil && plain.SenderUser == e.st.UserID && trusted {
+			e.mergeServers(sv.Servers)
+		}
 	case "call":
 		var cs callSignal
 		if json.Unmarshal(plain.Content, &cs) != nil || !trusted {
@@ -933,6 +968,7 @@ func (e *e2e) handleSecret(plain *olmPlain, sender *deviceInfo, master string, o
 			out("⚠ transfert d'historique refusé : il ne vient pas d'un de vos appareils validés")
 			return
 		}
+		e.mergeServers(h.Servers)
 		n := 0
 		for dm, msgs := range h.History {
 			for _, m := range msgs {
@@ -1033,7 +1069,7 @@ func (e *e2e) approve(target, code string) (*deviceInfo, int, error) {
 	if err := e.sendSecret([]deviceInfo{*d}, "device_approval", map[string]string{"master_seed": e.st.MasterSeed, "backup_key": e.st.BackupKey}); err != nil {
 		return nil, 0, err
 	}
-	h := historyTransfer{History: e.st.History, Inbound: map[string]*inboundState{}, Keys: map[string]string{}}
+	h := historyTransfer{History: e.st.History, Inbound: map[string]*inboundState{}, Keys: map[string]string{}, Servers: e.st.Servers}
 	n := 0
 	for _, msgs := range e.st.History {
 		n += len(msgs)

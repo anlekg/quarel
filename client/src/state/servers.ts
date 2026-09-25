@@ -15,6 +15,8 @@ import type { Invite } from '../lib/invite'
 import { checkServer, pinServer, secrets } from '../platform'
 import { identityClient, serverRules, signOut, type Account } from './account'
 import { currentVoice, leaveVoice } from './voice'
+import { engine, onEngineEvent } from './social'
+import type { SyncedServer } from '../e2e/engine'
 
 export interface SavedServer {
   sid: string
@@ -24,6 +26,7 @@ export interface SavedServer {
   token: string
   expiresAt: string
   memberId: string
+  joinedAt?: string // RFC 3339: compared with the list shared by my devices
 }
 
 export interface ChannelMessages {
@@ -470,6 +473,7 @@ export async function openServers(account: Account) {
     if (blocked.has(c.saved.sid)) c.markRemoved('blocked', blocked.get(c.saved.sid))
     else c.start()
   }
+  syncServers()
 }
 
 export function closeServers() {
@@ -485,8 +489,9 @@ export async function joinServer(account: Account, inv: Invite): Promise<ServerC
   const res = inv.claim
     ? await communityLogin(account, inv.base, inv.sid, undefined, inv.code)
     : await communityLogin(account, inv.base, inv.sid, inv.code)
+  const joinedAt = new Date().toISOString()
   const conn = new ServerConn(
-    { sid: inv.sid, base: inv.base, host: inv.host, name: res.server.name, token: res.session_token, expiresAt: res.expires_at, memberId: res.member.id },
+    { sid: inv.sid, base: inv.base, host: inv.host, name: res.server.name, token: res.session_token, expiresAt: res.expires_at, memberId: res.member.id, joinedAt },
     account,
     save,
   )
@@ -494,6 +499,7 @@ export async function joinServer(account: Account, inv: Invite): Promise<ServerC
   await save()
   emit()
   conn.start()
+  shareServers([{ sid: inv.sid, base: inv.base, host: inv.host, name: res.server.name, joined: true, at: joinedAt }])
   return conn
 }
 
@@ -505,4 +511,55 @@ export async function leaveServer(conn: ServerConn, remote = true) {
   conns = conns.filter((c) => c !== conn)
   await save()
   emit()
+  const { sid, base, host, name } = conn.saved
+  shareServers([{ sid, base, host, name, joined: false, at: new Date().toISOString() }])
 }
+
+// --- the list shared by my devices (end-to-end encrypted, see e2e/engine.ts) ---
+
+function shareServers(changes: SyncedServer[]) {
+  engine()?.recordServers(changes).catch(() => {})
+}
+
+// Brings this device and the shared list together: servers joined elsewhere
+// are added (the server knows the account: no invite needed), servers left
+// elsewhere are forgotten, servers only known here are shared.
+let syncing: Promise<void> = Promise.resolve()
+function syncServers() {
+  syncing = syncing.then(async () => {
+    const e = engine()
+    const account = owner
+    if (!e || !account) return
+    const shared = new Map(e.syncedServers().map((x) => [x.sid, x]))
+    const publish: SyncedServer[] = []
+    let changed = false
+    for (const c of [...conns]) {
+      const sh = shared.get(c.saved.sid)
+      const mine = c.saved.joinedAt ?? '1970-01-01T00:00:00Z'
+      if (!sh) {
+        if (c.state.status !== 'removed') publish.push({ sid: c.saved.sid, base: c.saved.base, host: c.saved.host, name: c.saved.name, joined: true, at: mine })
+      } else if (!sh.joined && Date.parse(sh.at) > Date.parse(mine)) {
+        c.stop() // left on another device
+        conns = conns.filter((x) => x !== c)
+        changed = true
+      }
+    }
+    for (const sh of shared.values()) {
+      if (!sh.joined || conns.some((c) => c.saved.sid === sh.sid)) continue
+      await pinServer(sh.host, sh.sid) // the server ID comes from my own validated device
+      const conn = new ServerConn({ sid: sh.sid, base: sh.base, host: sh.host, name: sh.name, token: '', expiresAt: '', memberId: '', joinedAt: sh.at }, account, save)
+      conns.push(conn)
+      conn.start()
+      changed = true
+    }
+    if (changed) {
+      await save()
+      emit()
+    }
+    if (publish.length) await e.recordServers(publish)
+  }).catch(() => {})
+}
+
+onEngineEvent((ev) => {
+  if (ev.kind === 'servers' || ev.kind === 'approved') syncServers()
+})

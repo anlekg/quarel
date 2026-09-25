@@ -95,6 +95,7 @@ export async function openSocial(a: Account) {
     const c = await loadCrypto()
     e2e = await E2E.open(c, api(), a.user.id, a.user.pseudo, a.sessionId)
     e2e.on(onEngine)
+    for (const l of engineListeners) l({ kind: 'servers' }) // the engine is ready: servers can sync
     files = new Files(e2e, api(), (convId) => state.conversations.find((c) => c.id === convId)?.members.map((m) => m.id))
     set({ validated: e2e.validated, code: verificationCode(e2e.ed25519) })
     await Promise.all([refreshFriends(), refreshConversations(), refreshDevices(), refreshBackup(), refreshBlocks()])

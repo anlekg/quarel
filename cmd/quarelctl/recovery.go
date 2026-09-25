@@ -28,6 +28,7 @@ type backupPayload struct {
 	Inbound    map[string]*inboundState `json:"inbound"` // exported: Pickle holds the exported key
 	Pinned     map[string]string        `json:"pinned"`
 	Names      map[string]string        `json:"names"`
+	Servers    map[string]syncedServer  `json:"servers,omitempty"`
 	CreatedAt  time.Time                `json:"created_at"`
 }
 
@@ -60,7 +61,7 @@ func (e *e2e) backupKey() []byte {
 
 func (e *e2e) payload() backupPayload {
 	p := backupPayload{Format: 1, MasterSeed: e.st.MasterSeed, History: e.st.History, Inbound: map[string]*inboundState{},
-		Pinned: e.st.Pinned, Names: e.st.Names, CreatedAt: time.Now().UTC()}
+		Pinned: e.st.Pinned, Names: e.st.Names, Servers: e.st.Servers, CreatedAt: time.Now().UTC()}
 	for sid, in := range e.st.Inbound {
 		ig, err := olm.InboundGroupSessionFromPickled([]byte(in.Pickle), e.pk())
 		if err != nil {
@@ -82,7 +83,7 @@ func (e *e2e) digest() string {
 		sids = append(sids, sid)
 	}
 	sort.Strings(sids)
-	data, _ := json.Marshal([]any{e.st.History, sids, e.st.Pinned, e.st.MasterSeed != ""})
+	data, _ := json.Marshal([]any{e.st.History, sids, e.st.Pinned, e.st.MasterSeed != "", e.st.Servers})
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
 }
@@ -117,6 +118,7 @@ func (e *e2e) merge(p backupPayload) (messages int) {
 			e.st.Names[uid] = n
 		}
 	}
+	e.mergeServers(p.Servers)
 	return messages
 }
 

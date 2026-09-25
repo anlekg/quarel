@@ -70,10 +70,35 @@ export interface E2EState {
   history: Record<string, HistMsg[]> // by conversation
   undecrypted: InboxItem[]
   names: Record<string, string>
+  servers?: Record<string, SyncedServer> // community servers joined (or left) by any of my devices
   backup_key?: string // derived from the recovery phrase (unpadded base64)
   backup_version?: number
   backup_digest?: string
   backup_at?: string
+}
+
+// A community server in the list shared by my devices. The latest change of
+// each server wins (joined or left, on whichever device).
+export interface SyncedServer {
+  sid: string
+  base: string
+  host: string
+  name: string
+  joined: boolean
+  at: string // RFC 3339
+}
+
+export function mergeServers(into: Record<string, SyncedServer>, from: Record<string, SyncedServer> | undefined): boolean {
+  let changed = false
+  for (const [sid, s] of Object.entries(from ?? {})) {
+    if (!s || typeof s.sid !== 'string' || s.sid !== sid || typeof s.base !== 'string' || !/^https:\/\//.test(s.base)) continue
+    const cur = into[sid]
+    if (!cur || Date.parse(s.at) > Date.parse(cur.at)) {
+      into[sid] = { sid, base: s.base, host: String(s.host ?? ''), name: String(s.name ?? ''), joined: !!s.joined, at: s.at }
+      changed = true
+    }
+  }
+  return changed
 }
 
 // Encrypted account backup content, as the Go client's backupPayload.
@@ -84,6 +109,7 @@ interface BackupPayload {
   inbound: Record<string, InboundState> // pickle = exported session key
   pinned: Record<string, string>
   names: Record<string, string>
+  servers?: Record<string, SyncedServer>
   created_at: string
 }
 
@@ -160,6 +186,7 @@ export type E2EEvent =
   | { kind: 'history'; dmId: string }
   | { kind: 'approved' } // this device was validated (by another one, or restored)
   | { kind: 'backup' } // backup state changed
+  | { kind: 'servers' } // the shared list of community servers changed
   | { kind: 'file_signal'; signal: FileSignal } // peer-to-peer file transfer signalling, from a trusted device
   | { kind: 'file_received'; dmId: string; ref: FileRef } // a file event was decrypted
   | { kind: 'file_gone'; dmId: string; ref: FileRef } // a message with a file was deleted
@@ -609,6 +636,8 @@ export class E2E {
         const inbound: Record<string, InboundState> = {}
         for (const [sid, info] of Object.entries(h.inbound ?? {})) if (h.keys?.[sid]) inbound[sid] = { ...info, pickle: h.keys[sid] }
         this.mergeContent(h.history ?? {}, inbound)
+        this.st.servers ??= {}
+        if (mergeServers(this.st.servers, (plain.content as { servers?: Record<string, SyncedServer> }).servers)) this.emit({ kind: 'servers' })
         return
       }
       case 'file': {
@@ -620,6 +649,12 @@ export class E2E {
         if (Date.now() - at > 2 * 60_000) return // stale: the other side gave up
         const sig = plain.content as FileSignal
         this.emit({ kind: 'file_signal', signal: { ...sig, from_user: plain.sender_user, from_device: plain.sender_device, at } })
+        return
+      }
+      case 'servers': {
+        if (plain.sender_user !== this.st.user_id || !trusted) return // only from my own validated devices
+        this.st.servers ??= {}
+        if (mergeServers(this.st.servers, (plain.content as { servers?: Record<string, SyncedServer> }).servers)) this.emit({ kind: 'servers' })
         return
       }
       case 'call': {
@@ -720,6 +755,27 @@ export class E2E {
     return (await this.run(() => this.trusted(userId))).find((d) => d.device_id === deviceId)
   }
 
+  // --- community servers shared by my devices ---
+
+  syncedServers(): SyncedServer[] {
+    return Object.values(this.st.servers ?? {})
+  }
+
+  // Records servers joined or left here and tells my other validated devices.
+  recordServers(changes: SyncedServer[]) {
+    return this.run(async () => {
+      this.st.servers ??= {}
+      const fresh: Record<string, SyncedServer> = {}
+      for (const c of changes) fresh[c.sid] = c
+      if (!mergeServers(this.st.servers, fresh)) return
+      await this.save()
+      if (!this.st.master_seed) return // not validated: my devices would refuse it; sent with the history later
+      const mine = (await this.trusted(this.st.user_id)).filter((d) => d.device_id !== this.st.device_id)
+      if (mine.length) await this.sendSecret(mine, 'servers', { servers: this.st.servers }).catch(() => {})
+      await this.backupQuietly()
+    })
+  }
+
   // --- device approval ---
 
   // This account's devices, with their trust status.
@@ -750,7 +806,7 @@ export class E2E {
       this.forgetKeys(this.st.user_id)
       await this.sendSecret([certified], 'device_approval', { master_seed: this.st.master_seed, backup_key: this.st.backup_key ?? '' })
       const inbound = this.exportedInbound()
-      const h = { history: this.st.history, inbound: {} as Record<string, Omit<InboundState, 'pickle'>>, keys: {} as Record<string, string> }
+      const h = { history: this.st.history, inbound: {} as Record<string, Omit<InboundState, 'pickle'>>, keys: {} as Record<string, string>, servers: this.st.servers ?? {} }
       for (const [sid, info] of Object.entries(inbound)) {
         h.inbound[sid] = { sender_user: info.sender_user, sender_device: info.sender_device, dm_id: info.dm_id }
         h.keys[sid] = info.pickle
@@ -767,7 +823,7 @@ export class E2E {
   }
 
   private digest() {
-    const data = JSON.stringify([this.st.history, Object.keys(this.st.inbound).sort(), this.st.pinned, !!this.st.master_seed])
+    const data = JSON.stringify([this.st.history, Object.keys(this.st.inbound).sort(), this.st.pinned, !!this.st.master_seed, this.st.servers ?? {}])
     return b64(sha256(new TextEncoder().encode(data)))
   }
 
@@ -793,7 +849,7 @@ export class E2E {
     for (let attempt = 0; attempt < 3; attempt++) {
       const p: BackupPayload = {
         format: 1, master_seed: this.st.master_seed, history: this.st.history, inbound: this.exportedInbound(),
-        pinned: this.st.pinned, names: this.st.names, created_at: new Date().toISOString(),
+        pinned: this.st.pinned, names: this.st.names, servers: this.st.servers ?? {}, created_at: new Date().toISOString(),
       }
       const data = padded(sealBackup(key, this.st.user_id, new TextEncoder().encode(JSON.stringify(p))))
       try {
@@ -839,6 +895,8 @@ export class E2E {
     const n = this.mergeContent(p.history ?? {}, p.inbound ?? {})
     for (const [u, k] of Object.entries(p.pinned ?? {})) this.st.pinned[u] ||= k
     for (const [u, name] of Object.entries(p.names ?? {})) this.st.names[u] ||= name
+    this.st.servers ??= {}
+    if (mergeServers(this.st.servers, p.servers)) this.emit({ kind: 'servers' })
     return n
   }
 
