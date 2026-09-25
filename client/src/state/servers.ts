@@ -557,8 +557,13 @@ function syncServers() {
       emit()
     }
     if (publish.length) await e.recordServers(publish)
+    if (!sharedOnce.has(e)) {
+      sharedOnce.add(e)
+      await e.shareServerList()
+    }
   }).catch(() => {})
 }
+const sharedOnce = new WeakSet<object>()
 
 onEngineEvent((ev) => {
   if (ev.kind === 'servers' || ev.kind === 'approved') syncServers()

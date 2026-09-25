@@ -776,6 +776,16 @@ export class E2E {
     })
   }
 
+  // Sends the whole list to my other validated devices (once per launch: a
+  // device that was offline, or on an older version, catches up).
+  shareServerList() {
+    return this.run(async () => {
+      if (!this.st.master_seed || !Object.keys(this.st.servers ?? {}).length) return
+      const mine = (await this.trusted(this.st.user_id)).filter((d) => d.device_id !== this.st.device_id)
+      if (mine.length) await this.sendSecret(mine, 'servers', { servers: this.st.servers }).catch(() => {})
+    })
+  }
+
   // --- device approval ---
 
   // This account's devices, with their trust status.
