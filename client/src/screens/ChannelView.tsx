@@ -5,7 +5,9 @@ import type { Attachment, Channel, Message, Ready } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { encodeMentions, MessageContent, type MentionNames } from '../components/MessageContent'
 import { Alert, BackButton, Dialog } from '../components/ui'
-import { Close, Download, FileIcon, Hash, Megaphone, Paperclip, Pencil, Reply, Send, Smile, Thread, Trash, Users } from '../components/icons'
+import { Bell, BellOff, Close, Download, FileIcon, Hash, Megaphone, Paperclip, Pencil, Pin, Reply, Search, Send, Smile, Thread, Trash, Users } from '../components/icons'
+import { channelNotify, setActive } from '../state/notify'
+import { NotifyMenu } from './NotifyMenu'
 import { can, canPost, memberAvatar, memberColor } from '../lib/community'
 import { errorMessage } from '../lib/errors'
 import { formatDay, formatFull, formatSize, formatStamp, formatTime, roleColor, sameDay } from '../lib/format'
@@ -15,7 +17,7 @@ import { isBlockedMember, useSocial } from '../state/social'
 const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎉', '✅', '👀']
 const GROUP_MS = 7 * 60 * 1000
 
-export function ChannelView({ conn, ready, state, channel, members, showMembers, onToggleMembers }: {
+export function ChannelView({ conn, ready, state, channel, members, showMembers, onToggleMembers, jump, onJumped, onOpenChannel }: {
   conn: ServerConn
   ready: Ready
   state: ServerState
@@ -23,7 +25,17 @@ export function ChannelView({ conn, ready, state, channel, members, showMembers,
   members: ReactNode
   showMembers: boolean
   onToggleMembers: () => void
+  jump?: number | null // message to show (search result, pin, notification)
+  onJumped?: () => void
+  onOpenChannel: (id: number, messageId?: number) => void
 }) {
+  const [panel, setPanel] = useState<'pins' | 'search' | null>(null)
+  const [notifOpen, setNotifOpen] = useState(false)
+  useEffect(() => {
+    setActive({ kind: 'channel', sid: conn.saved.sid, channel: channel.id })
+    return () => setActive(null)
+  }, [conn.saved.sid, channel.id])
+  const notify = channelNotify(ready, channel.id)
   const [replyTo, setReplyTo] = useState<Message | null>(null)
   const [error, setError] = useState('')
   const cm = state.messages[channel.id]
@@ -51,12 +63,22 @@ export function ChannelView({ conn, ready, state, channel, members, showMembers,
           {channel.type === 'announcement' ? <Megaphone /> : channel.type === 'thread' ? <Thread /> : <Hash />}
           <span className="title">{channel.name}</span>
           {channel.topic ? <span className="topic" title={channel.topic}>{channel.topic}</span> : <span style={{ flex: 1 }} />}
-          <button className="icon-btn" onClick={onToggleMembers} aria-pressed={showMembers}
-            aria-label={showMembers ? 'Masquer les membres' : 'Afficher les membres'} title="Membres"><Users /></button>
+          <span className="head-tools">
+            <button className={'icon-btn' + (notify.muted || notify.level === 'none' ? ' dim' : '')} aria-label="Notifications du salon" title="Notifications"
+              aria-expanded={notifOpen} onClick={() => setNotifOpen(!notifOpen)}>{notify.muted || notify.level === 'none' ? <BellOff /> : <Bell />}</button>
+            {notifOpen && <NotifyMenu conn={conn} ready={ready} channelId={channel.type === 'thread' && channel.parent_id ? channel.parent_id : channel.id} onClose={() => setNotifOpen(false)} />}
+          </span>
+          <button className="icon-btn" aria-pressed={panel === 'pins'} aria-label="Messages épinglés" title="Messages épinglés"
+            onClick={() => setPanel(panel === 'pins' ? null : 'pins')}><Pin /></button>
+          <button className="icon-btn" aria-pressed={panel === 'search'} aria-label="Rechercher" title="Rechercher"
+            onClick={() => setPanel(panel === 'search' ? null : 'search')}><Search /></button>
+          <button className="icon-btn" onClick={() => { setPanel(null); if (panel === null || !showMembers) onToggleMembers() }} aria-pressed={showMembers && !panel}
+            aria-label={showMembers && !panel ? 'Masquer les membres' : 'Afficher les membres'} title="Membres"><Users /></button>
         </header>
         {error && <div style={{ padding: '8px 16px' }}><Alert kind="error">{error}</Alert></div>}
         <MessageList conn={conn} ready={ready} channel={channel} messages={cm?.list ?? []} hasMore={cm?.hasMore ?? true}
-          loading={cm?.loading ?? true} names={names} onReply={setReplyTo} onError={setError} />
+          loading={cm?.loading ?? true} names={names} onReply={setReplyTo} onError={setError}
+          jump={jump ?? null} onJumped={onJumped} onOpenChannel={onOpenChannel} />
         <Composer conn={conn} ready={ready} channel={channel} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} names={names} />
         <div className="typing-line" aria-live="polite">
           {typing.length === 1 && <><b>{typing[0]}</b> écrit…</>}
@@ -64,12 +86,14 @@ export function ChannelView({ conn, ready, state, channel, members, showMembers,
           {typing.length > 2 && <>Plusieurs personnes écrivent…</>}
         </div>
       </div>
-      {members}
+      {panel === 'pins' ? <PinsPanel conn={conn} ready={ready} channel={channel} names={names} onClose={() => setPanel(null)} onOpen={(id) => onOpenChannel(channel.id, id)} />
+        : panel === 'search' ? <SearchPanel conn={conn} ready={ready} channel={channel} names={names} onClose={() => setPanel(null)} onOpen={onOpenChannel} />
+          : members}
     </div>
   )
 }
 
-function MessageList({ conn, ready, channel, messages, hasMore, loading, names, onReply, onError }: {
+function MessageList({ conn, ready, channel, messages, hasMore, loading, names, onReply, onError, jump, onJumped, onOpenChannel }: {
   conn: ServerConn
   ready: Ready
   channel: Channel
@@ -79,6 +103,9 @@ function MessageList({ conn, ready, channel, messages, hasMore, loading, names, 
   names: MentionNames
   onReply: (m: Message) => void
   onError: (e: string) => void
+  jump: number | null
+  onJumped?: () => void
+  onOpenChannel: (id: number, messageId?: number) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
@@ -132,7 +159,24 @@ function MessageList({ conn, ready, channel, messages, hasMore, loading, names, 
     setTimeout(() => setFlash(null), 1300)
   }
 
+  // A message to show: load older pages until it is there, then scroll to it.
+  useEffect(() => {
+    if (jump == null) return
+    let live = true
+    atBottom.current = false
+    conn.ensureMessage(channel.id, jump).then((found) => {
+      if (!live) return
+      if (found) requestAnimationFrame(() => jumpTo(jump))
+      else onError('Ce message n\u2019existe plus.')
+      onJumped?.()
+    }, (e) => onError(errorMessage(e)))
+    return () => {
+      live = false
+    }
+  }, [jump, channel.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const manage = can(ready, channel.id, 'manage_messages')
+  const post = canPost(ready, channel) && channel.type !== 'thread'
   const react = can(ready, channel.id, 'add_reactions')
 
   return (
@@ -157,7 +201,8 @@ function MessageList({ conn, ready, channel, messages, hasMore, loading, names, 
               editing={editing === m.id} flash={flash === m.id}
               onEdit={() => setEditing(m.id)} onEditDone={() => setEditing(null)}
               onDelete={(skipConfirm) => skipConfirm ? conn.api((c) => c.remove(channel.id, m.id)).catch((e) => onError(errorMessage(e))) : setDeleting(m)}
-              onReply={() => onReply(m)} onJump={jumpTo} onImage={setLightbox} onError={onError} />
+              onReply={() => onReply(m)} onJump={jumpTo} onImage={setLightbox} onError={onError}
+              canThread={post} onOpenChannel={onOpenChannel} />
           </Fragment>
         )
       })}
@@ -179,7 +224,7 @@ function MessageList({ conn, ready, channel, messages, hasMore, loading, names, 
   )
 }
 
-function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact, editing, flash, onEdit, onEditDone, onDelete, onReply, onJump, onImage, onError }: {
+function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact, editing, flash, onEdit, onEditDone, onDelete, onReply, onJump, onImage, onError, canThread, onOpenChannel }: {
   m: Message
   grouped: boolean
   ready: Ready
@@ -197,8 +242,11 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
   onJump: (id: number) => void
   onImage: (url: string) => void
   onError: (e: string) => void
+  canThread: boolean
+  onOpenChannel: (id: number, messageId?: number) => void
 }) {
   const [picking, setPicking] = useState(false)
+  const [threading, setThreading] = useState(false)
   const [reveal, setReveal] = useState(false)
   useSocial() // re-render when the block list changes
   const author = ready.members.find((x) => x.id === m.author_id)
@@ -248,6 +296,12 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
           </div>
         ) : null}
         {m.attachments.map((a) => <AttachmentView key={a.id} a={a} conn={conn} onImage={onImage} />)}
+        {m.pinned_at && <span className="pin-tag" title={'Épinglé le ' + formatFull(m.pinned_at)}><Pin size={12} />Épinglé</span>}
+        {m.thread_id && (() => {
+          const th = ready.channels.find((c) => c.id === m.thread_id)
+          return th ? <button className="thread-link" onClick={() => onOpenChannel(th.id)}><Thread size={14} />{th.name}<span className="muted small">Ouvrir le fil</span></button> : null
+        })()}
+        {threading && <ThreadDialog conn={conn} m={m} onClose={() => setThreading(false)} onCreated={(id) => { setThreading(false); onOpenChannel(id) }} />}
         {m.embeds.map((e) => (
           <div className="embed" key={e.url}>
             {e.site_name && <span className="site">{e.site_name}</span>}
@@ -265,13 +319,19 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
             ))}
           </div>
         )}
-        {m.thread_id && <span className="muted small">Fil de discussion ouvert depuis ce message</span>}
       </div>
       {!editing && (
         <div className={'msg-tools' + (picking ? ' open' : '')}>
           {canReact && <button aria-label="Réagir" title="Réagir" onClick={() => setPicking(!picking)}><Smile size={17} /></button>}
           <button aria-label="Répondre" title="Répondre" onClick={onReply}><Reply size={17} /></button>
           {mine && <button aria-label="Modifier" title="Modifier" onClick={onEdit}><Pencil size={16} /></button>}
+          {canManage && (
+            <button aria-label={m.pinned_at ? 'Désépingler' : 'Épingler'} title={m.pinned_at ? 'Désépingler' : 'Épingler'}
+              onClick={() => conn.api((c) => c.pin(m.channel_id, m.id, !m.pinned_at)).catch((e) => onError(errorMessage(e)))}><Pin size={16} /></button>
+          )}
+          {canThread && !m.thread_id && (
+            <button aria-label="Créer un fil" title="Créer un fil" onClick={() => setThreading(true)}><Thread size={16} /></button>
+          )}
           {(mine || canManage) && (
             <button className="danger" aria-label="Supprimer" title="Supprimer" onClick={(e) => onDelete(e.shiftKey)}><Trash size={16} /></button>
           )}
@@ -529,5 +589,112 @@ function Composer({ conn, ready, channel, replyTo, onCancelReply, names }: {
         </div>
       </div>
     </div>
+  )
+}
+
+function ThreadDialog({ conn, m, onClose, onCreated }: { conn: ServerConn; m: Message; onClose: () => void; onCreated: (id: number) => void }) {
+  const [name, setName] = useState(() => m.content.replace(/<[@#&!]+[a-z0-9]+>/gi, '').trim().slice(0, 60))
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  return (
+    <Dialog title="Créer un fil" onClose={onClose}>
+      <form style={{ display: 'flex', flexDirection: 'column', gap: 14 }} onSubmit={async (e) => {
+        e.preventDefault()
+        setBusy(true)
+        try {
+          const th = await conn.api((c) => c.createThread(m.channel_id, m.id, name.trim() || undefined))
+          onCreated(th.id)
+        } catch (err) {
+          setError(errorMessage(err))
+          setBusy(false)
+        }
+      }}>
+        <p className="muted small" style={{ lineHeight: 1.5 }}>Une discussion à part, à partir de ce message, avec les mêmes droits que le salon.</p>
+        <label className="field"><span>Nom du fil</span>
+          <input className="input" value={name} maxLength={100} autoFocus onChange={(e) => setName(e.target.value)} aria-label="Nom du fil" />
+        </label>
+        <Alert kind="error">{error}</Alert>
+        <div className="dialog-actions">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Annuler</button>
+          <button className="btn btn-primary btn-sm" disabled={busy}>Créer le fil</button>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
+// A short, readable excerpt of a message (mentions as names).
+function Excerpt({ m, names }: { m: Message; names: MentionNames }) {
+  return <MessageContent text={m.content.length > 300 ? m.content.slice(0, 300) + '…' : m.content || (m.attachments[0] ? '📎 ' + m.attachments[0].filename : '')} names={names} />
+}
+
+function ResultItem({ m, ready, names, onOpen, where }: { m: Message; ready: Ready; names: MentionNames; onOpen: () => void; where?: string }) {
+  const author = ready.members.find((x) => x.id === m.author_id)
+  return (
+    <button className="result" onClick={onOpen}>
+      <span className="meta">
+        <b style={{ color: memberColor(ready, author) }}>{author?.display_name ?? 'Ancien membre'}</b>
+        {where && <span className="muted small">#{where}</span>}
+        <span className="muted small">{formatStamp(m.created_at)}</span>
+      </span>
+      <span className="text"><Excerpt m={m} names={names} /></span>
+    </button>
+  )
+}
+
+function PinsPanel({ conn, ready, channel, names, onClose, onOpen }: {
+  conn: ServerConn; ready: Ready; channel: Channel; names: MentionNames; onClose: () => void; onOpen: (id: number) => void
+}) {
+  const [list, setList] = useState<Message[] | null>(null)
+  const [error, setError] = useState('')
+  // Reloaded when a message of the channel changes (pinned or unpinned elsewhere).
+  const version = conn.state.messages[channel.id]?.list.filter((m) => m.pinned_at).map((m) => m.id).join(',')
+  useEffect(() => {
+    conn.api((c) => c.pins(channel.id)).then(setList, (e) => setError(errorMessage(e)))
+  }, [conn, channel.id, version])
+  return (
+    <aside className="side-panel" aria-label="Messages épinglés">
+      <div className="side-head"><Pin size={16} /><b>Épinglés</b><span style={{ flex: 1 }} /><button className="icon-btn" aria-label="Fermer" onClick={onClose}><Close size={16} /></button></div>
+      <Alert kind="error">{error}</Alert>
+      {list && list.length === 0 && <p className="muted small" style={{ padding: 12 }}>Aucun message épinglé dans ce salon.</p>}
+      {list?.map((m) => <ResultItem key={m.id} m={m} ready={ready} names={names} onOpen={() => onOpen(m.id)} />)}
+    </aside>
+  )
+}
+
+function SearchPanel({ conn, ready, channel, names, onClose, onOpen }: {
+  conn: ServerConn; ready: Ready; channel: Channel; names: MentionNames; onClose: () => void; onOpen: (channel: number, id: number) => void
+}) {
+  const [q, setQ] = useState('')
+  const [here, setHere] = useState(false)
+  const [results, setResults] = useState<Message[] | null>(null)
+  const [more, setMore] = useState(false)
+  const [error, setError] = useState('')
+  const run = async (before?: number) => {
+    if (!q.trim()) return
+    setError('')
+    try {
+      const page = await conn.api((c) => c.search(q.trim(), { channel_id: here ? channel.id : undefined, before }))
+      setResults((r) => (before && r ? [...r, ...page] : page))
+      setMore(page.length === 25)
+    } catch (e) {
+      setError(errorMessage(e))
+    }
+  }
+  return (
+    <aside className="side-panel" aria-label="Recherche">
+      <div className="side-head"><Search size={16} /><b>Rechercher</b><span style={{ flex: 1 }} /><button className="icon-btn" aria-label="Fermer" onClick={onClose}><Close size={16} /></button></div>
+      <form className="search-form" onSubmit={(e) => { e.preventDefault(); run() }}>
+        <input className="input" type="search" placeholder="Mots à chercher" aria-label="Mots à chercher" value={q} autoFocus onChange={(e) => setQ(e.target.value)} />
+        <label className="check-line small"><input type="checkbox" checked={here} onChange={(e) => setHere(e.target.checked)} />Seulement dans #{channel.name}</label>
+      </form>
+      <Alert kind="error">{error}</Alert>
+      {results && results.length === 0 && <p className="muted small" style={{ padding: 12 }}>Aucun résultat.</p>}
+      {results?.map((m) => (
+        <ResultItem key={m.id} m={m} ready={ready} names={names} where={ready.channels.find((c) => c.id === m.channel_id)?.name}
+          onOpen={() => onOpen(m.channel_id, m.id)} />
+      ))}
+      {more && <button className="btn btn-ghost btn-sm" style={{ margin: 12 }} onClick={() => run(results![results!.length - 1].id)}>Plus de résultats</button>}
+    </aside>
   )
 }

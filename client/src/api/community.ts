@@ -152,6 +152,14 @@ export interface Permissions {
   channels: Record<string, string[]>
 }
 
+export type NotifyLevel = 'default' | 'all' | 'mentions' | 'none'
+
+export interface NotificationSetting {
+  channel_id: number // 0: whole server
+  level: NotifyLevel
+  muted_until: string | null
+}
+
 export interface Ready {
   member: Member
   server: ServerInfo
@@ -162,6 +170,7 @@ export interface Ready {
   read_states: ReadState[]
   restriction: Restriction
   permissions: Permissions
+  notification_settings?: NotificationSetting[]
 }
 
 export interface LoginResult {
@@ -265,6 +274,31 @@ export class CommunityClient {
 
   voiceLeave() {
     return this.call<void>('POST', '/v1/voice/leave')
+  }
+
+  // --- pins, threads, search, notifications ---
+
+  pins(channel: number) {
+    return this.call<Message[]>('GET', '/v1/channels/' + channel + '/pins')
+  }
+
+  pin(channel: number, id: number, on: boolean) {
+    return this.call<void>(on ? 'PUT' : 'DELETE', '/v1/channels/' + channel + '/pins/' + id)
+  }
+
+  createThread(channel: number, message: number, name?: string) {
+    return this.call<Channel>('POST', '/v1/channels/' + channel + '/messages/' + message + '/threads', name ? { name } : {})
+  }
+
+  search(q: string, opts: { channel_id?: number; before?: number } = {}) {
+    const p = new URLSearchParams({ q, limit: '25' })
+    if (opts.channel_id) p.set('channel_id', String(opts.channel_id))
+    if (opts.before) p.set('before', String(opts.before))
+    return this.call<Message[]>('GET', '/v1/search?' + p)
+  }
+
+  setNotification(channel: number, level: NotifyLevel, muteFor = 0) {
+    return this.call<NotificationSetting[]>('PUT', '/v1/notification-settings/' + channel, { level, mute_for: muteFor })
   }
 
   // --- administration and moderation ---

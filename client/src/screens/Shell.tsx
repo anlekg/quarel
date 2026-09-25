@@ -38,6 +38,26 @@ export function Shell({ account }: { account: Account }) {
     }
   }, [account.user.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Notifications (and search results) open a channel or a conversation.
+  useEffect(() => {
+    const gotoChannel = (e: Event) => {
+      const d = (e as CustomEvent<{ sid: string; channelId: number; messageId?: number }>).detail
+      select(d.sid)
+      setTimeout(() => window.dispatchEvent(new CustomEvent('quarel:open-channel', { detail: d })), 0)
+    }
+    const gotoDM = (e: Event) => {
+      const { dmId } = (e as CustomEvent<{ dmId: string }>).detail
+      select('home')
+      setTimeout(() => window.dispatchEvent(new CustomEvent('quarel:open-conversation', { detail: { dmId } })), 0)
+    }
+    window.addEventListener('quarel:goto-channel', gotoChannel)
+    window.addEventListener('quarel:goto-dm', gotoDM)
+    return () => {
+      window.removeEventListener('quarel:goto-channel', gotoChannel)
+      window.removeEventListener('quarel:goto-dm', gotoDM)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const select = (id: string) => {
     setSelected(id)
     prefs.set('selected', id)

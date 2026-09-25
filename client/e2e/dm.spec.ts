@@ -97,6 +97,21 @@ test('private messages: friends, encrypted with the Go client both ways', async 
   ctl.run('alice', 'dm', 'Tarot', 'Merci !')
   await expect(page.getByRole('log')).toContainText('Merci !')
 
+  // A private message while looking elsewhere: a desktop notification.
+  await page.evaluate(() => {
+    const shown: string[] = []
+    ;(window as unknown as { __notes: string[] }).__notes = shown
+    ;(window as unknown as { Notification: unknown }).Notification = class {
+      static permission = 'granted'
+      onclick = null
+      constructor(title: string, o?: { body?: string }) { shown.push(title + ' | ' + (o?.body ?? '')) }
+      close() {}
+    }
+  })
+  await page.locator('.dm-item', { hasText: 'Amis' }).click()
+  ctl.run('alice', 'dm', 'bob', 'Tu as vu mon message ?')
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __notes: string[] }).__notes.join('\n'))).toContain('alice | Tu as vu mon message ?')
+
   // History and keys survive a restart; new messages still decrypt.
   await app.close()
   ;({ app, page } = await launchApp(userData))

@@ -46,3 +46,7 @@ export const Headphones = (p: P) => <Icon {...p}><path d="M3 18v-6a9 9 0 0 1 18 
 export const HeadphonesOff = (p: P) => <Icon {...p}><path d="M1 1l22 22M3 18v-6a9 9 0 0 1 14.5-7.1M21 12v6" /><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z" /></Icon>
 export const Camera = (p: P) => <Icon {...p}><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" /></Icon>
 export const Hangup = (p: P) => <Icon {...p}><path d="M10.7 13.3a16 16 0 0 1-2.5-3.3M5 5l14 14M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1" /></Icon>
+export const Pin = (p: P) => <Icon {...p}><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4-1-6z" /></Icon>
+export const Search = (p: P) => <Icon {...p}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></Icon>
+export const Bell = (p: P) => <Icon {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" /></Icon>
+export const BellOff = (p: P) => <Icon {...p}><path d="M13.7 21a2 2 0 0 1-3.4 0M18.6 13A17.9 17.9 0 0 1 18 8M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h14M18 8a6 6 0 0 0-9.3-5M1 1l22 22" /></Icon>

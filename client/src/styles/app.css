@@ -616,3 +616,31 @@ code.secret { font-family: ui-monospace, monospace; letter-spacing: .06em; word-
   .phrase-grid { grid-template-columns: repeat(2, 1fr); }
   .landing-card { padding: 24px 18px; }
 }
+
+/* Pins, threads, search, notifications */
+.head-tools { position: relative; display: flex; }
+.icon-btn.dim { color: var(--text-4); }
+.notify-menu { right: 0; top: 44px; min-width: 260px; }
+.notify-menu .menu-title { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-4); padding: 6px 10px 4px; }
+.notify-menu button.active { color: var(--accent-text, var(--accent)); font-weight: 600; }
+.notify-menu button.active::before { content: '● '; }
+.menu-sep { height: 1px; background: var(--bg-3); margin: 4px 0; }
+.menu-note { font-size: 12px; color: var(--text-3); padding: 6px 10px; }
+.menu-note.error { color: var(--danger-text); }
+.pin-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-4); margin-top: 2px; }
+.thread-link { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg-1); color: var(--text); cursor: pointer; font-weight: 600; font-size: 13px; }
+.thread-link:hover { border-color: var(--accent); }
+.side-panel { width: 320px; flex-shrink: 0; background: var(--bg-1); overflow-y: auto; display: flex; flex-direction: column; border-left: 1px solid var(--bg-deep); }
+.side-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px; }
+.search-form { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 8px; }
+.result { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 10px 12px; border: none; border-top: 1px solid var(--bg-3); background: none; color: var(--text); cursor: pointer; }
+.result:hover { background: var(--bg-2); }
+.result .meta { display: flex; gap: 8px; align-items: baseline; }
+.result .text { font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
+.ch.muted { opacity: .5; }
+@media (max-width: 700px) {
+  .side-panel { position: absolute; top: 56px; right: 0; bottom: 0; z-index: 20; width: min(340px, 92vw); box-shadow: -10px 0 30px rgba(0, 0, 0, .45); }
+}
+.server-notify { position: absolute; left: 10px; right: 10px; top: 52px; z-index: 30; }
+.server-notify .notify-menu { position: static; }

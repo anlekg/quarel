@@ -9,6 +9,8 @@ import {
 import { toBase64url } from '../lib/base64'
 import { deviceKey, signWithDevice } from '../lib/device'
 import { identityLabel } from '../lib/identityURL'
+import { notifyServerMessage } from './notify'
+import type { NotificationSetting } from '../api/community'
 import type { Invite } from '../lib/invite'
 import { checkServer, pinServer, secrets } from '../platform'
 import { identityClient, serverRules, signOut, type Account } from './account'
@@ -253,6 +255,9 @@ export class ServerConn {
       }
       case 'READ_STATE_UPDATE':
         return this.set({ reads: { ...this.state.reads, [d.channel_id]: d } })
+      case 'NOTIFICATION_SETTINGS_UPDATE':
+        if (r) this.set({ ready: { ...r, notification_settings: d as NotificationSetting[] } })
+        return
     }
     if (!r) return
     switch (t) {
@@ -318,6 +323,7 @@ export class ServerConn {
         : { ...rs, last_message_id: m.id, unread: Math.min(rs.unread + 1, 100), mentions: rs.mentions + (this.mentionsMe(m) ? 1 : 0) },
     }
     this.set(patch)
+    if (!mine && this.state.ready) notifyServerMessage(this.saved.sid, this.state.ready.server.name, this.state.ready, m, this.mentionsMe(m))
   }
 
   mentionsMe(m: Message) {
@@ -364,6 +370,18 @@ export class ServerConn {
       this.set({ messages: { ...this.state.messages, [channel]: { list: cm?.list ?? [], hasMore: cm?.hasMore ?? true, loading: false } } })
       throw e
     }
+  }
+
+  // Loads older pages until a message is in the list (jumping to a search result, a pin…).
+  async ensureMessage(channel: number, id: number): Promise<boolean> {
+    await this.loadMessages(channel)
+    for (let i = 0; i < 40; i++) {
+      const cm = this.state.messages[channel]
+      if (!cm || cm.list.some((m) => m.id === id)) return !!cm
+      if (!cm.hasMore || (cm.list[0] && cm.list[0].id < id)) return false
+      await this.loadMessages(channel, true)
+    }
+    return false
   }
 
   // Adds a message returned by the API (it also arrives through the gateway).

@@ -10,6 +10,7 @@ import { formatDay, formatFull, formatSize, formatStamp, formatTime, sameDay } f
 import { prefs } from '../platform'
 import { SecurityBanner } from './Security'
 import { showContent } from '../state/mobile'
+import { setActive } from '../state/notify'
 import { CallPanel } from './Call'
 import { startCall, useCall } from '../state/calls'
 import type { Account } from '../state/account'
@@ -52,8 +53,13 @@ export function Home({ account, userbar }: { account: Account; userbar: ReactNod
       const { userId } = (ev as CustomEvent<{ userId: string }>).detail
       openDirect(userId).then((c) => go(c.id), () => {})
     }
+    const openConv = (ev: Event) => go((ev as CustomEvent<{ dmId: string }>).detail.dmId)
     window.addEventListener('quarel:open-dm', open)
-    return () => window.removeEventListener('quarel:open-dm', open)
+    window.addEventListener('quarel:open-conversation', openConv)
+    return () => {
+      window.removeEventListener('quarel:open-dm', open)
+      window.removeEventListener('quarel:open-conversation', openConv)
+    }
   }, [])
   useEffect(() => {
     if (view !== 'friends' && s.status === 'ready' && !conv) go('friends', false)
@@ -239,6 +245,10 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const activeCall = useCall()
+  useEffect(() => {
+    setActive({ kind: 'dm', id: conv.id })
+    return () => setActive(null)
+  }, [conv.id])
   const other = conv.kind === 'direct' ? (conv.user ?? conv.members.find((m) => m.id !== me)) : undefined
   const input = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)

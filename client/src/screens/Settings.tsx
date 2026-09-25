@@ -9,13 +9,14 @@ import { errorMessage } from '../lib/errors'
 import { identityLabel } from '../lib/identityURL'
 import { identityClient, signOut, type Account } from '../state/account'
 import { canInstall, install, onInstallChange } from '../platform'
+import { askPermission, desktopEnabled, setDesktopEnabled } from '../state/notify'
 import type { OwnDevice } from '../e2e/engine'
 import { listDevices, useSocial } from '../state/social'
 import { ApproveDialog, RecoverySection } from './Security'
 import { PrivacySection, ProfileSection, SecuritySection } from './SettingsAccount'
 import { MediaSection } from './SettingsMedia'
 
-type Section = 'profile' | 'security' | 'devices' | 'recovery' | 'privacy' | 'media' | 'invites'
+type Section = 'profile' | 'security' | 'devices' | 'recovery' | 'privacy' | 'media' | 'notifications' | 'invites'
 
 const dateFmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long' })
 const dateTimeFmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
@@ -43,6 +44,7 @@ export function Settings({ account, onClose }: { account: Account; onClose: () =
         {nav('invites', 'Invitations')}
         <span className="group">APPLICATION</span>
         {nav('media', 'Voix et vidéo')}
+        {nav('notifications', 'Notifications')}
         <InstallButton />
         <span className="group" />
         <button className="danger" onClick={() => setConfirmLogout(true)}>Se déconnecter</button>
@@ -53,7 +55,8 @@ export function Settings({ account, onClose }: { account: Account; onClose: () =
             : section === 'devices' ? <DevicesSection account={account} />
               : section === 'recovery' ? <RecoverySection />
                 : section === 'privacy' ? <PrivacySection account={account} />
-                  : section === 'media' ? <MediaSection /> : <InvitesSection account={account} />}
+                  : section === 'media' ? <MediaSection />
+                    : section === 'notifications' ? <NotificationsSection /> : <InvitesSection account={account} />}
       </main>
       <button className="icon-btn settings-close" aria-label="Fermer les paramètres" title="Fermer (Échap)" onClick={onClose}>
         <Close />
@@ -221,4 +224,28 @@ function InstallButton() {
   useEffect(() => onInstallChange(() => setCan(canInstall())), [])
   if (!can) return null
   return <button onClick={() => install()}>Installer l&apos;application</button>
+}
+
+function NotificationsSection() {
+  const [on, setOn] = useState(desktopEnabled)
+  const [perm, setPerm] = useState(() => (typeof Notification === 'undefined' ? 'unsupported' : Notification.permission))
+  return (
+    <>
+      <h2>Notifications</h2>
+      <p className="muted" style={{ lineHeight: 1.5 }}>
+        Une notification apparaît pour les nouveaux messages privés et, sur les serveurs, selon le réglage de chaque serveur et de chaque salon
+        (cloche en haut d&apos;un salon, ou menu du serveur › Notifications ; par défaut : seulement quand on vous mentionne). Rien quand le message est
+        déjà sous vos yeux, ni en mode « Ne pas déranger ».
+      </p>
+      <label className="check-line card" style={{ padding: '14px 16px' }}>
+        <input type="checkbox" checked={on} onChange={(e) => { setOn(e.target.checked); setDesktopEnabled(e.target.checked) }} />
+        <span>Notifications sur le bureau</span>
+      </label>
+      {on && perm === 'default' && (
+        <div><button className="btn btn-primary btn-sm" onClick={() => askPermission().then((p) => setPerm(p))}>Autoriser les notifications</button></div>
+      )}
+      {on && perm === 'denied' && <Alert kind="warn">Le navigateur bloque les notifications de Quarel : autorisez-les dans les réglages du site (icône à gauche de l&apos;adresse).</Alert>}
+      {perm === 'unsupported' && <Alert kind="info">Ce navigateur ne sait pas afficher de notifications.</Alert>}
+    </>
+  )
 }

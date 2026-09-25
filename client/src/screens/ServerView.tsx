@@ -16,6 +16,8 @@ import { joinVoice, useVoice } from '../state/voice'
 import { can } from '../lib/community'
 import { showContent } from '../state/mobile'
 import { ChannelDialog, MemberDialog, sectionsFor, ServerSettings } from './ServerSettings'
+import { NotifyMenu } from './NotifyMenu'
+import { channelNotify } from '../state/notify'
 import { Gear } from '../components/icons'
 
 export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React.ReactNode }) {
@@ -27,12 +29,19 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
   const [showMembers, setShowMembers] = useState(() => !narrow && prefs.get('show-members', true))
 
   const channel = r?.channels.find((c) => c.id === channelID && c.type !== 'category')
+  const [jump, setJump] = useState<number | null>(null) // message to show once the channel is open
+  const openChannel = (id: number, messageId?: number) => {
+    setChannelID(id)
+    setJump(messageId ?? null)
+    showContent()
+  }
   // The "Vocal connecté" bar can bring us back to the voice channel.
   useEffect(() => {
     const open = (e: Event) => {
-      const d = (e as CustomEvent<{ sid: string; channelId: number }>).detail
+      const d = (e as CustomEvent<{ sid: string; channelId: number; messageId?: number }>).detail
       if (d.sid === conn.saved.sid) {
         setChannelID(d.channelId)
+        setJump(d.messageId ?? null)
         showContent()
       }
     }
@@ -76,6 +85,7 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
           <VoiceView conn={conn} ready={r} channel={channel} />
         ) : channel ? (
           <ChannelView key={channel.id} conn={conn} ready={r} state={state} channel={channel}
+            jump={jump} onJumped={() => setJump(null)} onOpenChannel={openChannel}
             showMembers={showMembers}
             onToggleMembers={() => { setShowMembers(!showMembers); if (!narrow) prefs.set('show-members', !showMembers) }}
             members={showMembers ? <MemberList ready={r} conn={conn} /> : null} />
@@ -89,7 +99,7 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
 
 function ServerMenu({ conn, ready }: { conn: ServerConn; ready?: Ready }) {
   const [open, setOpen] = useState(false)
-  const [dialog, setDialog] = useState<'invite' | 'leave' | 'settings' | 'channel' | null>(null)
+  const [dialog, setDialog] = useState<'invite' | 'leave' | 'settings' | 'channel' | 'notify' | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -112,13 +122,15 @@ function ServerMenu({ conn, ready }: { conn: ServerConn; ready?: Ready }) {
           {canInvite && <button role="menuitem" onClick={() => { setOpen(false); setDialog('invite') }}>Inviter des personnes</button>}
           {canAdmin && <button role="menuitem" onClick={() => { setOpen(false); setDialog('settings') }}>Paramètres du serveur</button>}
           {canChannels && <button role="menuitem" onClick={() => { setOpen(false); setDialog('channel') }}>Créer un salon</button>}
+          {ready && <button role="menuitem" onClick={() => { setOpen(false); setDialog('notify') }}>Notifications</button>}
           {!owner && <button role="menuitem" className="danger" onClick={() => { setOpen(false); setDialog('leave') }}>Quitter le serveur</button>}
-          {owner && !canInvite && !canAdmin && <span className="muted small" style={{ padding: 8 }}>Aucune action disponible</span>}
+
         </div>
       )}
       {dialog === 'invite' && <InviteDialog conn={conn} onClose={() => setDialog(null)} />}
       {dialog === 'leave' && <LeaveDialog conn={conn} onClose={() => setDialog(null)} />}
       {dialog === 'settings' && <ServerSettings conn={conn} onClose={() => setDialog(null)} />}
+      {dialog === 'notify' && ready && <div className="server-notify"><NotifyMenu conn={conn} ready={ready} channelId={0} onClose={() => setDialog(null)} /></div>}
       {dialog === 'channel' && ready && <ChannelDialog conn={conn} ready={ready} channel={null} onClose={() => setDialog(null)} />}
     </div>
   )
@@ -205,7 +217,7 @@ function ChannelList({ conn, ready, state, active, onPick }: {
       )
     }
     return (
-      <button key={c.id} className={'ch' + (c.id === active ? ' active' : '') + (unread ? ' unread' : '') + (c.type === 'thread' ? ' thread' : '')}
+      <button key={c.id} className={'ch' + (c.id === active ? ' active' : '') + (unread ? ' unread' : '') + (c.type === 'thread' ? ' thread' : '') + (channelNotify(ready, c.id).muted ? ' muted' : '')}
         onClick={() => onPick(c)} aria-current={c.id === active ? 'page' : undefined}>
         {channelIcon(c)}
         <span className="name">{c.name}</span>

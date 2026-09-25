@@ -196,6 +196,12 @@ func (c *cli) runCommunity(cmd string, args []string) (bool, error) {
 // parseTarget accepts a server URL (HTTPS by default) or an invite link
 // quarel://host:port/CODE?sid=ID.
 func parseTarget(arg string) (base, code, sid string, err error) {
+	// Web invite links: https://<web app>/join#host:port/CODE?sid=…
+	if _, frag, ok := strings.Cut(arg, "/join#"); ok && strings.HasPrefix(arg, "http") {
+		if f, err := url.PathUnescape(frag); err == nil {
+			arg = "quarel://" + f
+		}
+	}
 	if strings.HasPrefix(arg, "quarel://") {
 		u, err := url.Parse(arg)
 		if err != nil {

@@ -2,8 +2,12 @@
 import type { Channel, Member, Ready } from '../api/community'
 import { roleColor } from './format'
 
-export function can(r: Ready, channel: number, perm: string) {
-  return r.permissions.channels[String(channel)]?.includes(perm) ?? false
+export function can(r: Ready, channel: number, perm: string): boolean {
+  const own = r.permissions.channels[String(channel)]
+  if (own) return own.includes(perm)
+  // A thread has the rights of its channel (a new one may not be in the map yet).
+  const c = r.channels.find((x) => x.id === channel)
+  return c?.type === 'thread' && c.parent_id ? can(r, c.parent_id, perm) : false
 }
 
 export function canServer(r: Ready, perm: string) {
