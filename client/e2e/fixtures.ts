@@ -80,9 +80,12 @@ export class Identity {
 }
 
 export async function launchApp(userData: string): Promise<{ app: ElectronApplication; page: Page }> {
+  // QUAREL_APP_EXECUTABLE: test a packaged app (release/linux-unpacked/quarel) instead of the sources.
+  const packaged = process.env.QUAREL_APP_EXECUTABLE
   const app = await electron.launch({
+    executablePath: packaged || undefined,
     // Fake microphone and camera (a beep and a test pattern), no permission prompt.
-    args: [client, '--password-store=basic', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+    args: [...(packaged ? [] : [client]), '--password-store=basic', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
     env: { ...process.env, QUAREL_USER_DATA: userData, QUAREL_DEV_URL: '' },
   })
   const page = await app.firstWindow()

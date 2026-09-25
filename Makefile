@@ -106,6 +106,15 @@ client-test:
 	cd client && npx tsc --noEmit && npx vitest run
 
 # End-to-end: the real desktop app (virtual display) against a real Identity service.
+# Desktop app packages (electron-builder) → client/release/: Linux AppImage + .deb, Windows installer (NSIS, built with Wine).
+client-dist:
+	cd client && [ -d node_modules ] || npm ci
+	cd client && npm run dist
+
+client-dist-win:
+	cd client && [ -d node_modules ] || npm ci
+	cd client && npm run dist:win
+
 e2e-web: build     # the web client only, in Chromium (invite links, encrypted storage, installable app, phone layout)
 	cd client && [ -d node_modules ] || npm ci
 	cd client && npx vite build && npx playwright test --project=web

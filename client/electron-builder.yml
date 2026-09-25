@@ -1,0 +1,50 @@
+# Desktop app packages: npm run dist (Linux: AppImage + .deb) / npm run dist:win (NSIS installer, built with Wine).
+appId: app.quarel.desktop
+productName: Quarel
+copyright: Quarel contributors — Apache-2.0
+directories:
+  output: release
+  buildResources: build
+# The UI and the Electron processes are bundled by Vite/esbuild: no node_modules in the package.
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - "!**/node_modules/**"
+extraResources:
+  - from: ../LICENSE
+    to: LICENSE.txt
+  - from: ../NOTICE
+    to: NOTICE.txt
+protocols:
+  - name: Invitation Quarel
+    schemes: [quarel]
+asar: true
+electronLanguages: [fr, en-US]
+win:
+  target: [nsis]
+  icon: build/icon.png
+  artifactName: Quarel-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Quarel
+  language: "1036"
+  include: build/installer.nsh
+linux:
+  target: [AppImage, deb]
+  executableName: quarel
+  category: Network;Chat;InstantMessaging
+  icon: build/icon.png
+  artifactName: Quarel-${version}-${arch}.${ext}
+  synopsis: Communautés auto-hébergées, messages privés chiffrés
+  description: Client de bureau de Quarel, alternative auto-hébergeable à Discord.
+  maintainer: Quarel <noreply@quarel.app>
+  syncDesktopName: true
+  desktop:
+    entry:
+      StartupWMClass: Quarel
+deb:
+  depends: [libnss3, libgtk-3-0, libxss1, libasound2 | libasound2t64]
