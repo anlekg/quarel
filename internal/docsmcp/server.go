@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -45,7 +46,7 @@ func NewServer(d *Docs, version string) *mcp.Server {
 		}
 		limit = min(limit, 10)
 		if len(a.Query) > 200 {
-			a.Query = a.Query[:200]
+			a.Query = strings.ToValidUTF8(a.Query[:200], "")
 		}
 		hits := d.Search(a.Query, limit)
 		if len(hits) == 0 {
@@ -59,7 +60,11 @@ func NewServer(d *Docs, version string) *mcp.Server {
 			}
 			body := h.Section.Text
 			if len(body) > 2000 {
-				body = body[:2000] + "…"
+				cut := 2000
+				for cut > 0 && !utf8.RuneStart(body[cut]) { // never split a character
+					cut--
+				}
+				body = body[:cut] + "…"
 			}
 			fmt.Fprintf(&b, "## %d. %s › %s\nPage : %s\nURL : %s\n\n%s\n\n", i+1, h.Page.Title, heading, h.Page.Slug, h.URL(), body)
 		}
