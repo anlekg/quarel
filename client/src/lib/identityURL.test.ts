@@ -12,9 +12,9 @@ describe('identityBaseURL', () => {
     expect(() => identityBaseURL('http://id.example.org')).toThrow('insecure')
   })
   it('accepts plain HTTP on the local network only when allowed', () => {
-    expect(identityBaseURL('192.168.1.25:18080')).toBe('https://192.168.1.25:18080')
-    expect(() => identityBaseURL('http://192.168.1.25:18080')).toThrow('insecure')
-    expect(identityBaseURL('192.168.1.25:18080', true)).toBe('http://192.168.1.25:18080')
+    expect(identityBaseURL('192.168.1.40:18080')).toBe('https://192.168.1.40:18080')
+    expect(() => identityBaseURL('http://192.168.1.40:18080')).toThrow('insecure')
+    expect(identityBaseURL('192.168.1.40:18080', true)).toBe('http://192.168.1.40:18080')
     expect(() => identityBaseURL('http://8.8.8.8', true)).toThrow('insecure')
   })
   it('refuses paths and empty input', () => {

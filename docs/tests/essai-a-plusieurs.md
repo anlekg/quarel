@@ -4,7 +4,7 @@ Objectif : 5 à 10 personnes utilisent Quarel « pour de vrai » pendant une à 
 
 ## Préparation (CP)
 
-1. Créer une invitation d'inscription par personne : page d'administration du service d'identité (`http://192.168.1.25:18081`) › Invitations.
+1. Créer une invitation d'inscription par personne : page d'administration du service d'identité (réseau local) › Invitations.
 2. Créer un lien d'invitation vers le serveur de test : dans l'application, menu du serveur › Paramètres du serveur › Invitations (plusieurs utilisations, 14 jours).
 3. Envoyer à chacun·e le message ci-dessous.
 

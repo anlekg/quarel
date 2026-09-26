@@ -13,6 +13,6 @@ Avec deux comptes **amis**, chacun sur un appareil validé (par exemple l'applic
 
 ## À savoir
 - Le son et l'image ne passent jamais par un serveur Quarel, sauf par le relais quand aucune connexion directe n'est possible ; ils restent alors chiffrés de bout en bout (le relais ne peut ni écouter ni voir).
-- Le relais de `identity.quarel.app` tourne sur votre machine : ports UDP 3478 et 49160-49200 ouverts sur la Livebox par UPnP, adresse IP publique suivie automatiquement.
+- Le relais de `identity.quarel.app` est actif : ports UDP 3478 et 49160-49200 ouverts sur la box par UPnP, adresse IP publique suivie automatiquement.
 - Rejoindre un appel quitte le salon vocal où vous étiez.
 - Pas encore : choix du micro, de la caméra et des haut-parleurs (étape « Paramètres »), partage d'écran en appel, appels de groupe.

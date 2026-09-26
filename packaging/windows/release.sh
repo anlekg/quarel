@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 VERSION=${1:?usage : release.sh <version, ex. 0.2.0>}
 [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version x.y.z attendue"; exit 1; }
-DEST=${QUAREL_DOWNLOADS_DIR:-/DATA/AppData/quarel-deploy/downloads}
+DEST=${QUAREL_DOWNLOADS_DIR:?QUAREL_DOWNLOADS_DIR : dossier servi à quarel.app/telechargements (voir local.mk)}
 
 "$ROOT/packaging/windows/build.sh" "$VERSION"
 mkdir -p "$DEST"

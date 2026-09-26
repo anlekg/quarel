@@ -469,13 +469,13 @@ Ordre : **A.** interfaces d'administration (les deux serveurs, Docker) → **B.*
 
 ### Mise en ligne de l'instance de test quarel.app (2026-09-24)
 
-Choix du CP : **cette machine**, accord pour ouvrir des ports sur la box, DNS chez **Cloudflare**, **pas encore de fournisseur d'emails**. Le CP utilise déjà un **tunnel Cloudflare** et **Nginx Proxy Manager** pour ses autres sites : même infrastructure (détails : `docs/deploiement-quarel-app.md`).
+Choix du CP : hébergement auto-hébergé par l'équipe, DNS et HTTPS par **Cloudflare**, **pas encore de fournisseur d'emails** (voir `docs/deploiement-quarel-app.md`).
 
 | Date | Décision | Raison |
 |---|---|---|
-| 2026-09-24 | Web par le tunnel Cloudflare → Nginx Proxy Manager → services en HTTP ; HTTPS par Cloudflare | Infrastructure existante du CP ; certificat reconnu partout (le client web fonctionne aussi). |
-| 2026-09-24 | Vocal en direct : **seuls 7881/tcp et 7882/udp** ouverts par UPnP (accord du CP) ; derrière un proxy, l'UPnP n'ouvre plus le port web (correctif `5f53055`) | Un tunnel Cloudflare ne transporte pas l'UDP ; ouvrir le 443 par UPnP aurait pris le port de Nginx Proxy Manager. |
-| 2026-09-24 | Relais d'appels (TURN) **désactivé** pour l'instant | UDP hors tunnel ; à décider avec l'étape « appels » du client. |
+| 2026-09-24 | Web derrière Cloudflare et un proxy inverse → services en HTTP ; HTTPS par Cloudflare | Infrastructure existante ; certificat reconnu partout (le client web fonctionne aussi). |
+| 2026-09-24 | Vocal en direct : **seuls 7881/tcp et 7882/udp** ouverts par UPnP (accord du CP) ; derrière un proxy, l'UPnP n'ouvre plus le port web (correctif `5f53055`) | Cloudflare ne transporte pas l'UDP ; ouvrir le 443 par UPnP aurait pris le port du proxy inverse. |
+| 2026-09-24 | Relais d'appels (TURN) **désactivé** pour l'instant | UDP hors Cloudflare ; à décider avec l'étape « appels » du client. |
 | 2026-09-24 | Emails **plus tard** : codes lisibles dans le journal pendant la phase sur invitation | Choix du CP. `quarel.app` a déjà des MX chez OVH : piste possible pour l'envoi. |
 | 2026-09-24 | Cloudflare voit le trafic web (messages des salons) | Accepté pour la phase de test ; les MP restent chiffrés de bout en bout. À rediscuter pour la production. |
 

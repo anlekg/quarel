@@ -12,3 +12,7 @@ node_modules/
 /dist/
 rsrc_windows_*.syso
 /client/crypto/target/
+/local.mk
+/quarel-server
+/quarel-identity
+/quarelctl

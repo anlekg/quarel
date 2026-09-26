@@ -1,17 +1,15 @@
-# Instance de test quarel.app (2026-09-24)
+# Instance officielle quarel.app
 
-Hébergée sur la machine du CP, derrière son infrastructure existante :
+| Nom | Service |
+|---|---|
+| `quarel.app` | site, wiki, MCP de la documentation (`/mcp`), installateurs des serveurs (`/telechargements/`) |
+| `app.quarel.app` | client web ; mises à jour de l'application de bureau (`/updates/`) |
+| `identity.quarel.app` | service d'identité (inscriptions sur invitation, serveurs approuvés, relais d'appels) |
+| `test.quarel.app` | serveur communautaire « Quarel — serveur de test » |
 
-| Nom | Service | Chemin |
-|---|---|---|
-| `identity.quarel.app` | service d'identité (sur invitation, pas encore d'emails) | Cloudflare → tunnel « Archnet » → Nginx Proxy Manager → `:18080` |
-| `test.quarel.app` | serveur communautaire « Quarel — serveur de test » | même chemin → `:18090` ; vocal en direct (7881/tcp, 7882/udp par UPnP) |
-| `app.quarel.app` | client web (fichiers de `client/dist`, servis par nginx) | même chemin → `:18100` |
-
-- **HTTPS** : fourni par Cloudflare (certificat reconnu) ; les deux services tournent en HTTP (`QUAREL_TLS=off`) et font confiance au proxy pour l'adresse des clients (`QUAREL_TRUSTED_PROXIES=172.16.0.0/12`). Le client web peut donc joindre ce serveur de test.
-- **Ce qui ne passe pas par le tunnel** : l'UDP. Le vocal va directement à l'adresse publique de la box (visible des participants au vocal) ; le relais d'appels (TURN) est désactivé pour l'instant.
+- **HTTPS** : fourni par Cloudflare (certificat reconnu), puis un proxy inverse ; les services tournent en HTTP (`QUAREL_TLS=off`) et ne font confiance qu'aux adresses du proxy pour `X-Forwarded-For` (`QUAREL_TRUSTED_PROXIES`). Le client web peut donc joindre le serveur de test.
+- **Ce qui ne passe pas par Cloudflare** : l'UDP. Le vocal (7881/tcp, 7882/udp) et le relais d'appels (3478/udp, 49160-49200/udp) sont joints directement, ports ouverts par UPnP.
 - **Confidentialité** : Cloudflare termine le HTTPS et voit le trafic web (messages des salons en clair ; messages privés chiffrés de bout en bout, illisibles pour lui). Accepté pour la phase de test, à rediscuter pour la production.
-- **Pages d'administration** : réseau local seulement (`:18081` identité, `:8091` communautaire).
-- **Mettre à jour le client web** : `cd client && npx vite build`, puis copier `dist/` dans `/DATA/AppData/quarel-deploy/web/`.
-- **Fichiers** : `/DATA/AppData/quarel-deploy` (Compose, données, README de mise à jour) — hors du dépôt.
-- Réglages fixés par Compose (verrouillés dans les pages) : nom public `identity.quarel.app`, `QUAREL_TLS=off`, ports, nom public `test.quarel.app` ; le reste se règle dans les pages.
+- **Pages d'administration** : réseau local seulement, jamais exposées.
+- **Emails** : envoyés par un relais SMTP (STARTTLS), SPF et DKIM de `quarel.app` en place.
+- Les fichiers de déploiement (Compose, configuration du proxy, données) sont gardés hors du dépôt. Publier : `make client-release`, `make windows-release`, `make site-build` (dossiers de destination dans `local.mk`, voir `Makefile`).

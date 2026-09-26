@@ -1,5 +1,11 @@
 export PATH := $(HOME)/.local/go/bin:$(HOME)/.local/bin:$(PATH)
 
+# Machine-specific settings (publication folders…), not in the repository:
+#   QUAREL_UPDATES_DIR = …   (app.quarel.app/updates)
+#   QUAREL_DOWNLOADS_DIR = … (quarel.app/telechargements)
+-include local.mk
+export QUAREL_UPDATES_DIR QUAREL_DOWNLOADS_DIR
+
 .PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages e2e-moderation e2e-accounts e2e-dm-groups e2e-calls e2e-ops windows client-interop client-install client-dev client-build client-test e2e-client windows-release site-dev site-build docs-mcp clean
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)

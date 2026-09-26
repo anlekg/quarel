@@ -1,8 +1,8 @@
 // Builds, signs and publishes a desktop app release:
 //   node scripts/release.mjs 0.2.0
 // → Windows installer + Linux AppImage/.deb in release/, update descriptions
-// signed (sign-release.mjs), then copied to $QUAREL_UPDATES_DIR (default: the
-// folder served at app.quarel.app/updates). Descriptions last: clients never see a
+// signed (sign-release.mjs), then copied to $QUAREL_UPDATES_DIR (the folder
+// served at app.quarel.app/updates). Descriptions last: clients never see a
 // version whose files are not there yet. Keeps the files of 3 versions.
 import { execSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
@@ -10,7 +10,8 @@ import { join } from 'node:path'
 
 const version = process.argv[2]
 if (!/^\d+\.\d+\.\d+$/.test(version ?? '')) throw new Error('usage : node scripts/release.mjs <version, ex. 0.2.0>')
-const dest = process.env.QUAREL_UPDATES_DIR ?? '/DATA/AppData/quarel-deploy/updates'
+const dest = process.env.QUAREL_UPDATES_DIR
+if (!dest) throw new Error('QUAREL_UPDATES_DIR : dossier servi à app.quarel.app/updates (voir local.mk)')
 const run = (cmd) => execSync(cmd, { stdio: 'inherit' })
 
 run(`npm version ${version} --no-git-tag-version --allow-same-version`)
