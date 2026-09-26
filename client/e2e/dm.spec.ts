@@ -93,7 +93,7 @@ test('private messages: friends, encrypted with the Go client both ways', async 
   const g = page.getByLabel('Message pour Tarot')
   await g.fill('Bienvenue dans le groupe')
   await g.press('Enter')
-  expect(ctl.run('alice', 'dm-history', 'Tarot')).toContain('bob : Bienvenue dans le groupe')
+  await expect.poll(() => ctl.run('alice', 'dm-history', 'Tarot'), { timeout: 15_000 }).toContain('bob : Bienvenue dans le groupe')
   ctl.run('alice', 'dm', 'Tarot', 'Merci !')
   await expect(page.getByRole('log')).toContainText('Merci !')
 

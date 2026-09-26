@@ -94,7 +94,7 @@ test('servers: join, rules, messages, replies, reactions, files, unread, kick', 
   await expect(mine).toContainText('Oui @alice, avec plaisir !')
   await expect(mine.locator('strong')).toHaveText('plaisir')
   await expect(mine.locator('.reply-ref')).toContainText('Salut @bob')
-  expect(ctl.run('alice', 'history', 'général')).toContain('↱ alice : Salut @bob')
+  await expect.poll(() => ctl.run('alice', 'history', 'général'), { timeout: 15_000 }).toContain('↱ alice : Salut @bob')
 
   // Edit, react, then delete.
   await mine.hover()

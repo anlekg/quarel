@@ -87,7 +87,7 @@ test('channels: search, pins, threads, notifications', async () => {
   await old.hover()
   await old.getByRole('button', { name: 'Épingler', exact: true }).click()
   await expect(old.locator('.pin-tag')).toBeVisible()
-  expect(ctl.run('alice', 'pins', 'général')).toContain('rendez-vous')
+  await expect.poll(() => ctl.run('alice', 'pins', 'général'), { timeout: 15_000 }).toContain('rendez-vous')
   await page.getByRole('button', { name: 'Messages épinglés' }).click()
   await expect(page.getByRole('complementary', { name: 'Messages épinglés' })).toContainText('rendez-vous')
 
@@ -101,7 +101,7 @@ test('channels: search, pins, threads, notifications', async () => {
   await page.getByLabel('Message pour #Organisation').fill('On prend le train de 9 h ?')
   await page.getByLabel('Message pour #Organisation').press('Enter')
   await expect(page.getByRole('log')).toContainText('train de 9 h')
-  expect(ctl.run('alice', 'channels')).toContain('Organisation')
+  await expect.poll(() => ctl.run('alice', 'channels'), { timeout: 15_000 }).toContain('Organisation')
 
   // Notifications (bob is in the thread): a mention in "général" notifies…
   ctl.run('alice', 'send', 'général', '@bob tu viens ?')

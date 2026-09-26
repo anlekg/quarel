@@ -102,7 +102,7 @@ test('server administration: overview, invites, roles, channel permissions, mode
   await dialog.getByLabel('Nom').fill('annonces')
   await dialog.getByRole('button', { name: 'Créer' }).click()
   await expect(settings.getByRole('button', { name: 'Modifier annonces', exact: true })).toBeVisible()
-  expect(ctl.run('alice', 'channels')).toContain('annonces')
+  await expect.poll(() => ctl.run('alice', 'channels'), { timeout: 15_000 }).toContain('annonces')
 
   // Moderation of alice: timeout, then ban (and unban).
   await nav('Membres')

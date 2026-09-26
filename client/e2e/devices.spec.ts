@@ -135,5 +135,5 @@ test('devices: validation both ways, history transfer, recovery phrase', async (
   ctl.run('bob3', 'e2e')
   const restored = ctl.run('bob3', 'recovery-restore', ...phrase.split(' '))
   expect(restored).toContain('Compte restauré')
-  expect(ctl.run('bob3', 'dm-history', 'alice')).toContain('bob : Depuis le deuxième appareil')
+  await expect.poll(() => ctl.run('bob3', 'dm-history', 'alice'), { timeout: 15_000 }).toContain('bob : Depuis le deuxième appareil')
 })

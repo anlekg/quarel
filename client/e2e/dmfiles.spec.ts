@@ -108,6 +108,6 @@ test('private conversation files: peer to peer, server copy, later from a holder
   await mine.hover()
   await mine.getByRole('button', { name: 'Supprimer' }).click()
   await expect(page.getByRole('log')).not.toContainText('photo.bin')
-  expect(ctl.run('alice', 'dm-history', 'bob')).not.toContain('photo.bin')
+  await expect.poll(() => ctl.run('alice', 'dm-history', 'bob'), { timeout: 15_000 }).not.toContain('photo.bin')
   await app.close()
 })

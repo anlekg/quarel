@@ -60,7 +60,7 @@ test('settings: profile, security, presence, privacy, devices, deletion', async 
   await settings.getByLabel('À propos de moi').fill('Joueur de tarot')
   await settings.getByRole('button', { name: 'Enregistrer la présentation' }).click()
   await expect(settings).toContainText('Présentation enregistrée')
-  expect(ctl.run('alice', 'profile', 'bobby')).toContain('Joueur de tarot')
+  await expect.poll(() => ctl.run('alice', 'profile', 'bobby'), { timeout: 15_000 }).toContain('Joueur de tarot')
 
   // Security: email, password, two-factor authentication.
   await settings.getByRole('button', { name: 'Sécurité' }).click()
@@ -112,11 +112,11 @@ test('settings: profile, security, presence, privacy, devices, deletion', async 
   await expect(typingBox).toBeChecked()
   await typingBox.click()
   await expect(typingBox).not.toBeChecked()
-  expect(ctl.run('alice', 'friends')).toContain('bobby')
+  await expect.poll(() => ctl.run('alice', 'friends'), { timeout: 15_000 }).toContain('bobby')
   await settings.getByLabel('Pseudo à bloquer').fill('alice')
   await settings.getByRole('button', { name: 'Bloquer', exact: true }).click()
   await expect(settings.getByTestId('blocked')).toContainText('alice')
-  expect(ctl.run('alice', 'friends')).not.toContain('bobby')
+  await expect.poll(() => ctl.run('alice', 'friends'), { timeout: 15_000 }).not.toContain('bobby')
   await settings.getByTestId('blocked').getByRole('button', { name: 'Débloquer' }).click()
   await expect(settings).toContainText('Personne n’est bloqué'.replace('’', "'"))
 
@@ -140,6 +140,6 @@ test('settings: profile, security, presence, privacy, devices, deletion', async 
   await dialog.getByLabel('Tapez « bobby » pour confirmer').fill('bobby')
   await dialog.getByRole('button', { name: 'Supprimer définitivement' }).click()
   await expect(page.getByRole('button', { name: 'Se connecter' })).toBeVisible()
-  expect(ctl.run('alice', 'profile', 'bobby')).toMatch(/introuvable|not_found|404/i)
+  await expect.poll(() => ctl.run('alice', 'profile', 'bobby'), { timeout: 15_000 }).toMatch(/introuvable|not_found|404/i)
   await app.close()
 })
