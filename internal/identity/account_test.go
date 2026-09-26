@@ -232,6 +232,10 @@ func TestPresence(t *testing.T) {
 			t.Fatal(err)
 		}
 		wsjson.Write(ctx, c, map[string]string{"op": "auth", "token": tok})
+		var ready struct{ T string }
+		if err := wsjson.Read(ctx, c, &ready); err != nil || ready.T != "READY" { // registered: events from now on reach us
+			t.Fatalf("READY: %v %v", ready.T, err)
+		}
 		return c
 	}
 	next := func(c *websocket.Conn, typ string) map[string]any {
@@ -250,7 +254,6 @@ func TestPresence(t *testing.T) {
 	}
 	bobConn := dial(bob.SessionToken)
 	defer bobConn.CloseNow()
-	next(bobConn, "READY")
 	aliceConn := dial(alice.SessionToken)
 	if d := next(bobConn, "PRESENCE_UPDATE"); d["user_id"] != alice.User.ID || d["status"] != "online" {
 		t.Fatalf("PRESENCE_UPDATE = %v", d)

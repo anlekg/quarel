@@ -121,6 +121,10 @@ func TestTypingReadAndPrivacy(t *testing.T) {
 	}
 	defer conn.CloseNow()
 	wsjson.Write(ctx, conn, map[string]string{"op": "auth", "token": bob.SessionToken})
+	var ready struct{ T string }
+	if err := wsjson.Read(ctx, conn, &ready); err != nil || ready.T != "READY" { // registered: events from now on reach us
+		t.Fatalf("READY: %v %v", ready.T, err)
+	}
 	next := func() (string, map[string]any) {
 		for {
 			var ev struct {

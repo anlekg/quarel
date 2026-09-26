@@ -120,6 +120,10 @@ func TestVoiceModeration(t *testing.T) {
 	}
 	defer conn.CloseNow()
 	wsjson.Write(ctx, conn, map[string]string{"op": "auth", "token": c.tok("bob")})
+	var ready struct{ T string }
+	if err := wsjson.Read(ctx, conn, &ready); err != nil || ready.T != "READY" { // registered: VOICE_MOVE will reach us
+		t.Fatalf("READY: %v %v", ready.T, err)
+	}
 	c.expect(403, "target_cannot_connect", func() result {
 		c.expect(200, "", c.override(c.owner, b.ID, "member", bob, nil, []string{"connect"}))
 		defer c.call("DELETE", fmt.Sprintf("/v1/channels/%d/overrides/member/%s", b.ID, bob), c.owner, nil, nil)

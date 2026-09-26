@@ -90,8 +90,9 @@ windows:
 
 # --- desktop client (Electron + web UI, in client/) ---
 
+# npm 11 does not run Electron's install script: fetch its binary explicitly.
 client-install:
-	cd client && npm ci
+	cd client && npm ci && node node_modules/electron/install.js
 
 # Desktop app in development mode (UI reloads on change). Start an Identity service first (make run-identity)
 # and choose "localhost:8080" under "Service d'identité" on the sign-in screen.

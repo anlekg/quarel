@@ -110,11 +110,14 @@ jobs:
           mkdir -p ~/.local/bin && tar -xzf /tmp/lk.tgz -C ~/.local/bin livekit-server
       - run: make build
       - name: Install client
+        run: make client-install
+      - name: Chromium for the web and voice tests
         working-directory: client
+        run: npx playwright install --with-deps chromium
+      - name: Electron sandbox helper
+        working-directory: client
+        # Must be setuid root (Ubuntu restricts unprivileged user namespaces).
         run: |
-          npm ci
-          npx playwright install --with-deps chromium
-          # Electron's sandbox helper must be setuid root (Ubuntu restricts unprivileged user namespaces).
           sudo chown root:root node_modules/electron/dist/chrome-sandbox
           sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
       - run: make e2e-client
