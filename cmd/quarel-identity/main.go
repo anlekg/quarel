@@ -25,7 +25,7 @@ import (
 
 func backupSpec(dir string) backup.Spec {
 	return backup.Spec{Kind: "quarel-identity", DataDir: dir, Database: "identity.db", Required: []string{"signing.key"},
-		Files: []string{"retired-keys.json", "turn.secret", settings.FileName}, Dirs: []string{"dm-files", "acme"}, Keep: []string{"admin.json"}}
+		Files: []string{"retired-keys.json", "turn.secret", settings.FileName}, Dirs: []string{"dm-files", "acme"}, Keep: adminui.KeepFiles}
 }
 
 func main() {

@@ -32,7 +32,7 @@ Pour reconstruire l'installateur depuis les sources (Linux ou macOS, avec Go et 
 
 ### Page d'administration
 
-Ouvrez **`http://<adresse de la machine>:8091`** depuis n'importe quel appareil du réseau local (l'adresse est affichée dans le journal).
+Ouvrez **`https://<adresse de la machine>:8091`** depuis n'importe quel appareil du réseau local (l'adresse est affichée dans le journal). Le certificat de la page est auto-signé : le navigateur affiche un avertissement à accepter une fois ; son **empreinte** (SHA-256) est écrite dans le journal pour vérifier qu'il s'agit bien du vôtre. Depuis la machine elle-même, `http://localhost:8091` suffit. La page ne répond qu'à l'adresse IP de la machine, à `localhost` et au nom de la machine (autres noms : `QUAREL_ADMIN_HOSTS`) : un site web ne peut pas la piloter depuis votre navigateur.
 
 1. **Premier passage** : choisissez le mot de passe administrateur. Depuis un autre appareil que la machine elle-même, le **code d'installation** affiché dans le journal est demandé (personne d'autre sur le réseau ne peut prendre la main avant vous).
 2. **Tableau de bord** : état du service, adresse, identifiant, membres, vocal, ports de la box. Tant que le serveur n'a pas de propriétaire, il affiche un **lien propriétaire** : dans l'application Quarel, « Rejoindre un serveur », collez-le : vous devenez propriétaire. Bouton « Renommer le serveur ».
@@ -41,7 +41,7 @@ Ouvrez **`http://<adresse de la machine>:8091`** depuis n'importe quel appareil 
 5. **Journal** : les derniers messages du serveur.
 6. **Services d'identité acceptés** (bas du tableau de bord) : pour chacun, si votre serveur est accepté. Certains services n'autorisent que les serveurs qu'ils ont approuvés : bouton **Demander l'accès** (on vous demande un moyen de vous contacter), puis attendre l'approbation de leur opérateur. Un service peut aussi avoir **bloqué** votre serveur : ses utilisateurs ne peuvent plus le rejoindre.
 
-La page n'est **jamais ouverte vers Internet** : l'UPnP ne l'ouvre pas et elle refuse toute adresse qui ne vient pas du réseau local. Mot de passe oublié : arrêtez le serveur, supprimez `admin.json` dans le volume de données, relancez.
+La page n'est **jamais ouverte vers Internet** : l'UPnP ne l'ouvre pas et elle refuse toute adresse qui ne vient pas du réseau local. Mot de passe oublié : arrêtez le serveur, supprimez `admin.json` dans le volume de données, relancez. Les réglages de la page elle-même (`QUAREL_ADMIN_PUBLIC=1` pour l'ouvrir au-delà du réseau local, `QUAREL_ADMIN_TLS=off` pour accepter HTTP depuis les autres machines, `QUAREL_ADMIN_HOSTS`) ne se règlent que par variables d'environnement : la page ne peut pas élargir elle-même son exposition.
 
 Les réglages sont enregistrés dans `settings.json` (volume de données). Une variable d'environnement `QUAREL_*` (option `-e` de Docker, fichier Compose) reste prioritaire : le réglage correspondant apparaît alors verrouillé dans la page. `QUAREL_ADMIN_ADDR` change l'adresse de la page (`off` pour la couper).
 

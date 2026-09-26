@@ -31,7 +31,7 @@ Le certificat HTTPS est obtenu automatiquement au premier accès.
 
 ### Page d'administration
 
-Le service a une page d'administration sur le port **8081**, publiée seulement sur la machine elle-même (`127.0.0.1:8081`, et elle refuse toute adresse Internet). Sur un serveur loué, passez par un tunnel SSH :
+Le service a une page d'administration sur le port **8081**, publiée seulement sur la machine elle-même (`127.0.0.1:8081`, et elle refuse toute adresse Internet ; les fichiers Compose l'autorisent donc en HTTP, `QUAREL_ADMIN_TLS=off` — ailleurs, les autres machines doivent passer par HTTPS). Sur un serveur loué, passez par un tunnel SSH :
 
 ```sh
 ssh -L 8081:127.0.0.1:8081 utilisateur@mon-serveur    # puis ouvrir http://localhost:8081

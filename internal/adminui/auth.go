@@ -114,12 +114,12 @@ func (a *auth) failed(ip string) {
 	a.mu.Unlock()
 }
 
-func (a *auth) newSession(w http.ResponseWriter) {
+func (a *auth) newSession(w http.ResponseWriter, r *http.Request) {
 	token := secret.NewToken()
 	a.mu.Lock()
 	a.sessions[secret.SHA256Hex(token)] = time.Now().Add(sessionTTL)
 	a.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: token, Path: "/", HttpOnly: true,
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: token, Path: "/", HttpOnly: true, Secure: r.TLS != nil,
 		SameSite: http.SameSiteStrictMode, MaxAge: int(sessionTTL.Seconds())})
 }
 
@@ -154,8 +154,13 @@ func (a *auth) codeOK(code string) bool {
 	return a.setupCode != "" && subtle.ConstantTimeCompare([]byte(strings.ToLower(strings.TrimSpace(code))), []byte(a.setupCode)) == 1
 }
 
-// isLoopback: requests from this machine may choose the first password without the setup code.
+// isLoopback: requests from this machine may choose the first password
+// without the setup code, and use plain HTTP. A request relayed by a proxy on
+// this machine (forwarding headers) comes from elsewhere: it is not loopback.
 func isLoopback(r *http.Request) bool {
+	if r.Header.Get("X-Forwarded-For") != "" || r.Header.Get("Forwarded") != "" || r.Header.Get("X-Real-Ip") != "" {
+		return false
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return false
