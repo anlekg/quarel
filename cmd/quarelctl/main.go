@@ -156,6 +156,7 @@ Rôles et permissions
 
 Modération
   kick <membre> [raison]           expulser (peut revenir avec une invitation)
+  transfer-owner <membre>          transmettre la propriété du serveur (propriétaire seulement)
   ban <membre> [--purge=durée|tout] [raison]   bannir l'identité (ne peut plus revenir), en effaçant ses messages récents
   unban <membre>                   lever un bannissement
   bans                             membres bannis

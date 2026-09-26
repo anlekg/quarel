@@ -613,6 +613,19 @@ export function MemberDialog({ conn, ready, member, onClose }: { conn: ServerCon
           </div>
         </div>
       )}
+      {ready.member.owner && !self && !m.bot && (
+        <div className="field">
+          <label>Propriété du serveur</label>
+          <div className="mod-actions">
+            <button className="btn btn-ghost btn-sm danger-text" disabled={a.busy} onClick={() => {
+              if (confirm('Transmettre la propriété du serveur à ' + m.display_name + ' ? Vous resterez membre, sans droits particuliers : seule cette personne pourra vous la rendre.')) a.run(async () => {
+                await conn.api((c) => c.transferOwnership(m.id))
+                return m.display_name + ' est maintenant propriétaire du serveur.'
+              })
+            }}>Transférer la propriété</button>
+          </div>
+        </div>
+      )}
       <Alert kind="error">{a.error}</Alert>
       <Alert kind="info">{a.info}</Alert>
       <div className="dialog-actions"><button className="btn btn-ghost btn-sm" onClick={onClose}>Fermer</button></div>
@@ -736,6 +749,7 @@ const actions: Record<string, string> = {
   server_update: 'a modifié le serveur', invite_delete: 'a révoqué une invitation', bot_create: 'a créé un bot', bot_delete: 'a supprimé un bot',
   bot_token_reset: 'a renouvelé le jeton d’un bot', voice_mute: 'a coupé le micro de', voice_deafen: 'a mis en sourdine',
   voice_move: 'a déplacé', voice_disconnect: 'a déconnecté du vocal',
+  owner_transfer: 'a transmis la propriété du serveur à', owner_reset: 'a retiré le propriétaire (nouveau lien propriétaire créé)',
 }
 
 function Audit({ conn, ready }: { conn: ServerConn; ready: Ready }) {
@@ -749,11 +763,11 @@ function Audit({ conn, ready }: { conn: ServerConn; ready: Ready }) {
     }, (e) => setError(errorMessage(e)))
   }, [conn])
   useEffect(() => more(), [more])
-  const who = (id: string | null, fallback?: string) => (id ? ready.members.find((m) => m.id === id)?.display_name ?? (fallback || 'ancien membre') : 'le serveur')
+  const who = (id: string | null, fallback?: string) => (id ? ready.members.find((m) => m.id === id)?.display_name ?? (fallback || 'ancien membre') : 'L’hébergeur')
   const target = (e: AuditEntry) => {
     if (!e.target_id) return ''
     if (e.action === 'member_role_add' || e.action === 'member_role_remove') return who(e.target_id, e.target_name) + ' (« ' + String(e.details?.role ?? '') + ' »)'
-    if (e.action.startsWith('member_') || e.action.startsWith('voice_') || e.action === 'messages_delete') return who(e.target_id, e.target_name)
+    if (e.action.startsWith('member_') || e.action.startsWith('voice_') || e.action === 'messages_delete' || e.action === 'owner_transfer') return who(e.target_id, e.target_name)
     if (e.action.startsWith('role_')) return '« ' + (ready.roles.find((r) => String(r.id) === e.target_id)?.name ?? String(e.details?.name ?? e.target_id)) + ' »'
     if (e.action.startsWith('channel_') || e.action.startsWith('override_')) return '« ' + (ready.channels.find((c) => String(c.id) === e.target_id)?.name ?? String(e.details?.name ?? e.target_id)) + ' »'
     return ''

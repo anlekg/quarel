@@ -287,6 +287,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/members/{id}/timeout", s.authed(s.handleTimeout))
 	mux.HandleFunc("DELETE /v1/members/{id}/timeout", s.authed(s.handleTimeout))
 	mux.HandleFunc("POST /v1/members/{id}/purge", s.authed(s.handlePurge))
+	mux.HandleFunc("POST /v1/members/{id}/transfer-ownership", s.authed(s.handleTransferOwnership))
 	mux.HandleFunc("POST /v1/members/@me/accept-rules", s.authed(s.handleAcceptRules))
 	mux.HandleFunc("POST /v1/members/@me/phone", s.authed(s.handlePhoneStart))
 	mux.HandleFunc("POST /v1/members/@me/phone/verify", s.authed(s.handlePhoneVerify))

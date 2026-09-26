@@ -347,6 +347,11 @@ export class CommunityClient {
     return this.call<void>('POST', '/v1/members/' + encodeURIComponent(member) + '/kick', { reason })
   }
 
+  // The owner hands the server over (they stay a member, without special rights).
+  transferOwnership(member: string) {
+    return this.call<void>('POST', '/v1/members/' + encodeURIComponent(member) + '/transfer-ownership')
+  }
+
   ban(member: string, reason?: string, deleteMessages = 0) {
     return this.call<void>('PUT', '/v1/bans/' + encodeURIComponent(member), { reason, delete_messages: deleteMessages })
   }

@@ -136,6 +136,7 @@ Légende : 🔑 = permission requise.
 | `GET /v1/bans` ; `PUT /v1/bans/{id}` ; `DELETE /v1/bans/{id}` | 🔑 `ban_members` | PUT : `{reason?, delete_messages?: secondes, -1 = tout}` |
 | `PUT /v1/members/{id}/timeout` ; `DELETE …` | 🔑 `moderate_members` | `{duration: secondes (≤ 28 j), reason?}` |
 | `POST /v1/members/{id}/purge` | 🔑 `manage_messages` | `{window: secondes ou -1, channel_id?, reason?}` → `{deleted}` |
+| `POST /v1/members/{id}/transfer-ownership` | propriétaire | Transmet le serveur à ce membre (une personne, pas un bot) ; l'ancien propriétaire reste membre |
 | `GET /v1/audit-log` | 🔑 `view_audit_log` | `?limit=&before=&action=&actor_id=&target_id=` → `[{id, actor_id, action, target_id, reason, details, created_at, actor_name?, target_name?}]` (noms des membres concernés, même partis) ; conservé 90 jours |
 
 On n'agit que sur un membre dont le rôle le plus haut est **strictement sous** le vôtre ; le propriétaire est intouchable, les administrateurs ne peuvent pas être exclus temporairement.

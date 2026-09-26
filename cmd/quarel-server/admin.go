@@ -32,6 +32,12 @@ func (l *live) set(srv *community.Server, cfg community.Config, claim, voice str
 	l.srv, l.cfg, l.claim, l.voice, l.mapper, l.ports = srv, cfg, claim, voice, mapper, ports
 }
 
+func (l *live) setClaim(claim string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.claim = claim
+}
+
 func (l *live) get() (*community.Server, community.Config, string, string, *netdiag.PortMapper, []netdiag.Mapping) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -150,7 +156,7 @@ func (l *live) status(r *http.Request) map[string]any {
 		notices = append(notices, map[string]string{"level": "info", "text": "Certificat automatique : l'application de bureau vérifie ce serveur grâce à son identité, mais les navigateurs le refusent. " +
 			"Pour que la version web (" + webApp + ") puisse aussi le rejoindre, donnez-lui un nom de domaine et choisissez Let's Encrypt (réglages › HTTPS), ou placez-le derrière un proxy HTTPS."})
 	}
-	resp := map[string]any{"items": items, "notices": notices}
+	resp := map[string]any{"items": items, "notices": notices, "has_owner": ov.HasOwner}
 	if !ov.HasOwner && claim != "" {
 		addr := strings.TrimPrefix(httpsURL(host, port), "https://")
 		resp["claim_code"] = claim
@@ -207,6 +213,24 @@ func (l *live) api() http.Handler {
 			adminui.WriteError(w, r, err)
 			return
 		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	// The owner can no longer sign in (account lost or deleted): the host
+	// removes them and gets a new owner link.
+	mux.HandleFunc("POST /reset-owner", func(w http.ResponseWriter, r *http.Request) {
+		srv, _, _, _, _, _ := l.get()
+		if srv == nil {
+			http.Error(w, "service not running", http.StatusServiceUnavailable)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		claim, err := srv.ResetOwnership(ctx)
+		if err != nil {
+			adminui.WriteError(w, r, err)
+			return
+		}
+		l.setClaim(claim)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /identity", func(w http.ResponseWriter, r *http.Request) {

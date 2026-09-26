@@ -354,3 +354,42 @@ func TestGatewayPermissions(t *testing.T) {
 		}
 	}
 }
+
+// The owner hands the server over; the host can take it back when the owner
+// can no longer sign in, and gets a new claim code.
+func TestOwnership(t *testing.T) {
+	c := newCommunity(t, "bob", "carol")
+	ownerID := c.srv.mustOwner(t)
+	c.expect(403, "not_owner", c.call("POST", "/v1/members/"+c.id("carol")+"/transfer-ownership", c.tok("bob"), nil, nil))
+	c.expect(400, "invalid_target", c.call("POST", "/v1/members/"+ownerID+"/transfer-ownership", c.owner, nil, nil))
+	c.expect(204, "", c.call("POST", "/v1/members/"+c.id("bob")+"/transfer-ownership", c.owner, nil, nil))
+	if got := c.srv.mustOwner(t); got != c.id("bob") {
+		t.Fatalf("owner is %s, want bob", got)
+	}
+	// The former owner stays, without special rights; the new one can leave no more.
+	c.expect(403, "missing_permissions", c.call("PATCH", "/v1/server", c.owner, map[string]any{"name": "Pris"}, nil))
+	c.expect(400, "owner_cannot_leave", c.call("DELETE", "/v1/members/@me", c.tok("bob"), nil, nil))
+
+	code, err := c.srv.ResetOwnership(context.Background())
+	if err != nil || code == "" {
+		t.Fatalf("reset: %q %v", code, err)
+	}
+	var owners int
+	c.srv.db.QueryRow(`SELECT COUNT(*) FROM members WHERE is_owner = 1`).Scan(&owners)
+	if owners != 0 {
+		t.Fatalf("%d owners after reset", owners)
+	}
+	lr := c.mustLogin(c.users["carol"], loginOpts{claim: code})
+	if !lr.Member.Owner {
+		t.Fatal("claim after reset did not make carol the owner")
+	}
+}
+
+func (s *Server) mustOwner(t *testing.T) string {
+	t.Helper()
+	var id string
+	if err := s.db.QueryRow(`SELECT id FROM members WHERE is_owner = 1`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}

@@ -35,6 +35,8 @@ const (
 	auditOverrideUpdate   = "override_update"
 	auditOverrideDelete   = "override_delete"
 	auditServerUpdate     = "server_update"
+	auditOwnerTransfer    = "owner_transfer"
+	auditOwnerReset       = "owner_reset"   // by the host, from the administration page
 	auditInviteDelete     = "invite_delete" // someone else's invite
 	auditBotCreate        = "bot_create"
 	auditBotDelete        = "bot_delete"
@@ -68,12 +70,15 @@ func (s *Server) audit(ctx context.Context, q querier, actor, action, target, re
 		details = map[string]any{}
 	}
 	d, _ := json.Marshal(details)
-	var targetArg any
+	var actorArg, targetArg any // NULL actor: the host (administration page)
+	if actor != "" {
+		actorArg = actor
+	}
 	if target != "" {
 		targetArg = target
 	}
 	if _, err := q.ExecContext(ctx, `INSERT INTO audit_log (actor_id, action, target_id, reason, details, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		actor, action, targetArg, reason, string(d), s.nowMs()); err != nil {
+		actorArg, action, targetArg, reason, string(d), s.nowMs()); err != nil {
 		s.logErr("writing the audit log", err)
 	}
 }

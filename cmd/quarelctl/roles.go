@@ -66,6 +66,8 @@ func (c *cli) runRoles(cmd string, args []string) (bool, error) {
 		err = c.setOverride(args, true)
 	case "kick":
 		err = c.kick(args)
+	case "transfer-owner":
+		err = c.transferOwner(args)
 	case "ban":
 		err = c.ban(args)
 	case "unban":
@@ -386,6 +388,19 @@ func (c *cli) moderate(args []string) (string, string, error) {
 		name = m.DisplayName
 	}
 	return id, name, nil
+}
+
+// transferOwner hands the server over to another member (owner only).
+func (c *cli) transferOwner(args []string) error {
+	id, name, err := c.moderate(args)
+	if err != nil {
+		return err
+	}
+	if err := c.cdo("POST", "/v1/members/"+id+"/transfer-ownership", nil, nil); err != nil {
+		return err
+	}
+	fmt.Printf("%s est maintenant propriétaire du serveur ; vous restez membre.\n", name)
+	return nil
 }
 
 func (c *cli) kick(args []string) error {
