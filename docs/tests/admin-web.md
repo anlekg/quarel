@@ -15,7 +15,7 @@
 9. Une variable d'environnement (ex. `QUAREL_MAX_UPLOAD_MB` dans le fichier Compose) → le réglage est verrouillé dans la page.
 
 ## Service d'identité
-1. `make run-identity` : page sur `http://localhost:8081` (sur un serveur loué : tunnel SSH, voir `docs/deploiement-identity.md`).
+1. `make run-identity` : page sur `http://localhost:8081` (sur un serveur loué : tunnel SSH, voir `site/src/content/docs/wiki/heberger/service-identite.md`).
 2. Tableau de bord : alertes « nom public localhost » et « aucun serveur d'emails ».
 3. **Comptes** : rechercher un compte, le désactiver (raison obligatoire) → il ne peut plus se connecter ; le réactiver. Le journal de l'opérateur garde les deux actions.
 4. **Changer la clé de signature** : le service redémarre ; les connexions existantes continuent.

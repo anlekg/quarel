@@ -1,4 +1,9 @@
-# Héberger un serveur communautaire Quarel
+---
+title: Héberger un serveur communautaire
+description: Installer votre propre serveur Quarel avec Docker ou sous Windows, le régler, le sauvegarder et le mettre à jour.
+sidebar:
+  order: 1
+---
 
 Un serveur communautaire, c'est votre « serveur Discord » à vous : salons textuels et vocaux, rôles, modération. Il tourne chez vous (un PC, un mini-serveur, un NAS avec Docker) ; les membres s'y connectent avec leur compte Quarel.
 

@@ -131,7 +131,7 @@
 
 ### B8. Bots et intégrations
 - [x] **P1** Comptes bot avec jeton propre au serveur
-- [x] **P1** API publique documentée pour les bots *(`docs/api.md`, bot d'exemple `examples/pingbot`)*
+- [x] **P1** API publique documentée pour les bots *(`site/src/content/docs/wiki/developper/api.md`, bot d'exemple `examples/pingbot`)*
 - [ ] **P2** Webhooks entrants
 - [ ] **P2** Commandes slash
 

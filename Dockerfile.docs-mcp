@@ -1,0 +1,16 @@
+# MCP server of the Quarel documentation (the wiki of site/, served at quarel.app/mcp)
+# Build : docker build -f Dockerfile.docs-mcp -t quarel-docs-mcp .
+FROM golang:1.27-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/anlekg/quarel/internal/backup.Release=${VERSION}" -o /out/quarel-docs-mcp ./cmd/quarel-docs-mcp
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/quarel-docs-mcp /quarel-docs-mcp
+COPY site/src/content/docs /docs
+EXPOSE 8095
+ENTRYPOINT ["/quarel-docs-mcp"]
+CMD ["-docs", "/docs", "-addr", ":8095"]

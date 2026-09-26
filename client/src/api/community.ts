@@ -1,4 +1,4 @@
-// Client for a community server (see docs/api.md).
+// Client for a community server (see site/src/content/docs/wiki/developper/api.md).
 import { request } from './http'
 
 export interface ServerInfo {

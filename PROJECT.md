@@ -337,7 +337,7 @@ Demande du CP : « on finit la P1 ! ». Découpage annoncé en 7 blocs (messages
 
 ### P1 — Bloc 2 : modération et accès (livré le 2026-09-24)
 
-**Livré :** exclusion temporaire (lecture seule jusqu'à 28 jours, sortie du vocal, fin automatique), journal d'audit (expulsions, bans, exclusions, rôles, salons, droits, réglages, suppressions de messages d'autrui, bots ; filtres et pagination), suppression en masse (par liste, par membre sur une période, ou au bannissement), écran de règles, vérification du téléphone (Twilio Verify ou mode développement, empreinte du numéro, pas de retour d'un banni avec le même numéro), bots (création, jeton, renouvellement, suppression), **documentation publique de l'API** (`docs/api.md`) et bot d'exemple (`examples/pingbot`).
+**Livré :** exclusion temporaire (lecture seule jusqu'à 28 jours, sortie du vocal, fin automatique), journal d'audit (expulsions, bans, exclusions, rôles, salons, droits, réglages, suppressions de messages d'autrui, bots ; filtres et pagination), suppression en masse (par liste, par membre sur une période, ou au bannissement), écran de règles, vérification du téléphone (Twilio Verify ou mode développement, empreinte du numéro, pas de retour d'un banni avec le même numéro), bots (création, jeton, renouvellement, suppression), **documentation publique de l'API** (`site/src/content/docs/wiki/developper/api.md`) et bot d'exemple (`examples/pingbot`).
 
 **Validation :** tests d'intégration (exclusion : droits, hiérarchie, administrateurs, vocal, fin automatique ; journal : contenu, filtres, pagination, expiration ; suppressions en masse et purge ; règles ; téléphone : codes, numéro déjà utilisé, numéro d'un banni, numéro d'un ancien membre ; Twilio contre un faux Twilio ; bots : jeton, hiérarchie, renouvellement, suppression) ; `make e2e-moderation` (24/24, avec le bot d'exemple réellement connecté en HTTPS auto-signé) ; détecteur de concurrence.
 
@@ -361,7 +361,7 @@ Demande du CP : « on finit la P1 ! ». Découpage annoncé en 7 blocs (messages
 
 **Non testé en conditions réelles :** Let's Encrypt avec le vrai domaine `identity.quarel.app` (nécessite le DNS) ; envoi d'emails par un vrai serveur SMTP.
 
-**Guide de test du CP :** `docs/tests/p1-bloc-4.md` ; déploiement : `docs/deploiement-identity.md`.
+**Guide de test du CP :** `docs/tests/p1-bloc-4.md` ; déploiement : `site/src/content/docs/wiki/heberger/service-identite.md`.
 
 ### P1 — Bloc 5 : messages privés avancés (livré le 2026-09-24)
 
@@ -383,7 +383,7 @@ Demande du CP : « on finit la P1 ! ». Découpage annoncé en 7 blocs (messages
 
 ### P1 — Bloc 7 : exploitation des serveurs (livré le 2026-09-24)
 
-**Livré :** commandes `backup`, `restore` et `version` pour le serveur communautaire et le service Identity (à chaud, vérifiées, sans écrasement), copie de la base avant chaque mise à jour de schéma, refus des retours arrière dangereux, guide de l'hébergeur (`docs/heberger-un-serveur.md`) et procédures Docker.
+**Livré :** commandes `backup`, `restore` et `version` pour le serveur communautaire et le service Identity (à chaud, vérifiées, sans écrasement), copie de la base avant chaque mise à jour de schéma, refus des retours arrière dangereux, guide de l'hébergeur (`site/src/content/docs/wiki/heberger/serveur-communautaire.md`) et procédures Docker.
 
 **Validation :** tests unitaires (aller-retour sauvegarde/restauration avec base ouverte, refus sans `--force`, anciennes données conservées, mauvais type, version trop récente, chemins hors dossier et archive invalide refusés, clé absente ; copie avant migration et refus d'une base plus récente) ; `make e2e-ops` (15/15) avec les vrais binaires en marche ; procédure Docker vérifiée (sauvegarde depuis un conteneur en marche, restauration dans un volume neuf, **même identité de serveur**). Bug trouvé et corrigé : l'utilisateur non-root du conteneur ne pouvait pas lire une sauvegarde de l'hôte → restauration depuis l'entrée standard.
 
@@ -524,3 +524,12 @@ Découpage : **4a** amis, conversations et groupes chiffrés ; **4b** validation
 | 2026-09-26 | Mises à jour servies par **`app.quarel.app/updates`** (choix du CP), moteur `electron-updater` (MIT, flux « generic ») | Hébergement déjà en place, pas de dépendance à GitHub ni à un service tiers. |
 | 2026-09-26 | **Chaque version est signée par une clé Ed25519 de publication** (clé publique dans l'application, `electron/releasesig.ts`) : l'application ne télécharge que ce que la signature couvre et n'installe qu'un fichier dont l'empreinte SHA-512 est celle signée | Les installateurs ne sont pas encore signés (Authenticode) : sans cela, quiconque prendrait la main sur l'hébergement web pourrait pousser du code sur toutes les machines. La clé privée reste hors du serveur web (`~/.config/quarel-release/`). **La perdre = plus de mise à jour automatique possible** (il faudrait réinstaller à la main une version portant une nouvelle clé) : à sauvegarder hors de la machine. |
 | 2026-09-26 | Windows (installateur NSIS) et Linux AppImage se mettent à jour seuls (téléchargement en fond, bandeau « Redémarrer », sinon installation à la fermeture) ; le paquet **.deb** affiche seulement qu'une version existe, avec le lien | Un `.deb` s'installe avec les droits administrateur : l'application ne doit pas le faire elle-même. |
+
+### Site quarel.app, wiki et MCP de la documentation (2026-09-26)
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-09-26 | Site et wiki avec **Astro + Starlight** (choix du CP), sources dans le dépôt (`site/`), servis par le nginx existant | Page de présentation soignée et wiki Markdown avec recherche dans un même site statique ; la documentation suit le code dans les mêmes commits. |
+| 2026-09-26 | **Français d'abord, anglais ensuite** ; page d'accueil présentée comme **version de test** (choix du CP) | Cohérent avec l'application et la phase actuelle (inscriptions sur invitation). |
+| 2026-09-26 | Le wiki devient **la** documentation publique (guides d'hébergement et API déplacés depuis `docs/`) | Une seule source, publiée. |
+| 2026-09-26 | **MCP de la documentation** (choix du CP) sur `quarel.app/mcp` : serveur Go du dépôt, lecture seule, sans compte ; plus `llms.txt` / `llms-full.txt` | Les assistants IA répondent aux questions d'hébergement et d'API à partir de la documentation à jour, en citant les pages. |

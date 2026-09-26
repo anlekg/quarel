@@ -1,0 +1,220 @@
+---
+// Presentation page of quarel.app. The wiki lives under /wiki/ (Starlight).
+import '@fontsource/manrope/400.css'
+import '@fontsource/manrope/600.css'
+import '@fontsource/manrope/700.css'
+import '@fontsource/space-grotesk/600.css'
+import '../styles/home.css'
+import { downloads, github, version, webApp } from '../lib/release'
+
+const title = 'Quarel — vos communautés, chez vous'
+const description = 'Alternative libre et auto-hébergeable à Discord : serveurs chez leurs hébergeurs, messages privés et appels chiffrés de bout en bout.'
+
+const features = [
+  { icon: 'home', title: 'Chaque serveur chez son hébergeur', text: 'Un PC, un mini-serveur ou un NAS suffit. Une commande Docker ou un installateur Windows, les ports de la box ouverts tout seuls, une page d’administration dans le navigateur.' },
+  { icon: 'lock', title: 'Messages privés chiffrés', text: 'Conversations et groupes chiffrés de bout en bout (Olm/Megolm, le protocole de Matrix). Le service ne voit que des données illisibles ; vos appareils se valident entre eux.' },
+  { icon: 'wave', title: 'Vocal, vidéo, partage d’écran', text: 'Salons vocaux intégrés au serveur (LiveKit) : caméra, écran avec le son, modération du micro. Le son ne passe par aucun serveur central.' },
+  { icon: 'phone', title: 'Appels entre amis en direct', text: 'Pair à pair, chiffrés de bout en bout. Un relais de secours prend le relais quand les box sont trop strictes ; vous pouvez le refuser.' },
+  { icon: 'shield', title: 'Modération complète', text: 'Rôles, droits par salon, exclusions temporaires, bannissements, journal de modération, règles à accepter, vérification par SMS, bots.' },
+  { icon: 'id', title: 'Un compte pour tous les serveurs', text: 'Votre identité vient d’un service d’identité (le nôtre ou le vôtre : il est lui aussi auto-hébergeable). Chaque serveur reste isolé des autres.' },
+]
+
+const icons: Record<string, string> = {
+  home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
+  lock: 'M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3',
+  wave: 'M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4',
+  phone: 'M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2',
+  shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+  id: 'M4 6h16v12H4zM8 10.5a1.5 1.5 0 1 0 0 .01M7 15h3M13 10h4M13 14h4',
+}
+---
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://quarel.app/" />
+    <meta name="theme-color" content="#111317" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap top-in">
+        <a class="brand" href="/"><img src="/favicon.svg" alt="" width="28" height="28" /> Quarel</a>
+        <nav aria-label="Navigation principale">
+          <a href="#fonctions">Fonctions</a>
+          <a href="#telecharger">Télécharger</a>
+          <a href="#heberger">Héberger</a>
+          <a href="/wiki/decouvrir/presentation/">Wiki</a>
+          <a href={github} class="gh" aria-label="Code source sur GitHub"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.82 1.19 3.08 0 4.41-2.7 5.38-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5"/></svg></a>
+          <a class="btn btn-primary btn-sm" href={webApp}>Ouvrir l’app web</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="wrap hero-in">
+          <div class="hero-text">
+            <span class="badge">Version de test · {version}</span>
+            <h1>Vos communautés,<br /><span class="accent">chez vous.</span></h1>
+            <p class="lead">Quarel est une alternative libre à Discord. Chaque serveur tourne chez la personne qui l’héberge ; vos messages privés et vos appels sont chiffrés de bout en bout.</p>
+            <div class="ctas">
+              <a class="btn btn-primary" href="#telecharger">Télécharger l’application</a>
+              <a class="btn btn-ghost" href={webApp}>Essayer dans le navigateur</a>
+            </div>
+            <p class="small muted">Licence Apache-2.0 · sans publicité · sans pistage</p>
+          </div>
+
+          <div class="mock" aria-hidden="true">
+            <div class="mock-rail">
+              <span class="mock-srv on">Q</span><span class="mock-srv">JV</span><span class="mock-srv">A</span><span class="mock-add">+</span>
+            </div>
+            <div class="mock-side">
+              <strong>Les Copains</strong>
+              <span class="mock-cat">Salons textuels</span>
+              <span class="mock-ch on"># général</span>
+              <span class="mock-ch"># jeux</span>
+              <span class="mock-ch"># captures</span>
+              <span class="mock-cat">Salons vocaux</span>
+              <span class="mock-ch">🔊 Salon</span>
+              <span class="mock-voice"><i></i>Sam</span>
+              <span class="mock-voice"><i class="talk"></i>Alex</span>
+            </div>
+            <div class="mock-chat">
+              <div class="mock-head"># général</div>
+              <div class="mock-msg"><b class="av a1">S</b><div><span class="who">Sam <em>aujourd’hui à 20:14</em></span><p>Ce soir 21 h, quelqu’un pour la partie ?</p></div></div>
+              <div class="mock-msg"><b class="av a2">A</b><div><span class="who">Alex <em>aujourd’hui à 20:16</em></span><p>Je suis là ! J’ouvre le vocal 🎧</p><span class="react">👍 3</span></div></div>
+              <div class="mock-msg"><b class="av a3">C</b><div><span class="who">Charlie <em>aujourd’hui à 20:17</em></span><p>Le serveur tourne sur le mini-PC du salon, aucun abonnement 😄</p></div></div>
+              <div class="mock-input">Écrire dans #général</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="fonctions" class="section">
+        <div class="wrap">
+          <h2>Tout ce qu’il faut à une communauté</h2>
+          <p class="section-lead">Salons textuels et vocaux, amis, messages privés, appels : les usages de Discord, sans plateforme centrale qui détient vos serveurs.</p>
+          <div class="grid">
+            {features.map((f) => (
+              <article class="card">
+                <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d={icons[f.icon]} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                <h3>{f.title}</h3>
+                <p>{f.text}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section class="section alt">
+        <div class="wrap">
+          <h2>Comment ça marche</h2>
+          <p class="section-lead">Trois pièces indépendantes. Aucune ne voit tout.</p>
+          <div class="how">
+            <div class="how-step">
+              <span class="num">1</span>
+              <h3>Un service d’identité</h3>
+              <p>Il gère votre compte, vos amis et relaie vos messages privés <strong>chiffrés</strong>. Le nôtre est <code>identity.quarel.app</code> ; une association peut héberger le sien.</p>
+            </div>
+            <div class="how-step">
+              <span class="num">2</span>
+              <h3>L’application</h3>
+              <p>Windows, Linux ou navigateur. Elle chiffre vos messages privés, vérifie chaque serveur et garde vos clés sur vos appareils.</p>
+            </div>
+            <div class="how-step">
+              <span class="num">3</span>
+              <h3>Des serveurs communautaires</h3>
+              <p>Chacun chez son hébergeur, totalement isolé des autres : ses salons, ses règles, sa modération. Il accepte les comptes des services d’identité qu’il choisit.</p>
+            </div>
+          </div>
+          <p class="center"><a class="link" href="/wiki/decouvrir/architecture/">Architecture en détail →</a></p>
+        </div>
+      </section>
+
+      <section id="telecharger" class="section">
+        <div class="wrap">
+          <h2>Télécharger</h2>
+          <p class="section-lead">Version {version}. L’application se met à jour toute seule ; chaque mise à jour est signée par Quarel et refusée si elle ne l’est pas.</p>
+          <div class="dl">
+            <a class="dl-card" href={downloads.windows}>
+              <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path fill="currentColor" d="M3 5.5 10 4.5v7H3zM11 4.3 21 3v8.5H11zM3 12.5h7v7l-7-1zM11 12.5h10V21l-10-1.4z" /></svg>
+              <span><strong>Windows</strong><em>10 et 11, 64 bits · installateur</em></span>
+            </a>
+            <a class="dl-card" href={downloads.appimage}>
+              <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M12 3c-2.5 0-3.5 2-3.5 4.5 0 1.5-.5 2.5-1.5 4S4.5 15 5 17.5c.3 1.5 2 2.5 3.5 2.5h7c1.5 0 3.2-1 3.5-2.5.5-2.5-1-4.5-2-6s-1.5-2.5-1.5-4C15.5 5 14.5 3 12 3z" /></svg>
+              <span><strong>Linux · AppImage</strong><em>toutes distributions · mises à jour automatiques</em></span>
+            </a>
+            <a class="dl-card" href={downloads.deb}>
+              <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 7l8-4 8 4v10l-8 4-8-4zM4 7l8 4 8-4M12 11v10" /></svg>
+              <span><strong>Linux · .deb</strong><em>Debian, Ubuntu · mises à jour manuelles</em></span>
+            </a>
+            <a class="dl-card" href={webApp}>
+              <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z" /></svg>
+              <span><strong>App web</strong><em>navigateur, téléphone · installable</em></span>
+            </a>
+          </div>
+          <p class="note">Les installateurs ne sont pas encore signés par un certificat d’éditeur : Windows affiche « Windows a protégé votre ordinateur » ; choisissez « Informations complémentaires » puis « Exécuter quand même ». <a class="link" href="/wiki/utiliser/installer/">Aide à l’installation</a></p>
+        </div>
+      </section>
+
+      <section id="heberger" class="section alt">
+        <div class="wrap">
+          <h2>Héberger</h2>
+          <p class="section-lead">Pensé pour du matériel modeste : une image Docker unique, une base SQLite embarquée, aucun service externe obligatoire.</p>
+          <div class="host">
+            <article class="card">
+              <h3>Un serveur communautaire</h3>
+              <p>Votre « serveur Discord » à vous. Avec Docker :</p>
+              <pre><code>git clone https://github.com/anlekg/quarel.git
+cd quarel/deploy/server
+docker compose up -d --build</code></pre>
+              <p>Puis ouvrez la page d’administration sur <code>http://&lt;machine&gt;:8091</code> et devenez propriétaire depuis l’application. Un installateur Windows existe aussi.</p>
+              <a class="link" href="/wiki/heberger/serveur-communautaire/">Guide de l’hébergeur →</a>
+            </article>
+            <article class="card">
+              <h3>Un service d’identité</h3>
+              <p>Pour une association, une école, une famille : vos propres comptes, vos règles d’inscription, votre relais d’appels. Il faut un nom de domaine et un compte SMTP.</p>
+              <pre><code>cd quarel/deploy/identity
+cp .env.example .env   # domaine, SMTP
+docker compose up -d --build</code></pre>
+              <a class="link" href="/wiki/heberger/service-identite/">Déployer un service d’identité →</a>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="wrap open">
+          <div>
+            <h2>Libre et ouvert</h2>
+            <p>Tout le code est public sous licence Apache-2.0 : les serveurs (Go), l’application (Electron, React) et le chiffrement (vodozemac). Les bots utilisent une API documentée, et les assistants IA peuvent consulter la documentation grâce à notre serveur MCP.</p>
+            <div class="ctas">
+              <a class="btn btn-primary" href={github}>Voir sur GitHub</a>
+              <a class="btn btn-ghost" href="/wiki/developper/api/">API et bots</a>
+              <a class="btn btn-ghost" href="/wiki/developper/mcp/">MCP de la documentation</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="wrap foot-in">
+        <span><img src="/favicon.svg" alt="" width="20" height="20" /> Quarel — version de test</span>
+        <nav aria-label="Liens de bas de page">
+          <a href="/wiki/decouvrir/presentation/">Wiki</a>
+          <a href="/wiki/decouvrir/securite/">Sécurité</a>
+          <a href="/wiki/decouvrir/statut/">Statut du projet</a>
+          <a href={github}>GitHub</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -39,5 +39,12 @@ This product includes or bundles third-party software:
 - Manrope and Space Grotesk fonts (bundled in the client via Fontsource)
   SIL Open Font License 1.1
 
+- MCP server of the documentation (cmd/quarel-docs-mcp): the official MCP Go SDK
+  (github.com/modelcontextprotocol/go-sdk, MIT / Apache License 2.0) and its
+  dependencies (MIT, BSD-3-Clause)
+- Web site quarel.app (site/): built with Astro and Starlight (MIT); the
+  published pages include Starlight's scripts, Pagefind search (MIT) and the
+  Manrope / Space Grotesk fonts (SIL Open Font License 1.1)
+
 Go module dependencies and their licenses are listed in go.mod / go.sum;
 client JavaScript dependencies in client/package.json / package-lock.json.

@@ -1,8 +1,13 @@
-# API des serveurs communautaires Quarel
+---
+title: API des serveurs communautaires
+description: Référence de l’API v1 des serveurs communautaires, pour les bots et les clients.
+sidebar:
+  order: 1
+---
 
 Cette page décrit l'API d'un **serveur communautaire** Quarel, telle que l'utilisent les clients et les **bots**. Elle est stable dans sa version `v1` : des champs et des routes peuvent s'ajouter, rien d'existant n'est retiré ni renommé sans passer à `v2`. Un client doit donc ignorer les champs et les événements qu'il ne connaît pas.
 
-Un exemple complet de bot (~150 lignes de Go) se trouve dans [`examples/pingbot`](../examples/pingbot/main.go).
+Un exemple complet de bot (~150 lignes de Go) se trouve dans [`examples/pingbot`](https://github.com/anlekg/quarel/blob/main/examples/pingbot/main.go).
 
 ## 1. Principes
 
@@ -25,7 +30,7 @@ Un gestionnaire du serveur (permission `manage_server`) crée le bot : `POST /v1
 Un bot est un membre comme les autres (`"bot": true`) : il reçoit ses droits par des **rôles** (`PUT /v1/members/{id}/roles/{role}`), sans compte sur un service d'identité. Il n'est pas concerné par l'écran de règles ni par la vérification du téléphone.
 
 ### Membres (clients)
-Les personnes se connectent avec leur identité portable : `POST /v1/auth/challenge` → `{server_id, nonce}`, puis `POST /v1/auth/login {identity_token, nonce, proof, invite?}` → `{session_token, expires_at, member, server, joined}`. La session expire avec le jeton d'identité (12 h par défaut) ; le client se reconnecte alors. Ce processus est décrit dans `CLAUDE.md` (jalon 2) ; un bot n'en a pas besoin.
+Les personnes se connectent avec leur identité portable : `POST /v1/auth/challenge` → `{server_id, nonce}`, puis `POST /v1/auth/login {identity_token, nonce, proof, invite?}` → `{session_token, expires_at, member, server, joined}`. La session expire avec le jeton d'identité (12 h par défaut) ; le client se reconnecte alors. Ce processus est décrit dans [Sécurité et chiffrement](/wiki/decouvrir/securite/) ; un bot n'en a pas besoin.
 
 ## 3. Temps réel (`GET /v1/gateway`, WebSocket)
 

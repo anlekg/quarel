@@ -30,5 +30,5 @@ services:
       - identity-data:/data
 
 volumes:
-  # Holds the database and the signing key: back it up (see docs/deploiement-identity.md).
+  # Holds the database and the signing key: back it up (see site/src/content/docs/wiki/heberger/service-identite.md).
   identity-data:

@@ -1,6 +1,6 @@
 # P1 bloc 7 — Guide de test (sauvegarde, restauration, mises à jour)
 
-> Test automatique : `make e2e-ops` (15 vérifications). Procédure Docker : `docs/heberger-un-serveur.md`.
+> Test automatique : `make e2e-ops` (15 vérifications). Procédure Docker : `site/src/content/docs/wiki/heberger/serveur-communautaire.md`.
 
 ## 1. Sauvegarde à chaud
 Avec `make run-server` en marche :

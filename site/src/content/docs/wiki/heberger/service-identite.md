@@ -1,4 +1,9 @@
-# Déployer un service Identity Quarel
+---
+title: Déployer un service d’identité
+description: "Héberger votre propre service de comptes Quarel : installation, inscriptions, relais d’appels, sauvegardes, outils de l’opérateur."
+sidebar:
+  order: 3
+---
 
 Le service Identity gère les comptes (email, pseudo, mot de passe, 2FA), les amis et les messages privés chiffrés, et délivre les identités portables acceptées par les serveurs communautaires. L'instance officielle est `identity.quarel.app` ; n'importe qui peut héberger la sienne.
 

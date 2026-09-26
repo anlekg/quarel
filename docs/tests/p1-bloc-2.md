@@ -35,11 +35,11 @@ Les codes « SMS » apparaissent alors dans le journal du serveur (`code=123456`
 2. bob ne peut plus écrire (`phone_not_verified`). `-p bob phone +33 6 12 34 56 78` → code dans le journal du serveur ; `-p bob phone-verify +33612345678 <code>` → vérifié, il peut écrire.
 3. Le même numéro ne peut pas vérifier un 2e membre présent (`phone_in_use`), ni jamais resservir après un bannissement (`phone_banned`).
 4. La base ne contient pas le numéro, seulement une empreinte.
-5. En production : fournisseur **webhook** (passerelle de l'hébergeur) ou **OVHcloud SMS**, recommandés ; Twilio en option (voir `docs/heberger-un-serveur.md`). Le test automatique passe par le vrai fournisseur webhook avec une passerelle de test. **Non testés avec les vrais OVH et Twilio** (comptes nécessaires).
+5. En production : fournisseur **webhook** (passerelle de l'hébergeur) ou **OVHcloud SMS**, recommandés ; Twilio en option (voir `site/src/content/docs/wiki/heberger/serveur-communautaire.md`). Le test automatique passe par le vrai fournisseur webhook avec une passerelle de test. **Non testés avec les vrais OVH et Twilio** (comptes nécessaires).
 
 ## 6. Bots
 1. `-p alice bot-create Pingbot` → jeton affiché une seule fois, avec la commande pour lancer le bot d'exemple.
 2. Lancer cette commande (ou `./bin/pingbot` avec les mêmes variables) → « connected to … ».
 3. `-p bob send général !ping` → le bot répond « pong » (en réponse au message).
 4. `-p alice bot-token Pingbot` → nouveau jeton ; le bot en cours est déconnecté (l'ancien jeton ne marche plus). `bot-delete Pingbot` le supprime.
-5. La documentation pour écrire un bot est dans `docs/api.md`.
+5. La documentation pour écrire un bot est dans `site/src/content/docs/wiki/developper/api.md`.

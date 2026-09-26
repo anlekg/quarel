@@ -31,4 +31,4 @@ Avec les mêmes variables que `make run-identity` :
 3. `… admin rotate-signing-key --reason …` puis redémarrer le service : `curl localhost:8080/.well-known/quarel-identity` montre 2 clés ; les membres connectés aux serveurs ne sont pas déconnectés.
 
 ## 7. Déploiement Docker du service central
-Suivre `docs/deploiement-identity.md` (nécessite un domaine pour Let's Encrypt ; sinon la variante `compose.proxy.yaml` en local).
+Suivre `site/src/content/docs/wiki/heberger/service-identite.md` (nécessite un domaine pour Let's Encrypt ; sinon la variante `compose.proxy.yaml` en local).
