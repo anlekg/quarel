@@ -8,7 +8,7 @@
 // the app then only says that a new version exists.
 import { app, BrowserWindow, ipcMain, net } from 'electron'
 import { autoUpdater, type UpdateInfo } from 'electron-updater'
-import yaml from 'js-yaml'
+import { load } from 'js-yaml'
 import { newer, verifyRelease } from './releasesig'
 
 const FEED = process.env.QUAREL_UPDATE_URL || 'https://app.quarel.app/updates'
@@ -48,7 +48,7 @@ async function signedRelease() {
   const file = channelFile()
   const [yml, sig] = await Promise.all([fetchBytes(FEED + '/' + file), fetchBytes(FEED + '/' + file + '.sig')])
   if (!verifyRelease(yml, sig.toString('utf8'), KEY)) throw new Error('signature')
-  const doc = yaml.load(yml.toString('utf8')) as { version: string; path: string; sha512: string; files?: { url: string; sha512: string }[] }
+  const doc = load(yml.toString('utf8')) as { version: string; path: string; sha512: string; files?: { url: string; sha512: string }[] }
   const main = doc.files?.[0] ?? { url: doc.path, sha512: doc.sha512 }
   return { version: String(doc.version), sha512: main.sha512, path: main.url }
 }
