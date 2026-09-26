@@ -24,14 +24,25 @@ import (
 //   - a session opened here by an ended device before it ended goes too.
 
 type disabledSet struct {
-	mu  sync.Mutex
-	set map[string]map[string]bool // issuer → account hashes
+	mu    sync.Mutex
+	set   map[string]map[string]bool      // issuer → account hashes
+	ended map[string]map[string]time.Time // issuer → device hash → when its session there ended
 }
 
 func (s *Server) isDisabled(issuer, subject string) bool {
 	s.disabled.mu.Lock()
 	defer s.disabled.mu.Unlock()
 	return s.disabled.set[issuer][idtoken.AccountHash(subject)]
+}
+
+// deviceEnded reports whether the Identity session of a device ended after
+// issued: a token it obtained before a logout or a revocation (still valid
+// for a few hours) must not open a new session here either.
+func (s *Server) deviceEnded(issuer, deviceKey string, issued time.Time) bool {
+	s.disabled.mu.Lock()
+	defer s.disabled.mu.Unlock()
+	at, ok := s.disabled.ended[issuer][idtoken.DeviceHash(deviceKey)]
+	return ok && issued.Before(at)
 }
 
 // issuerList is what an Identity service publishes.
@@ -100,12 +111,18 @@ func (s *Server) ApplyDisabled(ctx context.Context, issuer string, hashes []stri
 // ApplyEnded ends the sessions opened here by devices whose session ended
 // on their Identity service since.
 func (s *Server) ApplyEnded(ctx context.Context, issuer string, devices []endedDevice) error {
-	if len(devices) == 0 {
-		return nil
-	}
 	ended := map[string]time.Time{}
 	for _, d := range devices {
 		ended[d.Hash] = d.At
+	}
+	s.disabled.mu.Lock() // kept for logins (see deviceEnded): the list covers the tokens still valid
+	if s.disabled.ended == nil {
+		s.disabled.ended = map[string]map[string]time.Time{}
+	}
+	s.disabled.ended[issuer] = ended
+	s.disabled.mu.Unlock()
+	if len(devices) == 0 {
+		return nil
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT s.token_hash, s.member_id, s.device_key, s.created_at FROM sessions s
 		JOIN members m ON m.id = s.member_id WHERE m.issuer = ? AND s.device_key IS NOT NULL`, issuer)

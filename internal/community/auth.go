@@ -133,6 +133,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, errf(http.StatusForbidden, "account_disabled", "this account has been disabled by its identity service"))
 		return
 	}
+	if claims.IssuedAt != nil && s.deviceEnded(claims.Issuer, claims.DeviceKey, claims.IssuedAt.Time) {
+		writeErr(w, r, errf(http.StatusUnauthorized, "session_ended", "this device's session ended on its identity service after this token was issued: sign in again"))
+		return
+	}
 
 	m, joined, err := s.admit(ctx, claims, strings.TrimSpace(req.Invite), strings.TrimSpace(req.Claim))
 	if err != nil {

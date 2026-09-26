@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"strings"
 	"testing"
@@ -46,6 +47,42 @@ func TestInboxLimits(t *testing.T) {
 	e.srv.db.QueryRow(`SELECT COUNT(*) FROM inbox WHERE session_id = ?`, device).Scan(&n)
 	if n != 0 {
 		t.Fatalf("%d expired items left", n)
+	}
+}
+
+// A full inbox does not block a to-device batch: the other devices get
+// their messages (a group's keys, for instance).
+func TestToDeviceSkipsFullInbox(t *testing.T) {
+	e := newEnv(t)
+	e.srv.cfg.InboxMaxBytes = 4000
+	ctx := context.Background()
+	alice, _ := e.registerVerified("alice@example.com", "alice", "mot-de-passe-alice")
+	bob, _ := e.registerVerified("bob@example.com", "bob", "mot-de-passe-bob")
+	carol, _ := e.registerVerified("carol@example.com", "carol", "mot-de-passe-carol")
+	e.befriend(bob, alice, "alice")
+	e.befriend(bob, carol, "carol")
+	for _, lr := range []loginResp{alice, carol} { // devices exist once their keys are published
+		_, master, _ := ed25519.GenerateKey(nil)
+		e.expect(200, "", e.upload(newTestDevice(lr), master, true))
+	}
+	// bob's quarter of alice's inbox is used up.
+	if _, err := e.srv.deliver(ctx, e.srv.db, alice.SessionID, inboxItem{Kind: "to_device", SenderUser: bob.User.ID, SenderDevice: bob.SessionID, Payload: strings.Repeat("x", 1000)}); err != nil {
+		t.Fatal(err)
+	}
+	msg := map[string]any{"messages": []map[string]string{
+		{"device_id": alice.SessionID, "payload": "room-key-for-alice"},
+		{"device_id": carol.SessionID, "payload": "room-key-for-carol"},
+	}}
+	e.expect(204, "", e.call("POST", "/v1/to-device", bob.SessionToken, msg, nil))
+	count := func(device, payload string) (n int) {
+		e.srv.db.QueryRow(`SELECT COUNT(*) FROM inbox WHERE session_id = ? AND payload = ?`, device, payload).Scan(&n)
+		return
+	}
+	if count(carol.SessionID, "room-key-for-carol") != 1 {
+		t.Fatal("carol did not get her message because alice's inbox was full")
+	}
+	if count(alice.SessionID, "room-key-for-alice") != 0 {
+		t.Fatal("a message was queued in a full inbox")
 	}
 }
 

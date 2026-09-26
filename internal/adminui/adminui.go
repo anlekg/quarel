@@ -195,7 +195,8 @@ func secure(h http.Handler) http.Handler {
 		}
 		if r.TLS == nil && !isLoopback(r) && !plainHTTPAllowed() {
 			if r.Method == http.MethodGet || r.Method == http.MethodHead {
-				http.Redirect(w, r, "https://"+r.Host+r.URL.RequestURI(), http.StatusPermanentRedirect)
+				// Temporary: a browser must not remember it (QUAREL_ADMIN_TLS=off may be set later).
+				http.Redirect(w, r, "https://"+r.Host+r.URL.RequestURI(), http.StatusTemporaryRedirect)
 				return
 			}
 			http.Error(w, "HTTPS obligatoire depuis une autre machine.", http.StatusForbidden)

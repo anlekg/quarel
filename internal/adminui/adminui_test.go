@@ -271,7 +271,7 @@ func TestHostAndTransport(t *testing.T) {
 		}
 	}
 	rec := serve("GET", "192.168.1.10:8091", "192.168.1.20:5000", false, nil)
-	if rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != "https://192.168.1.10:8091/api/session" {
+	if rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != "https://192.168.1.10:8091/api/session" {
 		t.Fatalf("plain HTTP from the network: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	if rec := serve("POST", "192.168.1.10:8091", "192.168.1.20:5000", false, nil); rec.Code != http.StatusForbidden {

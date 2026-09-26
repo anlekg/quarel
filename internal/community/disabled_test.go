@@ -51,7 +51,12 @@ func TestEndedDevices(t *testing.T) {
 	c.expect(401, "unauthorized", c.call("GET", "/v1/members/@me", c.tok("bob"), nil, nil))
 	c.expect(200, "", c.call("GET", "/v1/members/@me", c.tok("carol"), nil, nil))
 
+	// A token obtained before the session ended (still valid) opens nothing new.
+	stale := bob.token(c.clock, time.Hour)
 	c.clock = c.clock.Add(time.Minute)
+	var lr loginResp
+	c.expect(401, "session_ended", c.login(bob, loginOpts{token: stale}, &lr))
+
 	again := c.mustLogin(bob, loginOpts{})
 	if err := c.srv.ApplyEnded(ctx, testIssuer, ended); err != nil {
 		t.Fatal(err)

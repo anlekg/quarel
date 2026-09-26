@@ -508,6 +508,13 @@ func (s *Server) handleSendToDevice(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 	for _, m := range req.Messages {
 		it, err := s.deliver(ctx, tx, m.DeviceID, inboxItem{Kind: "to_device", SenderUser: sess.UserID, SenderDevice: sess.ID, Payload: m.Payload})
+		if errors.Is(err, errInboxFull) {
+			// That device will miss it (it must come online first); the others
+			// get theirs: one full inbox must not block, say, the keys of a
+			// whole group (as for conversation messages, see handleSendDM).
+			slog.Warn("inbox full, to-device message not queued", "device", m.DeviceID)
+			continue
+		}
 		if err != nil {
 			writeErr(w, r, err)
 			return
