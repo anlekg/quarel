@@ -1,0 +1,126 @@
+# Checks every push and pull request: Go servers, desktop/web client, site, and
+# the end-to-end scenarios (real services, real Electron app, real LiveKit).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LIVEKIT_VERSION: 1.13.7
+  LIVEKIT_SHA256: 6634aeeb2fb1366b6723708ae4320b9d5408106a4c63457c5e845ae3979c90e2
+
+jobs:
+  go:
+    name: Go (vet, tests, vulnerabilities)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: make test
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  client:
+    name: Client (types, unit tests, build)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install
+        working-directory: client
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - run: make client-test
+      - name: Build
+        working-directory: client
+        run: npx vite build && node scripts/build-electron.mjs
+      - name: Encryption interoperability (vodozemac ↔ goolm)
+        run: make client-interop
+
+  site:
+    name: Site quarel.app
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: make site-build
+
+  e2e-servers:
+    name: End-to-end (servers, quarelctl)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get install -y --no-install-recommends sqlite3
+      - run: make build
+      - run: test/e2e/dm.sh
+      - run: test/e2e/dm-groups.sh
+      - run: test/e2e/messages.sh
+      - run: test/e2e/moderation.sh
+      - run: test/e2e/accounts.sh
+      - run: test/e2e/security.sh
+      - run: test/e2e/ops.sh
+      - run: test/e2e/calls.sh
+
+  e2e-client:
+    name: End-to-end (desktop app, web client, voice)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - name: LiveKit (official build, checksum verified)
+        run: |
+          curl -fsSL -o /tmp/lk.tgz "https://github.com/livekit/livekit/releases/download/v${LIVEKIT_VERSION}/livekit_${LIVEKIT_VERSION}_linux_amd64.tar.gz"
+          echo "${LIVEKIT_SHA256}  /tmp/lk.tgz" | sha256sum -c -
+          mkdir -p ~/.local/bin && tar -xzf /tmp/lk.tgz -C ~/.local/bin livekit-server
+      - run: make build
+      - name: Install client
+        working-directory: client
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          # Electron's sandbox helper must be setuid root (Ubuntu restricts unprivileged user namespaces).
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+      - run: make e2e-client
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: client/test-results/
+          retention-days: 7

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Faille de sécurité
+    url: https://github.com/anlekg/quarel/security/advisories/new
+    about: Signalez-la en privé, jamais dans un ticket public.
+  - name: Documentation
+    url: https://quarel.app/wiki/
+    about: Installation, hébergement, API, questions fréquentes.

@@ -1,5 +1,7 @@
 # Quarel
 
+[![CI](https://github.com/anlekg/quarel/actions/workflows/ci.yml/badge.svg)](https://github.com/anlekg/quarel/actions/workflows/ci.yml)
+
 **Alternative libre et auto-hébergeable à Discord** : chaque serveur tourne chez la personne qui l'héberge ; messages privés et appels chiffrés de bout en bout.
 
 - Site et documentation : **[quarel.app](https://quarel.app)**
@@ -10,9 +12,11 @@
 
 > Projet en **version de test**.
 
+![L'application Quarel : un serveur communautaire, ses salons et ses membres](docs/images/app.png)
+
 ## Dans ce dépôt
 
-Serveurs en Go (`cmd/`, `internal/`), application Electron + React (`client/`), site et wiki (`site/`), déploiements Docker (`deploy/`). Voir [Contribuer](https://quarel.app/wiki/developper/contribuer/).
+Serveurs en Go (`cmd/`, `internal/`), application Electron + React (`client/`), site et wiki (`site/`), déploiements Docker (`deploy/`). Voir [CONTRIBUTING.md](CONTRIBUTING.md). Faille de sécurité : [SECURITY.md](SECURITY.md).
 
 ## Licence
 
