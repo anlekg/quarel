@@ -41,7 +41,7 @@ type Section struct {
 
 // Docs is the loaded wiki.
 type Docs struct {
-	Pages []*Page
+	Pages  []*Page
 	bySlug map[string]*Page
 }
 
