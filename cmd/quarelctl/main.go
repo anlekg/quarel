@@ -78,6 +78,9 @@ Messages privés (chiffrés de bout en bout, entre amis)
   device-approve <appareil> <code> valider un nouvel appareil (il reçoit la clé du compte et l'historique)
   dm <pseudo|groupe> <texte…>      envoyer un message privé (à un ami ou à un groupe)
   dm-history <pseudo|groupe>       afficher la conversation (#n = numéro du message)
+  safety <ami> [ok]                code de sécurité à comparer avec un ami ; « ok » : vérifié
+  trust-new-key <ami>              accepter la nouvelle clé d'un ami qui a réinitialisé ses clés
+  keys-reset                       tout perdu (appareils et phrase) : repartir avec une nouvelle clé de compte
   dm-sync                          récupérer les messages en attente
   dm-listen                        messages privés en direct (Ctrl+C pour quitter)
   dm-edit <cible> <n°> <texte…>    modifier un de ses messages (chez tout le monde)

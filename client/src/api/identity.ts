@@ -248,6 +248,11 @@ export class IdentityClient {
     return this.call<Conversation>('PATCH', '/v1/dms/' + id, { name })
   }
 
+  // Every device and the recovery phrase lost: the account's encryption starts over.
+  resetMasterKey(password: string, totp_code?: string) {
+    return this.call<void>('POST', '/v1/keys/master/reset', { password, totp_code })
+  }
+
   addToGroup(id: string, userId: string) {
     return this.call<Conversation>('PUT', '/v1/dms/' + id + '/members/' + userId)
   }

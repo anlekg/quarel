@@ -68,6 +68,7 @@ func (c *cli) resolveConv(e *e2e, target string) (*convInfo, error) {
 		for _, m := range ci.Members {
 			e.st.Names[m.ID] = m.Pseudo
 		}
+		e.observe(ci)
 		return ci
 	}
 	for i := range list {
@@ -238,7 +239,16 @@ func (c *cli) groupMember(add bool, group, pseudo string) error {
 			return fmt.Errorf("%q introuvable parmi vos amis et les membres du groupe", pseudo)
 		}
 		if add {
-			if err := c.do("PUT", "/v1/dms/"+conv.ID+"/members/"+id, nil, nil); err != nil {
+			var ci convInfo
+			if err := c.do("PUT", "/v1/dms/"+conv.ID+"/members/"+id, nil, &ci); err != nil {
+				return err
+			}
+			// Announce the newcomer to the members, encrypted: their apps only
+			// encrypt for members announced by a member (the service cannot add
+			// someone behind their back).
+			e.observe(&ci)
+			e.st.Members[ci.ID].Confirmed = append(e.st.Members[ci.ID].Confirmed, id)
+			if err := c.sendEvent(e, &ci, megolmPlain{Type: "members", Members: []string{id}}); err != nil {
 				return err
 			}
 			fmt.Printf("Ajout de %s à %s : les messages envoyés dorénavant lui seront lisibles (pas les anciens).\n", pseudo, conv.label())
@@ -311,7 +321,8 @@ func (c *cli) dmSendFile(target, path, text string) error {
 		}
 		aead, _ := chacha20poly1305.NewX(key)
 		ct = aead.Seal(nil, nonce, data, []byte(conv.ID))
-		for _, u := range append(conv.others(e.st.UserID), e.st.UserID) {
+		confirmed, _ := e.recipients(conv)
+		for _, u := range append(confirmed, e.st.UserID) {
 			devs, err := e.trusted(u)
 			if err != nil {
 				return err
@@ -471,8 +482,9 @@ func (c *cli) dmDownloadFile(target, number, dest string) error {
 		if ref == nil {
 			return fmt.Errorf("le message %d ne contient pas de fichier", id)
 		}
-		// Any member's device holding the file may serve it.
-		for _, u := range append(conv.others(e.st.UserID), e.st.UserID) {
+		// Any (confirmed) member's device holding the file may serve it.
+		confirmed, _ := e.recipients(conv)
+		for _, u := range append(confirmed, e.st.UserID) {
 			devs, err := e.trusted(u)
 			if err != nil {
 				return err

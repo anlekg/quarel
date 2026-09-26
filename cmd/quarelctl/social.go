@@ -50,6 +50,16 @@ func (c *cli) runSocial(cmd string, args []string) (bool, error) {
 		if err = need(args, 1, "<pseudo|groupe>"); err == nil {
 			err = c.dmHistory(args[0])
 		}
+	case "safety":
+		if err = need(args, 1, "<ami> [ok]"); err == nil {
+			err = c.safety(args[0], len(args) > 1 && args[1] == "ok")
+		}
+	case "trust-new-key":
+		if err = need(args, 1, "<ami>"); err == nil {
+			err = c.trustNewKey(args[0])
+		}
+	case "keys-reset":
+		err = c.keysReset()
 	case "dm-sync":
 		err = c.dmSync()
 	case "dm-listen":
@@ -222,9 +232,17 @@ func (c *cli) dmSendWith(e *e2e, target, text string) error {
 
 // sendEvent sends an encrypted event and reports where it went.
 func (c *cli) sendEvent(e *e2e, conv *convInfo, content megolmPlain) error {
-	m, devices, err := e.sendDM(conv.ID, conv.others(e.st.UserID), content)
+	confirmed, unconfirmed := e.recipients(conv)
+	m, devices, err := e.sendDM(conv.ID, confirmed, content)
 	if err != nil {
 		return err
+	}
+	if len(unconfirmed) > 0 {
+		names := make([]string, len(unconfirmed))
+		for i, id := range unconfirmed {
+			names[i] = e.name(id)
+		}
+		fmt.Printf("⚠ non chiffré pour %s : ajout(s) au groupe non confirmé(s) par un membre (le service a pu les ajouter seul)\n", strings.Join(names, ", "))
 	}
 	switch content.Type {
 	case "edit":
@@ -411,4 +429,101 @@ func (c *cli) handleFileSignals(out func(string)) {
 			}(s)
 		}
 	}
+}
+
+// --- safety codes, changed keys, reset of one's own keys ---
+
+func (c *cli) contactID(pseudo string) (string, error) {
+	u, _, err := c.findUser(pseudo)
+	if err != nil {
+		return "", err
+	}
+	return u.ID, nil
+}
+
+// safety shows the code to compare with a contact; "ok" records that it matched.
+func (c *cli) safety(pseudo string, ok bool) error {
+	id, err := c.contactID(pseudo)
+	if err != nil {
+		return err
+	}
+	return c.withE2E(func(e *e2e) error {
+		code, changed, err := e.safetyCode(id)
+		if err != nil {
+			return err
+		}
+		if changed {
+			fmt.Printf("⚠ La clé de %s a changé depuis votre premier échange. Code avec l'ancienne clé : %s\n", pseudo, code)
+			fmt.Printf("Si %s a réellement réinitialisé ses clés, comparez le nouveau code avec lui ou elle : quarelctl trust-new-key %s\n", pseudo, pseudo)
+			return nil
+		}
+		if ok {
+			if e.st.Verified == nil {
+				e.st.Verified = map[string]string{}
+			}
+			e.st.Verified[id] = e.st.Pinned[id]
+			fmt.Printf("%s est maintenant vérifié·e sur cet appareil.\n", pseudo)
+			return e.save()
+		}
+		state := "non vérifié·e"
+		if v := e.st.Verified[id]; v != "" && v == e.st.Pinned[id] {
+			state = "vérifié·e"
+		}
+		fmt.Printf("Code de sécurité avec %s (%s) :\n  %s\n", pseudo, state, code)
+		fmt.Println("Comparez-le avec celui que voit cette personne (de vive voix, par téléphone…). S'il est identique : quarelctl safety " + pseudo + " ok")
+		return e.save()
+	})
+}
+
+// trustNewKey accepts the new master key of a contact who reset their keys.
+func (c *cli) trustNewKey(pseudo string) error {
+	id, err := c.contactID(pseudo)
+	if err != nil {
+		return err
+	}
+	return c.withE2E(func(e *e2e) error {
+		k, err := e.keysOf(id)
+		if err != nil {
+			return err
+		}
+		if k.MasterKey == nil {
+			return fmt.Errorf("%s n'a pas de clé de chiffrement", pseudo)
+		}
+		e.st.Pinned[id] = *k.MasterKey
+		delete(e.st.Verified, id)
+		code, _, err := e.safetyCode(id)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Nouvelle clé de %s acceptée. Nouveau code de sécurité, à comparer :\n  %s\n", pseudo, code)
+		return e.save()
+	})
+}
+
+// keysReset starts the account's encryption over (every device and the
+// recovery phrase lost): this device creates a new master key.
+func (c *cli) keysReset() error {
+	fmt.Println("⚠ Réinitialiser les clés : vos contacts seront prévenus que votre clé a changé, vos autres appareils devront être revalidés, l'ancienne sauvegarde est effacée.")
+	password, err := c.password("Mot de passe : ", false)
+	if err != nil {
+		return err
+	}
+	body := map[string]string{"password": password}
+	if code := os.Getenv("QUAREL_TOTP"); code != "" {
+		body["totp_code"] = code
+	} else if code, _ := c.prompt("Code de double authentification (vide si désactivée) : "); code != "" {
+		body["totp_code"] = code
+	}
+	if err := c.do("POST", "/v1/keys/master/reset", body, nil); err != nil {
+		return err
+	}
+	return c.withE2E(func(e *e2e) error {
+		e.st.MasterSeed, e.st.BackupKey, e.st.BackupVersion, e.st.BackupDigest = "", "", 0, ""
+		delete(e.st.Pinned, e.st.UserID)
+		if err := e.publish(); err != nil {
+			return err
+		}
+		fmt.Println("Nouvelle clé du compte créée ; cet appareil est validé. Créez une nouvelle phrase de récupération : quarelctl recovery-setup")
+		return e.save()
+	})
 }

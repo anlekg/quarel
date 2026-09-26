@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -745,4 +746,68 @@ func (s *Server) checkDelivered(ctx context.Context, eventID int64) {
 		}
 	}
 	s.db.ExecContext(ctx, `DELETE FROM conv_events WHERE id = ?`, eventID)
+}
+
+// handleResetMasterKey: POST /v1/keys/master/reset {password, totp_code?}.
+// For an account that lost every device holding its master key and its
+// recovery phrase: the master key, the certifications of its devices and
+// the encrypted backup (sealed with the old key) go. The next device to
+// publish its keys creates a new master key; contacts see that it changed
+// and must compare their safety code again before writing.
+func (s *Server) handleResetMasterKey(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Password string `json:"password"`
+		TOTPCode string `json:"totp_code"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	u, err := s.currentUser(r)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if err := s.requirePassword(r, u, req.Password); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	ctx := r.Context()
+	if u.TOTPEnabledAt.Valid {
+		if req.TOTPCode == "" {
+			writeErr(w, r, errf(http.StatusUnauthorized, "mfa_required", "a 2FA code (or backup code) is required"))
+			return
+		}
+		if err := s.guarded(r, lockoutKey(u, ""), func() error { return s.check2FA(ctx, u, req.TOTPCode) }); err != nil {
+			writeErr(w, r, err)
+			return
+		}
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM master_keys WHERE user_id = ?`,
+		`UPDATE device_keys SET master_signature = NULL WHERE user_id = ?`,
+		`DELETE FROM backups WHERE user_id = ?`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, u.ID); err != nil {
+			writeErr(w, r, err)
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	slog.Info("master key reset", "user", u.ID)
+	s.mailer.Send(u.Email, "Quarel — clés de chiffrement réinitialisées", fmt.Sprintf(
+		"Bonjour %s,\n\nLes clés de chiffrement de vos messages privés viennent d'être réinitialisées depuis l'un de vos appareils. "+
+			"Vos contacts seront prévenus que votre clé a changé, et vos autres appareils devront être validés de nouveau.\n\n"+
+			"Si ce n'est pas vous : changez votre mot de passe tout de suite et activez la double authentification.\n", u.Pseudo))
+	s.devicesChanged(ctx, u.ID)
+	w.WriteHeader(http.StatusNoContent)
 }

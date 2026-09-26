@@ -67,3 +67,21 @@ func VerificationCode(deviceEd25519 string) string {
 func NormalizeCode(code string) string {
 	return strings.ToUpper(strings.NewReplacer("-", "", " ", "").Replace(code))
 }
+
+// ContactCode is the safety code two people compare (in person, by phone…)
+// to make sure each app pinned the other's real master key, and not keys
+// substituted by their Identity service: the same code on both sides, 120
+// bits of the hash of both accounts and master keys, as six groups of four
+// base32 characters.
+func ContactCode(userA, masterA, userB, masterB string) string {
+	if userB < userA {
+		userA, masterA, userB, masterB = userB, masterB, userA, masterA
+	}
+	h := sha256.Sum256(msg("quarel-contact-code-v1", userA, masterA, userB, masterB))
+	s := base32.StdEncoding.EncodeToString(h[:15])
+	parts := make([]string, 0, 6)
+	for i := 0; i < 24; i += 4 {
+		parts = append(parts, s[i:i+4])
+	}
+	return strings.Join(parts, "-")
+}

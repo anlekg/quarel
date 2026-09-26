@@ -85,6 +85,16 @@ test('private messages: friends, encrypted with the Go client both ways', async 
   await expect(log).not.toContainText('Salut alice')
   expect(history()).not.toContain('Salut alice')
 
+  // Safety code: the same in the app and in the Go client; once compared, alice shows as verified.
+  await page.getByRole('button', { name: 'Code de sécurité' }).click()
+  const code = (await page.getByTestId('safety-code').textContent())!.trim()
+  expect(code).toMatch(/^[A-Z2-7]{4}(-[A-Z2-7]{4}){5}$/)
+  expect(ctl.run('alice', 'safety', 'bob')).toContain(code)
+  await page.getByRole('button', { name: 'Les codes correspondent' }).click()
+  await expect(page.getByTestId('safety')).toContainText('Vérifié')
+  await page.getByRole('dialog').getByRole('button', { name: 'Fermer' }).click()
+  await expect(page.getByTestId('verified')).toBeVisible()
+
   // A group created in the app.
   await page.getByRole('button', { name: 'Nouveau groupe' }).click()
   await page.getByLabel('Nom du groupe (facultatif)').fill('Tarot')
@@ -96,6 +106,18 @@ test('private messages: friends, encrypted with the Go client both ways', async 
   await expect.poll(() => ctl.run('alice', 'dm-history', 'Tarot'), { timeout: 15_000 }).toContain('bob : Bienvenue dans le groupe')
   ctl.run('alice', 'dm', 'Tarot', 'Merci !')
   await expect(page.getByRole('log')).toContainText('Merci !')
+
+  // alice (Go client) adds carol and announces her, encrypted: the app shows it
+  // and encrypts for carol from then on.
+  await ctl.account('carol')
+  ctl.run('carol', 'e2e')
+  ctl.run('alice', 'friend-add', 'carol')
+  ctl.run('carol', 'friend-accept', 'alice')
+  ctl.run('alice', 'dm-add', 'Tarot', 'carol')
+  await expect(page.getByTestId('members-event')).toContainText('alice a ajouté carol au groupe')
+  await g.fill('Bonjour carol')
+  await g.press('Enter')
+  await expect.poll(() => ctl.run('carol', 'dm-history', 'Tarot'), { timeout: 15_000 }).toContain('bob : Bonjour carol')
 
   // A private message while looking elsewhere: a desktop notification.
   await page.evaluate(() => {

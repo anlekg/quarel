@@ -12,7 +12,7 @@ import type { DeviceInfo, IdentityClient, InboxItem, ServerBackup, UserKeys } fr
 import { ApiError } from '../api/http'
 import { vault } from '../platform'
 import {
-  b64, deviceCert, deviceKeys, masterPublic, masterSign, newMasterSeed, normalizeCode, oneTimeKeyMsg, unb64, verificationCode, verify,
+  b64, contactCode, deviceCert, deviceKeys, masterPublic, masterSign, newMasterSeed, normalizeCode, oneTimeKeyMsg, unb64, verificationCode, verify,
 } from './keys'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { backupKey, generatePhrase, openBackup, parsePhrase, sealBackup, WrongKeyError } from './recovery'
@@ -39,6 +39,7 @@ export interface HistMsg {
   delivered?: boolean
   edited?: boolean
   file?: FileRef
+  added?: string[] // "members" event: users `from` added to the group
 }
 
 interface OutboundState {
@@ -67,6 +68,8 @@ export interface E2EState {
   inbound: Record<string, InboundState> // by Megolm session id
   seen: Record<string, boolean> // "session:index", replay protection
   pinned: Record<string, string> // user id → master key
+  verified?: Record<string, string> // user id → master key whose safety code was compared
+  members?: Record<string, ConvMembers> // by conversation: members confirmed by the members themselves
   history: Record<string, HistMsg[]> // by conversation
   undecrypted: InboxItem[]
   names: Record<string, string>
@@ -75,6 +78,20 @@ export interface E2EState {
   backup_version?: number
   backup_digest?: string
   backup_at?: string
+}
+
+// Members of a conversation this device encrypts for (see observe()).
+export interface ConvMembers {
+  kind: 'direct' | 'group'
+  confirmed: string[]
+}
+
+// A conversation as the Identity service lists it.
+export interface ConvInfo {
+  id: string
+  kind: 'direct' | 'group'
+  members: { id: string }[]
+  user?: { id: string }
 }
 
 // A community server in the list shared by my devices. The latest change of
@@ -137,8 +154,9 @@ interface OlmPlain {
 
 export interface MegolmPlain {
   dm_id: string
-  type?: '' | 'file' | 'edit' | 'delete'
+  type?: '' | 'file' | 'edit' | 'delete' | 'members'
   target?: number
+  members?: string[] // "members": users the sender added to the group
   text: string
   file?: FileRef
   sender_user: string
@@ -372,6 +390,123 @@ export class E2E {
     return k.devices.filter((d) => this.deviceTrusted(userId, d, k.master_key!))
   }
 
+  // --- group members confirmed by the members themselves ---
+  // The Identity service keeps the member lists: a compromised service could
+  // slip someone into a conversation and receive the next messages. So this
+  // device only encrypts for members seen at its first sight of the
+  // conversation, or announced by a confirmed member in an encrypted
+  // "members" event after adding them (as cmd/quarelctl/e2e.go).
+
+  // Records the members as the server lists them: the first time, all are
+  // confirmed; afterwards, members gone are dropped, newcomers stay unconfirmed.
+  observe(c: ConvInfo) {
+    const all = (this.st.members ??= {})
+    const listed = new Set(c.members.map((m) => m.id))
+    const cm = all[c.id]
+    if (!cm) {
+      const other = c.user?.id ?? c.members.find((m) => m.id !== this.st.user_id)?.id
+      all[c.id] = { kind: c.kind, confirmed: c.kind === 'direct' ? [this.st.user_id, ...(other ? [other] : [])] : [...listed] }
+      return
+    }
+    cm.confirmed = cm.confirmed.filter((id) => listed.has(id) || id === this.st.user_id)
+  }
+
+  // observe() for conversations as they arrive, saved at once: the first
+  // sight is what later additions are compared with.
+  observeAll(convs: ConvInfo[]) {
+    return this.run(async () => {
+      for (const c of convs) this.observe(c)
+      await this.save()
+    })
+  }
+
+  private isConfirmed(dmId: string, userId: string) {
+    return !!this.st.members?.[dmId]?.confirmed.includes(userId)
+  }
+
+  private confirmMembers(dmId: string, sender: string, users: string[]) {
+    const cm = this.st.members?.[dmId]
+    if (!cm || cm.kind === 'direct' || !this.isConfirmed(dmId, sender)) return false
+    for (const u of users) if (!cm.confirmed.includes(u)) cm.confirmed.push(u)
+    return true
+  }
+
+  // The other members to encrypt for, and the unconfirmed ones.
+  recipients(c: ConvInfo): { confirmed: string[]; unconfirmed: string[] } {
+    this.observe(c)
+    const others = c.members.map((m) => m.id).filter((id) => id !== this.st.user_id)
+    return { confirmed: others.filter((id) => this.isConfirmed(c.id, id)), unconfirmed: others.filter((id) => !this.isConfirmed(c.id, id)) }
+  }
+
+  // After adding someone to a group: confirmed here, and announced (encrypted)
+  // to the members so their apps encrypt for them too.
+  announceMember(c: ConvInfo, userId: string) {
+    this.observe(c)
+    const cm = this.st.members![c.id]
+    if (!cm.confirmed.includes(userId)) cm.confirmed.push(userId)
+    return this.send(c.id, this.recipients(c).confirmed, { type: 'members', members: [userId], text: '' })
+  }
+
+  // --- safety codes between contacts ---
+
+  // The code to compare with userId (e2ekeys.ContactCode), from the master
+  // keys pinned here; changed: the server now shows another key for them.
+  safetyCode(userId: string) {
+    return this.run(async () => {
+      if (!this.st.master_seed) throw new E2EError('device_not_validated')
+      const k = await this.keysOf(userId, true)
+      if (!k.master_key) throw new E2EError('no_keys_yet')
+      const pinned = (this.st.pinned[userId] ??= k.master_key)
+      const mine = masterPublic(this.st.master_seed)
+      await this.save()
+      return {
+        code: contactCode(this.st.user_id, mine, userId, pinned),
+        newCode: pinned !== k.master_key ? contactCode(this.st.user_id, mine, userId, k.master_key) : undefined,
+        verified: this.st.verified?.[userId] === pinned,
+      }
+    })
+  }
+
+  // The codes matched: this contact is verified (for their current pinned key).
+  markVerified(userId: string) {
+    return this.run(async () => {
+      (this.st.verified ??= {})[userId] = this.st.pinned[userId]
+      await this.save()
+    })
+  }
+
+  isVerified(userId: string) {
+    return !!this.st.pinned[userId] && this.st.verified?.[userId] === this.st.pinned[userId]
+  }
+
+  // A contact reset their keys (and the new code was compared): the new
+  // master key replaces the pinned one.
+  trustNewKey(userId: string) {
+    return this.run(async () => {
+      const k = await this.keysOf(userId, true)
+      if (!k.master_key) throw new E2EError('no_keys_yet')
+      this.st.pinned[userId] = k.master_key
+      delete this.st.verified?.[userId]
+      await this.save()
+    })
+  }
+
+  // After POST /v1/keys/master/reset: this device creates the account's new
+  // master key and certifies itself (the old backup is gone).
+  restartKeys() {
+    return this.run(async () => {
+      this.st.master_seed = undefined
+      this.st.backup_key = undefined
+      this.st.backup_version = undefined
+      this.st.backup_digest = undefined
+      delete this.st.pinned[this.st.user_id]
+      this.keysCache.delete(this.st.user_id)
+      await this.publish()
+      this.emit({ kind: 'approved' })
+      this.emit({ kind: 'backup' })
+    })
+  }
+
   // --- Olm (device to device) ---
 
   private storeOlm(curve: string, s: OlmSession) {
@@ -500,6 +635,18 @@ export class E2E {
   // their own sender. Returns whether the history changed.
   private apply(eventId: number, p: MegolmPlain): boolean {
     const list = this.st.history[p.dm_id] ?? []
+    if (p.type === 'members') {
+      // Not seen yet: its first sight will take the members as they are.
+      if (this.st.members?.[p.dm_id] && !this.confirmMembers(p.dm_id, p.sender_user, p.members ?? [])) {
+        this.emit({ kind: 'warning', text: this.name(p.sender_user) + ', qui n’est pas membre confirmé de cette conversation, a annoncé des membres : ignoré.' })
+        return false
+      }
+      if (list.some((h) => h.event_id === eventId)) return false
+      list.push({ event_id: eventId, from: p.sender_user, text: '', at: p.sent_at, added: p.members ?? [] })
+      list.sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+      this.st.history[p.dm_id] = list
+      return true
+    }
     if (p.type === 'edit' || p.type === 'delete') {
       const i = list.findIndex((h) => h.event_id === p.target)
       if (i < 0) return false

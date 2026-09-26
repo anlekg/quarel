@@ -4,21 +4,22 @@ import type { Conversation, PublicUser } from '../api/identity'
 import { Avatar } from '../components/Avatar'
 import { MessageContent, type MentionNames } from '../components/MessageContent'
 import { Alert, BackButton, Dialog, Field } from '../components/ui'
-import { Chat, Download, FileIcon, Lock, Paperclip, Pencil, Phone, Plus, Send, Trash, Users } from '../components/icons'
+import { Chat, Download, FileIcon, Lock, Paperclip, Pencil, Phone, Plus, Send, Shield, Trash, Users } from '../components/icons'
 import { errorMessage } from '../lib/errors'
 import { formatDay, formatFull, formatSize, formatStamp, formatTime, sameDay } from '../lib/format'
 import { prefs } from '../platform'
-import { SecurityBanner } from './Security'
+import { SafetyDialog, SecurityBanner } from './Security'
 import { showContent } from '../state/mobile'
 import { setActive } from '../state/notify'
 import { CallPanel } from './Call'
 import { startCall, useCall } from '../state/calls'
 import type { Account } from '../state/account'
 import type { FileRef, HistMsg } from '../e2e/engine'
+import { E2EError } from '../e2e/engine'
 import { FileError, MAX_FILE } from '../e2e/files'
 import {
-  acceptFriend, addFriend, blockUser, createGroup, deleteMessage, editText, engine, leaveGroup, markRead, openDirect, openFile, removeFriend, sendFile, sendText,
-  typing, typingIn, useSocial,
+  acceptFriend, addFriend, addToGroup, blockUser, createGroup, deleteMessage, editText, engine, leaveGroup, markRead, openDirect, openFile, removeFriend, sendFile, sendText,
+  typing, typingIn, unconfirmedMembers, useSocial,
 } from '../state/social'
 
 const presenceLabel: Record<string, string> = { online: 'En ligne', idle: 'Absent', dnd: 'Ne pas déranger', offline: 'Hors ligne' }
@@ -244,6 +245,9 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
   const [uploads, setUploads] = useState<{ key: number; name: string }[]>([])
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [safety, setSafety] = useState<{ id: string; name: string } | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [keyChanged, setKeyChanged] = useState<{ id: string; name: string } | null>(null)
   const activeCall = useCall()
   useEffect(() => {
     setActive({ kind: 'dm', id: conv.id })
@@ -272,7 +276,16 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
     return () => window.removeEventListener('focus', mark)
   }, [history, conv, me])
 
-  const run = (p: Promise<unknown>) => p.catch((err) => setError(errorMessage(err)))
+  const run = (p: Promise<unknown>) => p.catch((err) => {
+    setError(errorMessage(err))
+    // Someone's key changed: offer to compare the new safety code.
+    if (err instanceof E2EError && err.code === 'master_key_changed') {
+      const who = conv.members.find((m) => m.id !== me && (m.pseudo === err.message || m.id === err.message))
+      if (who) setKeyChanged({ id: who.id, name: who.pseudo })
+    }
+  })
+  const unconfirmed = conv.kind === 'group' ? unconfirmedMembers(conv) : []
+  const verified = !!other && !!e?.isVerified(other.id)
   const send = () => {
     const t = text.trim()
     if (!t) return
@@ -322,7 +335,14 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
           {conv.kind === 'group' ? <Users /> : <Chat />}
           <span className="title">{title}</span>
           <span className="e2e-badge" title="Seuls les appareils validés des participants peuvent lire ces messages. Le serveur ne voit que du chiffré."><Lock size={13} />Chiffré de bout en bout</span>
+          {verified && <span className="e2e-badge" data-testid="verified" title="Vous avez comparé votre code de sécurité avec cette personne."><Shield size={13} />Vérifié</span>}
           <span style={{ flex: 1 }} />
+          {other && s.validated && (
+            <button className="icon-btn" aria-label="Code de sécurité" title="Code de sécurité : vérifier que personne ne s’interpose" onClick={() => setSafety({ id: other.id, name: other.pseudo })}><Shield size={18} /></button>
+          )}
+          {conv.kind === 'group' && s.validated && (
+            <button className="icon-btn" aria-label="Ajouter un ami au groupe" title="Ajouter un ami au groupe" onClick={() => setAdding(true)}><Plus size={18} /></button>
+          )}
           {other && s.friends.friends.some((f) => f.id === other.id) && (
             <button className="icon-btn" aria-label={'Appeler ' + other.pseudo} title={s.validated ? 'Appeler' : 'Appareil non validé'}
               disabled={!s.validated || (!!activeCall && activeCall.status !== 'ended')} onClick={() => run(startCall(other))}><Phone size={18} /></button>
@@ -334,6 +354,18 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
         {other && <CallPanel account={account} userId={other.id} />}
         <SecurityBanner />
         {error && <div style={{ padding: '8px 16px 0' }}><Alert kind="error">{error}</Alert></div>}
+        {keyChanged && (
+          <div style={{ padding: '8px 16px 0' }}>
+            <button className="btn btn-primary btn-sm" onClick={() => setSafety(keyChanged)}>Comparer le code de sécurité avec {keyChanged.name}</button>
+          </div>
+        )}
+        {unconfirmed.length > 0 && (
+          <div style={{ padding: '8px 16px 0' }} data-testid="unconfirmed">
+            <Alert kind="warn">{unconfirmed.map(name).join(', ')} {unconfirmed.length > 1 ? 'figurent' : 'figure'} dans le groupe sans qu&apos;un membre l&apos;ait
+              annoncé : vos messages ne {unconfirmed.length > 1 ? 'leur' : 'lui'} sont pas chiffrés. Si c&apos;est voulu, demandez à la personne qui l&apos;a ajouté·e
+              d&apos;utiliser une application à jour, ou ajoutez-la vous-même.</Alert>
+          </div>
+        )}
         {s.warnings.length > 0 && <div style={{ padding: '8px 16px 0' }}><Alert kind="warn">{s.warnings[s.warnings.length - 1]}</Alert></div>}
         {info && <div style={{ padding: '8px 16px 0' }}><Alert kind="info">{info}</Alert></div>}
         <div className={'messages' + (dragging ? ' drop-target' : '')} ref={listRef} role="log" aria-label={'Conversation avec ' + title}
@@ -345,6 +377,9 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
             <p className="muted">Début de votre conversation. Les messages sont chiffrés de bout en bout et gardés sur vos appareils.</p>
           </div>
           {history.map((m, i) => {
+            if (m.added) {
+              return <div className="day-sep" key={m.event_id} data-testid="members-event">{name(m.from)} a ajouté {m.added.map(name).join(', ')} au groupe</div>
+            }
             const prev = history[i - 1]
             const newDay = !prev || !sameDay(prev.at, m.at)
             const grouped = !!prev && !newDay && prev.from === m.from && Date.parse(m.at) - Date.parse(prev.at) < 7 * 60_000
@@ -387,6 +422,8 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
           ))}
         </div>
         {lightbox && <div className="lightbox" onClick={() => setLightbox(null)}><img src={lightbox} alt="" /></div>}
+        {safety && <SafetyDialog userId={safety.id} name={safety.name} onClose={() => { setSafety(null); setKeyChanged(null); setError('') }} />}
+        {adding && <AddMemberDialog conv={conv} onClose={() => setAdding(false)} />}
         <div className="composer-wrap">
           <div className="composer">
             {editing && (
@@ -422,6 +459,32 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
         </div>
       </div>
     </div>
+  )
+}
+
+// Adds a friend to a group: the server records it, and the app announces
+// them to the members in an encrypted event (their apps encrypt for them).
+function AddMemberDialog({ conv, onClose }: { conv: Conversation; onClose: () => void }) {
+  const s = useSocial()
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const candidates = s.friends.friends.filter((f) => !conv.members.some((m) => m.id === f.id))
+  return (
+    <Dialog title="Ajouter au groupe" onClose={onClose}>
+      <p className="muted small" style={{ lineHeight: 1.5 }}>La personne lira les messages envoyés à partir de maintenant, pas les précédents.</p>
+      {candidates.length === 0 && <Alert kind="info">Tous vos amis sont déjà dans ce groupe.</Alert>}
+      <div className="checklist">
+        {candidates.map((f) => (
+          <button key={f.id} className="btn btn-ghost btn-sm" disabled={busy} onClick={() => {
+            setBusy(true)
+            setError('')
+            addToGroup(conv, f.id).then(onClose, (e) => setError(errorMessage(e))).finally(() => setBusy(false))
+          }}>{f.pseudo}</button>
+        ))}
+      </div>
+      <Alert kind="error">{error}</Alert>
+      <div className="dialog-actions"><button className="btn btn-ghost btn-sm" onClick={onClose}>Fermer</button></div>
+    </Dialog>
   )
 }
 

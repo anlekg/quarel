@@ -87,7 +87,8 @@ const messages: Record<string, string> = {
   not_identity: 'Aucun service d\u2019identité Quarel ne répond à cette adresse.',
   // End-to-end encryption (client-side).
   device_not_validated: 'Cet appareil n\u2019est pas encore validé : il ne peut pas encore envoyer de messages privés.',
-  master_key_changed: 'La clé de sécurité de ce contact a changé depuis votre premier échange : envoi bloqué par précaution (possible usurpation).',
+  master_key_changed: 'La clé de sécurité de ce contact a changé depuis votre premier échange : envoi bloqué par précaution (possible usurpation). Comparez votre nouveau code de sécurité avec cette personne avant d\u2019accepter sa nouvelle clé.',
+  no_keys_yet: 'Cette personne n\u2019a pas encore de clé de chiffrement (aucun appareil validé).',
   no_one_time_key: 'Un appareil du destinataire n\u2019a plus de clé disponible ; réessayez plus tard.',
   device_not_found: 'Cet appareil n\u2019existe plus (déconnecté entre-temps ?).',
   code_mismatch: 'Ce code ne correspond pas à celui de l\u2019appareil. Ne le validez pas : vérifiez le code affiché sur l\u2019autre appareil. S\u2019il est différent, quelqu\u2019un tente peut-être de s\u2019insérer.',

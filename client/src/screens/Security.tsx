@@ -2,10 +2,10 @@
 // panels that use them.
 import { useEffect, useState } from 'react'
 import type { OwnDevice } from '../e2e/engine'
-import { Alert, Dialog, Field, Submit } from '../components/ui'
+import { Alert, Dialog, Field, PasswordField, Submit } from '../components/ui'
 import { errorMessage } from '../lib/errors'
 import { prefs } from '../platform'
-import { approveDevice, createRecovery, listDevices, restoreFromPhrase, useSocial } from '../state/social'
+import { approveDevice, createRecovery, listDevices, markVerified, resetKeys, restoreFromPhrase, safetyCode, trustNewKey, useSocial } from '../state/social'
 
 const plural = (n: number, word: string) => n + ' ' + word + (n > 1 ? 's' : '')
 
@@ -13,7 +13,7 @@ const plural = (n: number, word: string) => n + ' ' + word + (n > 1 ? 's' : '')
 // another one does, or the account has no recovery phrase yet.
 export function SecurityBanner() {
   const s = useSocial()
-  const [dialog, setDialog] = useState<'restore' | 'approve' | 'recovery' | null>(null)
+  const [dialog, setDialog] = useState<'restore' | 'approve' | 'recovery' | 'reset' | null>(null)
   const [hideRecovery, setHideRecovery] = useState(() => prefs.get('hide-recovery-hint', false))
   if (s.status !== 'ready' && s.status !== 'offline') return null
   let banner = null
@@ -23,9 +23,10 @@ export function SecurityBanner() {
         <div data-testid="unvalidated">
           Cet appareil n&apos;est pas encore validé : il ne peut ni envoyer ni lire les messages privés. Sur un appareil déjà validé,
           ouvrez Paramètres › Appareils et saisissez ce code : <span className="code-box" data-testid="own-code">{s.code}</span>
-          {s.backup !== 'none' && s.backup !== 'unknown' && (
-            <div className="banner-actions"><button className="btn btn-ghost btn-sm" onClick={() => setDialog('restore')}>Utiliser ma phrase de récupération</button></div>
-          )}
+          <div className="banner-actions">
+            {s.backup !== 'none' && s.backup !== 'unknown' && <button className="btn btn-ghost btn-sm" onClick={() => setDialog('restore')}>Utiliser ma phrase de récupération</button>}
+            <button className="btn btn-ghost btn-sm" onClick={() => setDialog('reset')}>J&apos;ai tout perdu</button>
+          </div>
         </div>
       </Alert>
     )
@@ -57,7 +58,108 @@ export function SecurityBanner() {
       {dialog === 'restore' && <RestoreDialog onClose={() => setDialog(null)} />}
       {dialog === 'approve' && <ApproveDialog onClose={() => setDialog(null)} />}
       {dialog === 'recovery' && <RecoveryDialog replace={false} onClose={() => setDialog(null)} />}
+      {dialog === 'reset' && <ResetKeysDialog onClose={() => setDialog(null)} />}
     </>
+  )
+}
+
+// Every device holding the account key and the recovery phrase are lost: the
+// account's encryption starts over from this device (new master key).
+export function ResetKeysDialog({ onClose }: { onClose: () => void }) {
+  const [password, setPassword] = useState('')
+  const [totp, setTotp] = useState('')
+  const [sure, setSure] = useState(false)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      await resetKeys(password, totp.trim() || undefined)
+      setDone(true)
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (done) {
+    return (
+      <Dialog title="Nouvelles clés de chiffrement" onClose={onClose}>
+        <Alert kind="info">Cet appareil est validé avec une nouvelle clé de compte. Créez tout de suite une nouvelle phrase de récupération (Paramètres › Récupération).</Alert>
+        <div className="dialog-actions"><button className="btn btn-primary btn-sm" onClick={onClose}>Terminer</button></div>
+      </Dialog>
+    )
+  }
+  return (
+    <Dialog title="Repartir avec de nouvelles clés" onClose={onClose}>
+      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <p className="muted small" style={{ lineHeight: 1.5 }}>
+          Seulement si vous avez perdu <b>tous</b> vos appareils validés <b>et</b> votre phrase de récupération. Vos anciens messages privés
+          restent illisibles ici ; vos autres appareils devront être validés de nouveau ; vos contacts verront que votre clé a changé
+          et devront comparer avec vous un nouveau code de sécurité. Un email vous prévient.
+        </p>
+        <PasswordField label="Mot de passe" value={password} autoComplete="current-password" onChange={(e) => setPassword(e.target.value)} />
+        <Field label="Code de double authentification (si activée)" value={totp} inputMode="numeric" autoComplete="one-time-code" onChange={(e) => setTotp(e.target.value)} />
+        <label className="check"><input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} /> J&apos;ai compris, je repars avec de nouvelles clés</label>
+        <Alert kind="error">{error}</Alert>
+        <div className="dialog-actions">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Annuler</button>
+          <Submit busy={busy} className="btn btn-danger btn-sm" disabled={!sure || !password}>Réinitialiser mes clés</Submit>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
+// The safety code with a contact: both see the same code if each app holds
+// the other's real key (and not one substituted by the identity service).
+export function SafetyDialog({ userId, name, onClose }: { userId: string; name: string; onClose: () => void }) {
+  const [info, setInfo] = useState<{ code: string; newCode?: string; verified: boolean } | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const load = () => safetyCode(userId).then(setInfo, (e) => setError(errorMessage(e)))
+  useEffect(() => { load() }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
+  const act = (fn: () => Promise<void>) => {
+    setBusy(true)
+    setError('')
+    fn().then(load, (e) => setError(errorMessage(e))).finally(() => setBusy(false))
+  }
+  return (
+    <Dialog title={'Code de sécurité avec ' + name} onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }} data-testid="safety">
+        {info?.newCode ? (
+          <>
+            <Alert kind="warn">La clé de {name} a changé depuis votre premier échange : vos messages ne partent plus. C&apos;est normal si {name} a
+              réinitialisé ses clés (appareils et phrase perdus) ; sinon, quelqu&apos;un tente peut-être de se faire passer pour cette personne.</Alert>
+            <p className="muted small" style={{ lineHeight: 1.5 }}>Comparez ce nouveau code avec celui que voit {name} (de vive voix, par téléphone…) avant de l&apos;accepter :</p>
+            <span className="code-box" data-testid="safety-code">{info.newCode}</span>
+            <div className="dialog-actions">
+              <button className="btn btn-ghost btn-sm" onClick={onClose}>Fermer</button>
+              <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => act(() => trustNewKey(userId))}>Les codes correspondent : accepter la nouvelle clé</button>
+            </div>
+          </>
+        ) : info ? (
+          <>
+            <p className="muted small" style={{ lineHeight: 1.5 }}>
+              {name} voit le même code dans sa conversation avec vous si vos deux applications détiennent les vraies clés l&apos;une de l&apos;autre.
+              Comparez-les de vive voix ou par téléphone (pas par ces messages).
+            </p>
+            <span className="code-box" data-testid="safety-code">{info.code}</span>
+            {info.verified ? <Alert kind="info">Vérifié : vous avez déjà comparé ce code.</Alert> : null}
+            <div className="dialog-actions">
+              <button className="btn btn-ghost btn-sm" onClick={onClose}>Fermer</button>
+              {!info.verified && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => act(() => markVerified(userId))}>Les codes correspondent</button>}
+            </div>
+          </>
+        ) : <span className="spinner" />}
+        <Alert kind="error">{error}</Alert>
+      </div>
+    </Dialog>
   )
 }
 

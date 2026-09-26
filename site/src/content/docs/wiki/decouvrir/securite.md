@@ -21,7 +21,8 @@ Quarel n’invente pas sa cryptographie : il s’appuie sur des bibliothèques �
 - **Chaque appareil a ses clés.** Un nouvel appareil doit être **validé** par un appareil déjà validé, après comparaison d’un code affiché sur les deux écrans. Sans cela, il ne reçoit rien.
 - **Phrase de récupération** : 12 mots (liste BIP-39 française) qui chiffrent une sauvegarde de vos clés et de votre historique, stockée sur le service sous forme illisible. Si vous perdez tous vos appareils, elle seule permet de tout retrouver : notez-la sur papier.
 - Les **fichiers** envoyés en privé sont chiffrés sur votre appareil, transmis de préférence directement aux appareils en ligne (pair à pair), sinon déposés chiffrés sur le service, puis effacés dès réception (7 jours au plus).
-- Le contact avec chaque personne est **épinglé** au premier échange : si ses clés changent de façon suspecte, l’application refuse d’envoyer et vous prévient.
+- Le contact avec chaque personne est **épinglé** au premier échange : si ses clés changent, l’application refuse d’envoyer et vous prévient. Un **code de sécurité**, le même des deux côtés, permet de vérifier hors ligne que personne (pas même votre service d’identité) n’a substitué ses clés.
+- Dans un **groupe**, l’application ne chiffre que pour les membres annoncés par un membre (chiffré) : un service compromis ne peut pas glisser quelqu’un dans une conversation pour lire les messages suivants.
 
 ## Appels
 

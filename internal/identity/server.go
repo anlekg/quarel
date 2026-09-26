@@ -325,6 +325,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/keys/device", s.authed(s.handleUploadDeviceKeys))
 	mux.HandleFunc("GET /v1/keys/device", s.authed(s.writeOwnDevice))
 	mux.HandleFunc("POST /v1/keys/certify", s.authed(s.handleCertifyDevice))
+	mux.HandleFunc("POST /v1/keys/master/reset", s.authed(s.handleResetMasterKey))
 	mux.HandleFunc("POST /v1/keys/one-time", s.authed(s.handleUploadOneTimeKeys))
 	mux.HandleFunc("POST /v1/keys/claim", s.authed(s.handleClaimKeys))
 	mux.HandleFunc("GET /v1/users/{id}/keys", s.authed(s.handleUserKeys))

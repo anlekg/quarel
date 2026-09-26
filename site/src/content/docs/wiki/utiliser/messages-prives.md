@@ -30,6 +30,14 @@ Douze mots qui chiffrent une sauvegarde de vos clés et de votre historique. Cr�
 
 Si vous n’avez plus aucun appareil validé, connectez-vous sur un nouvel appareil, choisissez de restaurer avec la phrase, saisissez les 12 mots puis **Restaurer** : tout revient (historique, contacts, serveurs). Sans phrase ni appareil validé, vos anciens messages privés sont **perdus** — personne, même pas nous, ne peut les déchiffrer.
 
+**Tout perdu** (appareils validés et phrase) ? Dans le bandeau de l’appareil non validé, « J’ai tout perdu » repart avec de nouvelles clés (mot de passe et double authentification demandés). Vos anciens messages restent illisibles, vos contacts sont prévenus que votre clé a changé.
+
+## Code de sécurité
+
+Dans une conversation en tête à tête, le bouton **bouclier** affiche un code de sécurité (`XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`). Votre contact voit **le même code** si vos deux applications détiennent les vraies clés l’une de l’autre — et non des clés substituées par un service compromis. Comparez-le de vive voix ou par téléphone, puis « Les codes correspondent » : la conversation affiche **Vérifié**.
+
 ## Avertissement de sécurité
 
-Si les clés d’un contact changent de façon inattendue, l’application **refuse d’envoyer** et vous prévient. Vérifiez avec la personne (par un autre moyen) qu’elle a bien réinstallé ou changé d’appareil.
+Si les clés d’un contact changent, l’application **refuse d’envoyer** et vous prévient. C’est normal si la personne a réinitialisé ses clés ; sinon, quelqu’un tente peut-être de se faire passer pour elle. Comparez le **nouveau** code de sécurité avec elle avant d’accepter sa nouvelle clé.
+
+Dans un groupe, l’application ne chiffre que pour les membres qu’elle connaissait déjà et ceux qu’un membre a **annoncés** en les ajoutant (« alice a ajouté carol au groupe »). Une personne apparue dans la liste sans annonce ne reçoit rien, et l’application vous le signale.

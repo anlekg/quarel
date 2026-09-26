@@ -351,3 +351,38 @@ func TestBackup(t *testing.T) {
 	e.expect(204, "", e.call("DELETE", "/v1/backup", alice.SessionToken, nil, nil))
 	e.expect(404, "no_backup", e.call("GET", "/v1/backup", phone.SessionToken, nil, nil))
 }
+
+// An account that lost every device holding its master key (and its
+// recovery phrase) can start over: password (and 2FA) required, the old key,
+// certifications and backup go, and a device creates a new master key.
+func TestResetMasterKey(t *testing.T) {
+	e := newEnv(t)
+	const pw = "correct horse battery"
+	lr, _ := e.registerVerified("a@example.com", "alice", pw)
+	_, master, _ := ed25519.GenerateKey(nil)
+	d1 := newTestDevice(lr)
+	e.expect(200, "", e.upload(d1, master, true))
+	e.expect(200, "", e.call("PUT", "/v1/backup", d1.token(), map[string]any{"version": 0, "data": "b3BhcXVl"}, nil))
+
+	d2 := newTestDevice(e.login2("a@example.com", pw, "nouveau"))
+	e.expect(200, "", e.upload(d2, nil, false))
+	e.expect(401, "invalid_credentials", e.call("POST", "/v1/keys/master/reset", d2.token(), map[string]string{"password": "mauvais"}, nil))
+	e.expect(204, "", e.call("POST", "/v1/keys/master/reset", d2.token(), map[string]string{"password": pw}, nil))
+
+	var dev deviceKeysJSON
+	e.expect(200, "", e.call("GET", "/v1/keys/device", d1.token(), nil, &dev))
+	if dev.Verified {
+		t.Fatal("device still certified by the old master key")
+	}
+	e.expect(404, "no_backup", e.call("GET", "/v1/backup", d2.token(), nil, nil))
+	// The device publishes a new master key and certifies itself.
+	_, fresh, _ := ed25519.GenerateKey(nil)
+	e.expect(200, "", e.upload(d2, fresh, true))
+	e.expect(200, "", e.call("GET", "/v1/keys/device", d2.token(), nil, &dev))
+	if !dev.Verified {
+		t.Fatal("new master key not accepted")
+	}
+	if !strings.Contains(e.mail.last["a@example.com"], "réinitialisées") {
+		t.Fatal("no alert email")
+	}
+}

@@ -18,7 +18,7 @@ expect() { # expect "<description>" "<output>" "<text that must appear>"
 refuse() { # refuse "<description>" "<output>" "<text that must NOT appear>"
   if grep -qF -- "$3" <<<"$2"; then echo "✘ $1 — ne devrait pas contenir : $3"; FAIL=1; else echo "✔ $1"; fi
 }
-for u in alice bob carol dave; do
+for u in alice bob carol dave erin; do
   Q $u register $u@example.com $u >/dev/null
   Q $u verify-email $u@example.com "$(grep -o 'Quarel : [0-9]*' $D/id.log | tail -1 | grep -o '[0-9]*$')" >/dev/null
   Q $u login $u "pc-$u" >/dev/null
@@ -44,6 +44,26 @@ Q alice dm-kick Tarot carol >/dev/null
 Q alice dm Tarot "Message après le départ de carol" >/dev/null
 refuse "le membre retiré ne reçoit plus rien" "$(Q carol dm-history alice; Q carol dms)" "Message après le départ"
 expect "les autres oui (nouvelle clé)" "$(Q bob dm-history Tarot)" "Message après le départ de carol"
+
+echo "## Membre glissé dans le groupe par le service"
+# A compromised Identity service adds erin behind the members' back: the apps
+# only encrypt for members announced by a member (encrypted "members" event).
+DB=$D/id/identity.db
+CONV=$(sqlite3 $DB "SELECT id FROM conversations WHERE name = 'Tarot'")
+ERIN=$(sqlite3 $DB "SELECT id FROM users WHERE pseudo = 'erin'")
+sqlite3 $DB "PRAGMA busy_timeout = 5000; INSERT INTO conversation_members (conversation_id, user_id, joined_at) VALUES ('$CONV', '$ERIN', strftime('%s','now'))" >/dev/null
+expect "l'intrus figure dans la liste du serveur" "$(Q erin dms)" "Tarot"
+expect "alice est prévenue, rien n'est chiffré pour l'intrus" "$(Q alice dm Tarot 'Après l intrusion')" "non chiffré pour erin"
+refuse "l'intrus ne lit rien" "$(Q erin dm-history Tarot)" "Après l intrusion"
+expect "les vrais membres le lisent" "$(Q bob dm-history Tarot)" "Après l intrusion"
+expect "dave, ajouté par alice, a été annoncé aux membres" "$(Q bob dm-history Tarot)" "a ajouté dave au groupe"
+
+echo "## Code de sécurité"
+CODE_A=$(Q alice safety bob | sed -n 2p | tr -d " ")
+CODE_B=$(Q bob safety alice | sed -n 2p | tr -d " ")
+[ -n "$CODE_A" ] && [ "$CODE_A" = "$CODE_B" ] && echo "✔ même code de sécurité des deux côtés ($CODE_A)" || { echo "✘ codes différents : $CODE_A / $CODE_B"; FAIL=1; }
+Q alice safety bob ok >/dev/null
+expect "contact marqué vérifié" "$(Q alice safety bob)" "(vérifié·e)"
 
 echo "## Modifier, supprimer"
 N=$(Q bob dm Tarot "Je serai là à 20 h" | grep -o '#[0-9]*' | head -1 | tr -d '#')

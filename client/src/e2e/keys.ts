@@ -62,3 +62,16 @@ export function verificationCode(deviceEd25519: string): string {
 }
 
 export const normalizeCode = (c: string) => c.replace(/[-\s]/g, '').toUpperCase()
+
+// The safety code two people compare to check that each app pinned the
+// other's real master key (e2ekeys.ContactCode): 120 bits, six groups of four.
+export function contactCode(userA: string, masterA: string, userB: string, masterB: string): string {
+  if (userB < userA) [userA, masterA, userB, masterB] = [userB, masterB, userA, masterA]
+  const h = sha256(msg('quarel-contact-code-v1', userA, masterA, userB, masterB)).subarray(0, 15)
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  let bits = ''
+  for (const b of h) bits += b.toString(2).padStart(8, '0')
+  let s = ''
+  for (let i = 0; i < 120; i += 5) s += alphabet[parseInt(bits.slice(i, i + 5), 2)]
+  return s.match(/.{4}/g)!.join('-')
+}
