@@ -134,7 +134,7 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	s.clearFailures(r, lockoutKey(u, ""))
+	s.clearFailures(r, lockoutKey(u, ""), "")
 	s.mailer.Send(u.Email, "Quarel — mot de passe modifié", fmt.Sprintf(
 		"Bonjour %s,\n\nLe mot de passe de votre compte Quarel vient d'être réinitialisé et tous vos appareils ont été déconnectés.\n", u.Pseudo))
 	w.WriteHeader(http.StatusNoContent)

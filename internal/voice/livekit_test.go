@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,5 +126,27 @@ func TestRoomServiceCalls(t *testing.T) {
 	}
 	if len(got) != 4 {
 		t.Fatalf("calls = %v", got)
+	}
+}
+
+// Only LiveKit's signalling goes through the community server's port.
+func TestProxyPaths(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(r.URL.Path)) }))
+	defer backend.Close()
+	port, _ := strconv.Atoi(backend.URL[strings.LastIndex(backend.URL, ":")+1:])
+	front := httptest.NewServer(Proxy("/lk", port))
+	defer front.Close()
+	for path, want := range map[string]int{
+		"/lk/rtc": 200, "/lk/rtc/validate": 200, "/lk/rtc/v1": 200, "/lk/rtc/v1/validate": 200,
+		"/lk/twirp/livekit.RoomService/ListRooms": 404, "/lk/": 404, "/lk/rtcx": 404, "/lk/rtc/../twirp/x": 404,
+	} {
+		res, err := http.Get(front.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != want {
+			t.Errorf("%s: %d, want %d", path, res.StatusCode, want)
+		}
 	}
 }

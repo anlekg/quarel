@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/anlekg/quarel/internal/realtime"
+	"github.com/anlekg/quarel/internal/secret"
 )
 
 // The gateway (GET /v1/gateway) follows the protocol of package realtime.
@@ -18,7 +19,9 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 			if err != nil || m == nil {
 				return nil, err
 			}
-			return &realtime.Auth{Key: m.ID, Group: m.ID, Expires: expires}, nil
+			// Group: the session, so that one ended session (its device logged
+			// out on its identity service) can be disconnected alone.
+			return &realtime.Auth{Key: m.ID, Group: secret.SHA256Hex(token), Expires: expires}, nil
 		},
 		func(ctx context.Context, a *realtime.Auth) (any, error) {
 			m, err := memberBy(ctx, s.db, `id = ?`, a.Key)

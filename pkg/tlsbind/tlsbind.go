@@ -190,8 +190,8 @@ type Verifier struct {
 	host   string
 	mu     sync.Mutex
 	expect string
-	bound  string // server ID proven by bindings ("" if none yet)
-	ca     bool   // a certificate from an authority was accepted
+	bound  string         // server ID proven by bindings ("" if none yet)
+	ca     bool           // a certificate from an authority was accepted
 	roots  *x509.CertPool // nil: the system's authorities (tests set their own)
 }
 

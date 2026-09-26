@@ -37,6 +37,7 @@ type Config struct {
 	TrustedProxies ratelimit.Proxies
 	TLS            tlsconf.Config
 
+	SessionIdle     time.Duration // sessions unused this long end (QUAREL_SESSION_IDLE)
 	DMFileMaxBytes  int64         // size limit of an encrypted conversation file
 	DMFileTTL       time.Duration // how long the server keeps conversation files
 	GroupMaxMembers int           // members of a group conversation (QUAREL_DM_GROUP_MAX)
@@ -106,6 +107,9 @@ func ConfigFromEnv() (Config, error) {
 	if c.TURN, err = turnConfigFromEnv(); err != nil {
 		return c, err
 	}
+	if c.SessionIdle, err = time.ParseDuration(env("QUAREL_SESSION_IDLE", "2160h")); err != nil || c.SessionIdle < time.Hour {
+		return c, fmt.Errorf("sessions inactives (QUAREL_SESSION_IDLE) : durée invalide (ex. 2160h pour 90 jours, au moins 1h)")
+	}
 	c.DMFileMaxBytes = int64(envInt("QUAREL_DM_FILE_MAX_MB", 25)) << 20
 	c.GroupMaxMembers = envInt("QUAREL_DM_GROUP_MAX", 10)
 	if c.DMFileTTL, err = time.ParseDuration(env("QUAREL_DM_FILE_TTL", "168h")); err != nil || c.DMFileTTL < time.Hour {
@@ -159,7 +163,7 @@ type Server struct {
 	now    func() time.Time
 
 	proxies ratelimit.Proxies
-	limit   struct{ global, register, login, email, friends, files, typing, turn *ratelimit.Limiter }
+	limit   struct{ global, register, login, email, friends, files, typing, turn, notice *ratelimit.Limiter }
 	turnKey string       // shared secret of the TURN relay ("" when it is off)
 	turnIP  atomic.Value // string: public address announced for the relay
 }
@@ -211,6 +215,7 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer, retired 
 	s.limit.files = ratelimit.New(cfg.Limits.Files, time.Hour)
 	s.limit.typing = ratelimit.New(1, 3*time.Second)
 	s.limit.turn = ratelimit.New(60, time.Hour)
+	s.limit.notice = ratelimit.New(1, time.Hour) // "someone tried to register with your address", per address
 	if s.cfg.DMFileMaxBytes <= 0 {
 		s.cfg.DMFileMaxBytes = 25 << 20
 	}
@@ -225,6 +230,9 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer, retired 
 	}
 	if s.cfg.DMFileTTL <= 0 {
 		s.cfg.DMFileTTL = 7 * 24 * time.Hour
+	}
+	if s.cfg.SessionIdle <= 0 {
+		s.cfg.SessionIdle = 90 * 24 * time.Hour
 	}
 	return s
 }

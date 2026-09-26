@@ -141,8 +141,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	token := secret.NewToken()
 	expires := claims.ExpiresAt.Time
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token_hash, member_id, created_at, expires_at) VALUES (?, ?, ?, ?)`,
-		secret.SHA256Hex(token), m.ID, s.nowMs(), expires.UnixMilli()); err != nil {
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token_hash, member_id, created_at, expires_at, device_key) VALUES (?, ?, ?, ?, ?)`,
+		secret.SHA256Hex(token), m.ID, s.nowMs(), expires.UnixMilli(), claims.DeviceKey); err != nil {
 		writeErr(w, r, err)
 		return
 	}

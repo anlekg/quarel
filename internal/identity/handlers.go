@@ -123,22 +123,41 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	for _, c := range []struct{ col, val, code string }{
-		{"email", email, "email_taken"},
-		{"pseudo_norm", strings.ToLower(req.Pseudo), "pseudo_taken"},
-	} {
-		if u, err := s.userBy(ctx, c.col, c.val); err != nil {
-			writeErr(w, r, err)
-			return
-		} else if u != nil {
-			writeErr(w, r, errf(http.StatusConflict, c.code, "%s is already in use", strings.TrimSuffix(c.col, "_norm")))
-			return
-		}
+	// The answer never tells whether the email already has an account: a
+	// verified one gets the same answer as a new account, and a notice by
+	// email; an unverified one (nobody could sign in with it) is replaced.
+	existing, err := s.userBy(ctx, "email", email)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	stale := existing != nil && !existing.EmailVerifiedAt.Valid
+	if pu, err := s.userBy(ctx, "pseudo_norm", strings.ToLower(req.Pseudo)); err != nil {
+		writeErr(w, r, err)
+		return
+	} else if pu != nil && !(stale && pu.ID == existing.ID) {
+		writeErr(w, r, errf(http.StatusConflict, "pseudo_taken", "pseudo is already in use"))
+		return
 	}
 	hash, err := hashPassword(req.Password)
 	if err != nil {
 		writeErr(w, r, err)
 		return
+	}
+	if existing != nil && !stale {
+		if ok, _ := s.limit.notice.Allow(email); ok {
+			s.mailer.Send(email, "Quarel — tentative d'inscription", fmt.Sprintf(
+				"Bonjour %s,\n\nQuelqu'un vient d'essayer de créer un compte Quarel avec votre adresse, alors que vous en avez déjà un.\n\n"+
+					"Si c'était vous : connectez-vous avec votre pseudo, ou utilisez « Mot de passe oublié ».\nSinon, vous pouvez ignorer ce message : rien n'a changé sur votre compte.\n", existing.Pseudo))
+		}
+		writeJSON(w, http.StatusCreated, map[string]string{"user_id": newID(), "handle": req.Pseudo + "@" + s.cfg.Issuer})
+		return
+	}
+	if stale {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ? AND email_verified_at IS NULL`, existing.ID); err != nil {
+			writeErr(w, r, err)
+			return
+		}
 	}
 	u := &user{ID: newID(), Email: email, Pseudo: req.Pseudo, CreatedAt: s.now().Unix()}
 	err = s.insertUser(ctx, u, hash, invite)
@@ -309,7 +328,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := lockoutKey(u, login)
-	err = s.guarded(r, key, func() error {
+	known := ""
+	if u != nil && s.knownDevice(ctx, u.ID, req.DeviceKey) {
+		known = req.DeviceKey
+	}
+	err = s.guardedDevice(r, key, known, func() error {
 		badCreds := errf(http.StatusUnauthorized, "invalid_credentials", "invalid login or password")
 		if u == nil {
 			verifyPassword(req.Password, dummyHash())
@@ -338,7 +361,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	s.clearFailures(r, key)
+	s.clearFailures(r, key, known)
+	s.rememberDevice(ctx, u.ID, req.DeviceKey)
 
 	token := newSecret()
 	sessID := newID()

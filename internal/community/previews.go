@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anlekg/quarel/internal/netguard"
 	"golang.org/x/net/html"
 )
 
@@ -66,12 +67,6 @@ type previewer struct {
 
 var errForbiddenAddress = errors.New("link preview: address not allowed")
 
-func publicAddress(ip net.IP) bool {
-	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsMulticast() || ip.IsUnspecified() || ip.IsInterfaceLocalMulticast() ||
-		(ip.To4() != nil && ip.To4()[0] == 100 && ip.To4()[1]&0xC0 == 64)) // 100.64.0.0/10 (CGNAT)
-}
-
 func newPreviewer(allowPrivate bool) *previewer {
 	p := &previewer{allowPrivate: allowPrivate}
 	dialer := &net.Dialer{
@@ -83,7 +78,7 @@ func newPreviewer(allowPrivate bool) *previewer {
 				return err
 			}
 			ip := net.ParseIP(host)
-			if ip == nil || (!p.allowPrivate && (!publicAddress(ip) || (port != "80" && port != "443"))) {
+			if ip == nil || (!p.allowPrivate && (!netguard.Public(ip) || (port != "80" && port != "443"))) {
 				return errForbiddenAddress
 			}
 			return nil

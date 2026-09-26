@@ -10,8 +10,10 @@ Quarel n’invente pas sa cryptographie : il s’appuie sur des bibliothèques �
 ## Votre compte
 
 - Mots de passe hachés avec **argon2id** ; double authentification **TOTP** (application d’authentification) avec 10 codes de secours.
-- Blocage automatique après des échecs répétés (par compte et par adresse IP), sans révéler si un compte existe.
+- Blocage automatique après des échecs répétés (par compte et par adresse IP), sans révéler si un compte existe. Un appareil que vous avez déjà utilisé pour vous connecter n'est pas bloqué par des échecs venus d'ailleurs : personne ne peut vous tenir dehors en tapant de faux mots de passe.
+- L'inscription ne révèle pas non plus si une adresse email a déjà un compte (la personne concernée est prévenue par email).
 - Mot de passe oublié : un code par email, **et la double authentification reste exigée**. Toutes les sessions sont alors fermées.
+- Une session inutilisée pendant 90 jours se termine. Quand une session se termine (déconnexion, appareil retiré, changement de mot de passe), les serveurs communautaires en sont informés et ferment celles de cet appareil sous 10 minutes.
 
 ## Messages privés et fichiers
 

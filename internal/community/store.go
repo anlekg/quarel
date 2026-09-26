@@ -227,6 +227,12 @@ CREATE INDEX audit_log_created ON audit_log (created_at);
 ALTER TABLE members ADD COLUMN voice_mute INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE members ADD COLUMN voice_deaf INTEGER NOT NULL DEFAULT 0;
 `,
+	// 6 (audit, 2026-09-26): the device key of each session, so that a
+	// session its Identity service ended (logout, revoked device, password
+	// change…) ends here too.
+	`
+ALTER TABLE sessions ADD COLUMN device_key TEXT;
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

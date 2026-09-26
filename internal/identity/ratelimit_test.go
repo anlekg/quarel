@@ -70,25 +70,36 @@ func TestLockoutIsPerIP(t *testing.T) {
 	e := newLimitedEnv(t, Limits{AuthFailuresPerIP: 3, AuthFailuresTotal: 7})
 	const pw = "correct horse battery"
 	e.registerVerified("a@example.com", "alice", pw)
-	_, pub := deviceKey(t)
-	login := func(ip, password string) result {
-		return e.callFrom(ip, "POST", "/v1/auth/login", map[string]string{"login": "alice", "password": password, "device_key": pub})
+	_, own := deviceKey(t)      // the owner's device
+	_, attacker := deviceKey(t) // someone else's
+	login := func(ip, device, password string) result {
+		return e.callFrom(ip, "POST", "/v1/auth/login", map[string]string{"login": "alice", "password": password, "device_key": device})
 	}
+	e.expect(200, "", login("1.1.1.1", own, pw)) // the owner's device is now known
 
 	// An attacker locks the account only for their own address.
 	for range 3 {
-		e.expect(401, "invalid_credentials", login("6.6.6.6", "wrong password"))
+		e.expect(401, "invalid_credentials", login("6.6.6.6", attacker, "wrong password"))
 	}
-	e.expect(429, "account_locked", login("6.6.6.6", pw))
-	e.expect(200, "", login("1.1.1.1", pw)) // the owner still gets in
+	e.expect(429, "account_locked", login("6.6.6.6", attacker, pw))
+	e.expect(200, "", login("1.1.1.1", own, pw)) // the owner still gets in
 
 	// Spreading attempts over many addresses hits the per-account ceiling:
-	// 3 failures above + 4 here = 7, then everyone is locked out, owner included.
+	// 3 failures above + 4 here = 7, then new devices are locked out, even the owner's...
 	for _, ip := range []string{"7.0.0.1", "7.0.0.2", "7.0.0.3", "7.0.0.4"} {
-		e.expect(401, "invalid_credentials", login(ip, "wrong password"))
+		e.expect(401, "invalid_credentials", login(ip, attacker, "wrong password"))
 	}
-	e.expect(429, "account_locked", login("7.0.0.5", "wrong password"))
-	e.expect(429, "account_locked", login("1.1.1.1", pw))
+	e.expect(429, "account_locked", login("7.0.0.5", attacker, "wrong password"))
+	_, newDevice := deviceKey(t)
+	e.expect(429, "account_locked", login("1.1.1.1", newDevice, pw))
+	// ...but not a device that already signed in: the attack cannot keep the owner out.
+	e.expect(200, "", login("1.1.1.1", own, pw))
+
+	// Someone who learnt that device's key is held by its own counter.
+	for _, ip := range []string{"8.0.0.1", "8.0.0.2", "8.0.0.3"} {
+		e.expect(401, "invalid_credentials", login(ip, own, "wrong password"))
+	}
+	e.expect(429, "account_locked", login("8.0.0.4", own, pw))
 	e.clock = e.clock.Add(lockoutWindow)
-	e.expect(200, "", login("1.1.1.1", pw))
+	e.expect(200, "", login("1.1.1.1", newDevice, pw))
 }
