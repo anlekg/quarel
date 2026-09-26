@@ -9,8 +9,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/anlekg/quarel/internal/diskspace"
 )
 
 // Typing indicators and read receipts (live only, never stored, each can be
@@ -151,7 +154,9 @@ func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, r, errf(http.StatusBadRequest, "invalid_device", "device %q is not in this conversation", d))
 				return
 			}
-			pending = append(pending, d)
+			if d != sess.ID && !slices.Contains(pending, d) { // the sending device has the file
+				pending = append(pending, d)
+			}
 		}
 	} else {
 		for d := range devices {
@@ -162,6 +167,11 @@ func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(pending) == 0 {
 		writeErr(w, r, errf(http.StatusBadRequest, "no_recipients", "no device needs this file"))
+		return
+	}
+	// Server copies are bounded per user and by the disk's free space.
+	if err := s.fileRoom(ctx, sess.UserID, r.ContentLength); err != nil {
+		writeErr(w, r, err)
 		return
 	}
 	if err := os.MkdirAll(s.filesDir(), 0o700); err != nil {
@@ -179,6 +189,9 @@ func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 	f.Close()
 	if err == nil && size == 0 {
 		err = errf(http.StatusBadRequest, "empty_file", "the file is empty")
+	}
+	if err == nil && r.ContentLength < 0 { // size unknown in advance: checked now
+		err = s.fileRoom(ctx, sess.UserID, size)
 	}
 	if err != nil {
 		os.Remove(path)
@@ -310,6 +323,25 @@ func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 func (s *Server) removeConvFiles(ctx context.Context, convID string) {
 	// The rows went with the conversation (cascade); the files are orphans now.
 	s.CleanupFiles(ctx)
+}
+
+// fileRoom checks that size more bytes of server copies fit in the user's
+// quota and on the disk.
+func (s *Server) fileRoom(ctx context.Context, userID string, size int64) error {
+	if size < 0 {
+		size = 0
+	}
+	if s.cfg.DMFileQuota > 0 {
+		var used int64
+		if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0) FROM conv_attachments WHERE uploader_id = ?`, userID).Scan(&used); err != nil {
+			return err
+		}
+		if used+size > s.cfg.DMFileQuota {
+			return errf(http.StatusInsufficientStorage, "file_quota_exceeded",
+				"your files waiting on the server already take %d MB (limit %d MB): they go once received, or after %s", used>>20, s.cfg.DMFileQuota>>20, s.cfg.DMFileTTL)
+		}
+	}
+	return diskspace.Check(s.cfg.DataDir, s.cfg.MinFreeBytes, size)
 }
 
 // CleanupFiles deletes expired files and files whose conversation is gone.

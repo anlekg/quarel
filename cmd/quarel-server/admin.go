@@ -75,6 +75,8 @@ var fields = []adminui.Field{
 	{Group: "Vocal et vidéo", Key: "QUAREL_LIVEKIT_SECRET", Label: "Secret d'API LiveKit", Kind: "secret", ShowIf: "QUAREL_VOICE=external"},
 
 	{Group: "Messages", Key: "QUAREL_MAX_UPLOAD_MB", Label: "Taille maximale des fichiers (Mo)", Kind: "number", Default: "25"},
+	{Group: "Messages", Key: "QUAREL_MIN_FREE_MB", Label: "Espace disque réservé (Mo)", Kind: "number", Default: "1024",
+		Help: "Les fichiers sont refusés quand il reste moins d'espace libre sur la machine."},
 	{Group: "Messages", Key: "QUAREL_LINK_PREVIEWS", Label: "Aperçus des liens", Kind: "bool", Default: "on",
 		Help: "Le serveur visite les liens publiés pour en afficher le titre (jamais d'adresse privée)."},
 

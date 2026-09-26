@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -418,17 +419,46 @@ type inboxItem struct {
 }
 
 // deliver stores an item in a device's mailbox and pushes it if the device is online.
+// errInboxFull: the device has too much waiting (see inboxRoom).
+var errInboxFull = errf(http.StatusInsufficientStorage, "inbox_full", "this device has too many undelivered messages waiting; it must come online first")
+
 func (s *Server) deliver(ctx context.Context, q interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, deviceID string, it inboxItem) (inboxItem, error) {
+	if err := s.inboxRoom(ctx, q, deviceID, it.SenderUser, int64(len(it.Payload))); err != nil {
+		return it, err
+	}
 	it.CreatedAt = s.now().UTC().Truncate(time.Second)
-	res, err := q.ExecContext(ctx, `INSERT INTO inbox (session_id, kind, sender_user, sender_device, dm_id, event_id, payload, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, deviceID, it.Kind, it.SenderUser, it.SenderDevice, it.DMID, it.EventID, it.Payload, it.CreatedAt.Unix())
+	res, err := q.ExecContext(ctx, `INSERT INTO inbox (session_id, kind, sender_user, sender_device, dm_id, event_id, payload, created_at, size)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, deviceID, it.Kind, it.SenderUser, it.SenderDevice, it.DMID, it.EventID, it.Payload, it.CreatedAt.Unix(), len(it.Payload))
 	if err != nil {
 		return it, err
 	}
 	it.ID, _ = res.LastInsertId()
 	return it, nil
+}
+
+// inboxRoom bounds what waits for one device: cfg.InboxMaxBytes in all, and
+// a quarter of it per sender (the device's own account aside: history
+// transfers between one's devices), so no contact can fill it alone.
+func (s *Server) inboxRoom(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, deviceID, sender string, size int64) error {
+	if s.cfg.InboxMaxBytes <= 0 {
+		return nil
+	}
+	var total, fromSender int64
+	var owner string
+	err := q.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0), COALESCE(SUM(CASE WHEN sender_user = ? THEN size ELSE 0 END), 0),
+		(SELECT user_id FROM sessions WHERE id = ?) FROM inbox WHERE session_id = ?`, sender, deviceID, deviceID).Scan(&total, &fromSender, &owner)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if total+size > s.cfg.InboxMaxBytes || (sender != owner && fromSender+size > s.cfg.InboxMaxBytes/4) {
+		return errInboxFull
+	}
+	return nil
 }
 
 func (s *Server) push(deviceID string, items []inboxItem) {
@@ -452,6 +482,10 @@ func (s *Server) handleSendToDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	sess := sessionFrom(r)
+	if err := s.limit.sends.Check(sess.UserID); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	// Check every recipient before the transaction: it holds the only connection.
 	for _, m := range req.Messages {
 		owner, err := s.deviceOwner(ctx, m.DeviceID)
@@ -502,6 +536,10 @@ func (s *Server) handleSendDM(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	sess := sessionFrom(r)
+	if err := s.limit.sends.Check(sess.UserID); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	convID := r.PathValue("id")
 	c, err := s.conversation(ctx, convID, sess.UserID)
 	if err != nil {
@@ -576,6 +614,10 @@ func (s *Server) handleSendDM(w http.ResponseWriter, r *http.Request) {
 	pushes := map[string][]inboxItem{}
 	for _, dev := range devices {
 		it, err := s.deliver(ctx, tx, dev, inboxItem{Kind: "dm", SenderUser: sess.UserID, SenderDevice: sess.ID, DMID: &convID, EventID: &eventID, Payload: req.Payload})
+		if errors.Is(err, errInboxFull) { // that device will miss it; the others get it
+			slog.Warn("inbox full, message not queued", "device", dev)
+			continue
+		}
 		if err != nil {
 			writeErr(w, r, err)
 			return

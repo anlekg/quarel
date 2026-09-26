@@ -17,6 +17,7 @@ import (
 
 	"github.com/anlekg/quarel/internal/settings"
 
+	"github.com/anlekg/quarel/internal/diskspace"
 	"github.com/anlekg/quarel/internal/httpapi"
 	"github.com/anlekg/quarel/internal/ratelimit"
 	"github.com/anlekg/quarel/internal/realtime"
@@ -39,6 +40,10 @@ type Config struct {
 
 	SessionIdle     time.Duration // sessions unused this long end (QUAREL_SESSION_IDLE)
 	DMFileMaxBytes  int64         // size limit of an encrypted conversation file
+	DMFileQuota     int64         // server copies a user may have waiting at once (bytes; 0: no limit)
+	InboxTTL        time.Duration // undelivered inbox items older than this are dropped
+	InboxMaxBytes   int64         // waiting in one device's inbox (a quarter of it per sender; 0: no limit)
+	MinFreeBytes    int64         // uploads refused below this free disk space (0: no check)
 	DMFileTTL       time.Duration // how long the server keeps conversation files
 	GroupMaxMembers int           // members of a group conversation (QUAREL_DM_GROUP_MAX)
 
@@ -63,13 +68,14 @@ type Limits struct {
 	Email             int // email verification requests per client IP per hour
 	FriendRequests    int // friend requests per user per hour
 	Files             int // encrypted conversation files uploaded per user per hour
+	Sends             int // private messages and device messages sent per user per minute
 	AuthFailuresPerIP int // failed passwords/2FA codes per account and IP per hour → lockout
 	AuthFailuresTotal int // failed passwords/2FA codes per account per hour, all IPs → lockout
 }
 
 // DefaultLimits are the production limits.
 func DefaultLimits() Limits {
-	return Limits{Global: 300, Register: 5, Login: 20, Email: 20, FriendRequests: 30, Files: 60,
+	return Limits{Global: 300, Register: 5, Login: 20, Email: 20, FriendRequests: 30, Files: 60, Sends: 120,
 		AuthFailuresPerIP: maxAuthFailures, AuthFailuresTotal: maxAuthFailuresAll}
 }
 
@@ -111,6 +117,12 @@ func ConfigFromEnv() (Config, error) {
 		return c, fmt.Errorf("sessions inactives (QUAREL_SESSION_IDLE) : durée invalide (ex. 2160h pour 90 jours, au moins 1h)")
 	}
 	c.DMFileMaxBytes = int64(envInt("QUAREL_DM_FILE_MAX_MB", 25)) << 20
+	c.DMFileQuota = int64(envInt("QUAREL_DM_FILE_QUOTA_MB", 500)) << 20
+	c.InboxMaxBytes = int64(envInt("QUAREL_INBOX_MAX_MB", 256)) << 20
+	c.MinFreeBytes = int64(envInt("QUAREL_MIN_FREE_MB", diskspace.DefaultReserveMB)) << 20
+	if c.InboxTTL, err = time.ParseDuration(env("QUAREL_INBOX_TTL", "720h")); err != nil || c.InboxTTL < time.Hour {
+		return c, fmt.Errorf("conservation des messages non distribués (QUAREL_INBOX_TTL) : durée invalide (ex. 720h pour 30 jours, au moins 1h)")
+	}
 	c.GroupMaxMembers = envInt("QUAREL_DM_GROUP_MAX", 10)
 	if c.DMFileTTL, err = time.ParseDuration(env("QUAREL_DM_FILE_TTL", "168h")); err != nil || c.DMFileTTL < time.Hour {
 		return c, fmt.Errorf("conservation des fichiers (QUAREL_DM_FILE_TTL) : durée invalide (ex. 168h, au moins 1h)")
@@ -163,7 +175,7 @@ type Server struct {
 	now    func() time.Time
 
 	proxies ratelimit.Proxies
-	limit   struct{ global, register, login, email, friends, files, typing, turn, notice *ratelimit.Limiter }
+	limit   struct{ global, register, login, email, friends, files, sends, typing, turn, notice *ratelimit.Limiter }
 	turnKey string       // shared secret of the TURN relay ("" when it is off)
 	turnIP  atomic.Value // string: public address announced for the relay
 }
@@ -213,6 +225,7 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer, retired 
 	s.limit.email = ratelimit.New(cfg.Limits.Email, time.Hour)
 	s.limit.friends = ratelimit.New(cfg.Limits.FriendRequests, time.Hour)
 	s.limit.files = ratelimit.New(cfg.Limits.Files, time.Hour)
+	s.limit.sends = ratelimit.New(cfg.Limits.Sends, time.Minute)
 	s.limit.typing = ratelimit.New(1, 3*time.Second)
 	s.limit.turn = ratelimit.New(60, time.Hour)
 	s.limit.notice = ratelimit.New(1, time.Hour) // "someone tried to register with your address", per address
@@ -233,6 +246,9 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer, retired 
 	}
 	if s.cfg.SessionIdle <= 0 {
 		s.cfg.SessionIdle = 90 * 24 * time.Hour
+	}
+	if s.cfg.InboxTTL <= 0 {
+		s.cfg.InboxTTL = 30 * 24 * time.Hour
 	}
 	return s
 }

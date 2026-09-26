@@ -70,6 +70,10 @@ const messages: Record<string, string> = {
   voice_disabled: 'Le vocal est désactivé sur ce serveur.',
   forbidden: 'Action refusée.',
   server_mismatch: 'L\u2019identité de ce serveur ne correspond pas au lien d\u2019invitation : lien erroné, ou quelqu\u2019un se fait passer pour le serveur.',
+  storage_full: 'Le serveur manque d\u2019espace disque : les fichiers sont refusés pour l\u2019instant.',
+  file_quota_exceeded: 'Trop de vos fichiers attendent déjà sur le serveur : ils partent dès qu\u2019ils sont reçus (7 jours au plus).',
+  inbox_full: 'Un appareil destinataire a trop de messages en attente : il doit d\u2019abord se reconnecter.',
+  too_many_pending_uploads: 'Envoyez d\u2019abord les fichiers déjà joints (les fichiers non envoyés sont retirés après une heure).',
   wrong_host: 'Ce serveur ne répond pas sous cette adresse : quelqu\u2019un s\u2019est peut-être fait passer pour lui (connexion refusée). Si l\u2019adresse est la bonne, l\u2019hébergeur doit la déclarer dans « Nom public du serveur ».',
   tls_conflict: 'Cette adresse a présenté une autre identité depuis le lancement de l\u2019application : redémarrez Quarel puis réessayez. Si le problème persiste, quelqu\u2019un tente peut-être de se faire passer pour le serveur.',
   // Local (client-side) codes.

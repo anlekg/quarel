@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/anlekg/quarel/internal/diskspace"
 	"github.com/anlekg/quarel/internal/secret"
 )
 
@@ -79,6 +80,26 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := s.cfg.MaxUploadBytes
+	incoming := r.ContentLength
+	if incoming < 0 || incoming > limit {
+		incoming = limit
+	}
+	// A member's uploads not yet sent with a message may fill one message
+	// (10 files at the size limit), not the disk: uploading without ever
+	// sending used to keep up to 15 GB per member waiting.
+	var pending int64
+	if err := s.db.QueryRowContext(r.Context(), `SELECT COALESCE(SUM(size), 0) FROM attachments WHERE uploader_id = ? AND message_id IS NULL`, me).Scan(&pending); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if pending+incoming > maxAttachmentsPerMessage*limit {
+		writeErr(w, r, errf(http.StatusTooManyRequests, "too_many_pending_uploads", "send the files already uploaded first (unsent files are removed after an hour)"))
+		return
+	}
+	if err := diskspace.Check(s.cfg.DataDir, s.cfg.MinFreeBytes, incoming); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, limit+1<<20)
 	mr, err := r.MultipartReader()
 	if err != nil {

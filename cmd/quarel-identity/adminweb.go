@@ -93,8 +93,18 @@ var fields = []adminui.Field{
 		Help: "Au-delà, les fichiers passent uniquement en direct entre appareils."},
 	{Group: "Messages privés", Key: "QUAREL_DM_FILE_TTL", Label: "Conservation maximale d'une copie de fichier", Kind: "text", Default: "168h",
 		Help: "Effacée dès que tous les appareils l'ont reçue, et au plus tard après cette durée (168h = 7 jours)."},
+	{Group: "Messages privés", Key: "QUAREL_DM_FILE_QUOTA_MB", Label: "Copies de fichiers en attente par personne (Mo)", Kind: "number", Default: "500",
+		Help: "Au-delà, les nouveaux fichiers passent uniquement en direct jusqu'à ce que les précédents soient reçus."},
+	{Group: "Messages privés", Key: "QUAREL_INBOX_MAX_MB", Label: "Messages en attente par appareil (Mo)", Kind: "number", Default: "256",
+		Help: "Chiffrés, en attente d'un appareil hors ligne ; un même expéditeur en occupe un quart au plus."},
+	{Group: "Messages privés", Key: "QUAREL_INBOX_TTL", Label: "Conservation des messages non distribués", Kind: "text", Default: "720h",
+		Help: "Un appareil absent plus longtemps les perd (720h = 30 jours) ; ses autres appareils et la sauvegarde gardent l'historique."},
 	{Group: "Messages privés", Key: "QUAREL_DM_GROUP_MAX", Label: "Membres maximum d'un groupe", Kind: "number", Default: "10"},
 	{Group: "Messages privés", Key: "QUAREL_TOKEN_TTL", Label: "Durée des jetons d'identité", Kind: "text", Default: "12h"},
+	{Group: "Messages privés", Key: "QUAREL_SESSION_IDLE", Label: "Fin des sessions inutilisées", Kind: "text", Default: "2160h",
+		Help: "Un appareil inutilisé pendant cette durée doit se reconnecter (2160h = 90 jours)."},
+	{Group: "Service", Key: "QUAREL_MIN_FREE_MB", Label: "Espace disque réservé (Mo)", Kind: "number", Default: "1024",
+		Help: "Les fichiers sont refusés quand il reste moins d'espace libre."},
 }
 
 var tlsLabels = map[string]string{"acme": "Let's Encrypt", "files": "fichiers fournis", "off": "aucun (proxy HTTPS ou tests)"}

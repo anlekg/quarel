@@ -53,6 +53,10 @@ Dans **Réglages** :
 
 Pour que des serveurs communautaires acceptent vos comptes, leurs hébergeurs ajoutent votre domaine : `QUAREL_TRUSTED_ISSUERS=identity.quarel.app,identity.mon-asso.fr`.
 
+### Place disque
+
+Le service ne garde que des données chiffrées en attente de livraison, avec des bornes réglables (« Messages privés ») : copies de fichiers en attente par personne (`QUAREL_DM_FILE_QUOTA_MB`, 500 Mo), messages en attente par appareil (`QUAREL_INBOX_MAX_MB`, 256 Mo, dont un quart au plus par expéditeur), effacés après 30 jours s'ils ne sont jamais récupérés (`QUAREL_INBOX_TTL`). Les fichiers sont refusés quand il reste moins de 1 Go libre sur la machine (`QUAREL_MIN_FREE_MB`). Les sessions inutilisées pendant 90 jours se terminent (`QUAREL_SESSION_IDLE`).
+
 ### Sous Windows
 
 `Quarel-Identite-Setup-<version>.exe` (à télécharger depuis la [page d’accueil](/#heberger)) installe le service avec une icône (violette) près de l'horloge et sa page d'administration sur `http://127.0.0.1:8081` (données dans `%LOCALAPPDATA%\Quarel\Identite`). Les prérequis restent les mêmes : nom de domaine, port 443 vers la machine (Let's Encrypt, à choisir dans les réglages), SMTP. Convient à une petite instance (association, famille) sur un PC allumé en permanence.

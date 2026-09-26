@@ -152,6 +152,20 @@ func TestAttachments(t *testing.T) {
 	// Size limit and permission.
 	_, res = c.upload(c.tok("bob"), gen, "gros.bin", bytes.Repeat([]byte("x"), 2<<20))
 	c.expect(413, "file_too_large", res)
+	// Uploads never sent are bounded (one full message's worth), then refused.
+	c.srv.cfg.MaxUploadBytes = 100
+	var unsent []string
+	for range maxAttachmentsPerMessage {
+		f, res := c.upload(c.tok("carol"), gen, "x.txt", bytes.Repeat([]byte("y"), 100))
+		c.expect(201, "", res)
+		unsent = append(unsent, f.ID)
+	}
+	_, res = c.upload(c.tok("carol"), gen, "x.txt", []byte("encore"))
+	c.expect(429, "too_many_pending_uploads", res)
+	c.post(c.tok("carol"), gen, map[string]any{"attachments": unsent})
+	_, res = c.upload(c.tok("carol"), gen, "x.txt", []byte("encore"))
+	c.expect(201, "", res) // sent: room again
+	c.srv.cfg.MaxUploadBytes = 1 << 20
 	c.expect(200, "", c.override(c.owner, gen, "member", c.id("carol"), nil, []string{"attach_files"}))
 	_, res = c.upload(c.tok("carol"), gen, "a.txt", []byte("coucou"))
 	c.expect(403, "missing_permissions", res)
