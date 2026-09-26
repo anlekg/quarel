@@ -20,6 +20,18 @@ protocols:
   - name: Invitation Quarel
     schemes: [quarel]
 asar: true
+# Electron fuses (flipped in the packaged binary): no running as plain Node
+# (ELECTRON_RUN_AS_NODE), no NODE_OPTIONS, code only from app.asar, no extra
+# file:// privileges (the UI is served from app://). --inspect is refused by
+# published builds only (scripts/release.mjs): Playwright needs it to drive a
+# test build. Embedded asar integrity validation is left off until tested on
+# Windows.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
 # Update feed (electron-updater, generic): see electron/updater.ts and scripts/release.mjs.
 publish:
   - provider: generic

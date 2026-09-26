@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // Error is an API error, sent as {"error": {...}}.
@@ -83,6 +84,24 @@ func CORS(h http.Handler) http.Handler {
 			hd.Set("Access-Control-Max-Age", "86400")
 			w.WriteHeader(http.StatusNoContent)
 			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+// BodyDeadline bounds the time a client has to send its request body, so
+// that one sending it a byte at a time cannot hold a connection (and a
+// goroutine) forever: normal for most requests, slow for those matching
+// isSlow (file uploads). Requests matching skip (WebSocket upgrades,
+// proxied streams) keep no deadline.
+func BodyDeadline(h http.Handler, normal, slow time.Duration, isSlow, skip func(*http.Request) bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if skip == nil || !skip(r) {
+			d := normal
+			if isSlow != nil && isSlow(r) {
+				d = slow
+			}
+			http.NewResponseController(w).SetReadDeadline(time.Now().Add(d))
 		}
 		h.ServeHTTP(w, r)
 	})

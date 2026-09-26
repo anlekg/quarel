@@ -360,7 +360,11 @@ func (s *Server) Handler() http.Handler {
 		}
 		api.ServeHTTP(w, r)
 	})
-	return s.limit.global.Wrap(s.byIP, routed)
+	return s.limit.global.Wrap(s.byIP, httpapi.BodyDeadline(routed, 30*time.Second, 15*time.Minute,
+		func(r *http.Request) bool { return strings.HasSuffix(r.URL.Path, "/attachments") },
+		func(r *http.Request) bool {
+			return r.URL.Path == "/v1/gateway" || strings.HasPrefix(r.URL.Path, "/lk/")
+		}))
 }
 
 // InternalHandler serves the loopback-only endpoints: LiveKit webhooks,

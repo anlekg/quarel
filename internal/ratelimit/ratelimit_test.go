@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -52,5 +53,25 @@ func TestClientIP(t *testing.T) {
 		if got := proxies.ClientIP(r); got != tc.want {
 			t.Errorf("%s + %q: got %s, want %s", tc.remote, tc.xff, got, tc.want)
 		}
+	}
+}
+
+// A flood of distinct keys cannot grow the limiter without bound.
+func TestLimiterBounded(t *testing.T) {
+	old := maxBuckets
+	maxBuckets = 100
+	defer func() { maxBuckets = old }()
+	l := New(1, time.Hour)
+	now := time.Now()
+	l.now = func() time.Time { return now }
+	for i := range 1000 {
+		now = now.Add(time.Millisecond)
+		l.Allow(fmt.Sprint("key", i)) // each bucket stays empty: nothing idle to evict
+	}
+	if n := len(l.buckets); n > maxBuckets {
+		t.Fatalf("%d buckets kept (max %d)", n, maxBuckets)
+	}
+	if _, ok := l.buckets["key999"]; !ok {
+		t.Fatal("the newest key was evicted")
 	}
 }

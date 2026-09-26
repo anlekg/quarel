@@ -353,7 +353,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/backup", s.authed(s.handleDeleteBackup))
 
 	mux.HandleFunc("GET /v1/gateway", s.handleGateway)
-	return httpapi.CORS(s.limit.global.Wrap(s.byIP, mux))
+	uploads := func(r *http.Request) bool { // file copies, backups, avatars
+		p := r.URL.Path
+		return strings.Contains(p, "/files") || p == "/v1/backup" || p == "/v1/me/avatar" || p == "/v1/to-device"
+	}
+	gateway := func(r *http.Request) bool { return r.URL.Path == "/v1/gateway" }
+	return httpapi.CORS(s.limit.global.Wrap(s.byIP, httpapi.BodyDeadline(mux, 30*time.Second, 15*time.Minute, uploads, gateway)))
 }
 
 // --- request/response helpers (shared conventions, see internal/httpapi) ---

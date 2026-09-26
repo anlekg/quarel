@@ -45,5 +45,6 @@ Les appels entre amis sont **pair à pair** et chiffrés (DTLS-SRTP). La mise en
 - Les **salons des serveurs** ne sont pas chiffrés de bout en bout : l’hébergeur du serveur peut les lire.
 - Pour le vocal des salons, votre adresse IP est visible du serveur vocal de ce serveur.
 - Les installateurs ne sont pas encore signés par un certificat d’éditeur (avertissement de Windows).
+- La **version web** reçoit son code de `app.quarel.app` à chaque ouverture : quiconque prendrait le contrôle de ce site pourrait y glisser du code capable de lire vos clés et vos messages privés dans le navigateur. C’est une limite de tout chiffrement de bout en bout dans une page web. L’application de bureau, elle, n’exécute que du code installé sur votre machine et ne se met à jour qu’avec des versions signées : préférez-la pour les conversations sensibles.
 
 Une faille ? Merci de la signaler en privé plutôt que dans un ticket public : voir [Contribuer](/wiki/developper/contribuer/).

@@ -6,6 +6,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +29,7 @@ type bucket struct {
 	last   time.Time
 }
 
-const maxBuckets = 100_000
+var maxBuckets = 100_000 // variable for tests
 
 // New returns a limiter allowing n events per interval per key; n <= 0 returns nil (no limit).
 func New(n int, interval time.Duration) *Limiter {
@@ -64,12 +65,30 @@ func (l *Limiter) Allow(key string) (bool, time.Duration) {
 	return false, wait
 }
 
-// evict drops buckets that are full again (their keys have been idle long enough).
+// evict drops buckets that are full again (their keys have been idle long
+// enough). If that is not enough (a flood of distinct keys), the oldest
+// buckets go too, so memory stays bounded: one of those keys may then start
+// again with a full bucket, which only matters under such a flood.
 func (l *Limiter) evict(now time.Time) {
 	for k, b := range l.buckets {
 		if b.tokens+now.Sub(b.last).Seconds()*l.rate >= l.burst {
 			delete(l.buckets, k)
 		}
+	}
+	if len(l.buckets) < maxBuckets*9/10 {
+		return
+	}
+	type aged struct {
+		key  string
+		last time.Time
+	}
+	all := make([]aged, 0, len(l.buckets))
+	for k, b := range l.buckets {
+		all = append(all, aged{k, b.last})
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].last.Before(all[j].last) })
+	for _, a := range all[:len(all)-maxBuckets*9/10] {
+		delete(l.buckets, a.key)
 	}
 }
 
