@@ -262,7 +262,7 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | GET | `/v1/users/{id}/profile`, `/v1/users/{id}/avatar` | — | Profil public |
 | GET/POST | `/v1/blocks` | session | Liste / `{pseudo}` |
 | PUT/DELETE | `/v1/blocks/{id}` | session | Bloquer / débloquer |
-| GET | `/v1/disabled-accounts` | — | `{issuer, accounts: [{sub, since}]}` |
+| GET | `/v1/disabled-accounts` | — | `{issuer, accounts: [{h, since}], ended_devices: [{h, at}]}` (identifiants hachés) |
 
 ### Configuration (variables d'environnement)
 
