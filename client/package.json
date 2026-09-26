@@ -23,7 +23,7 @@
     "@noble/ed25519": "^3.2.0",
     "@noble/hashes": "^2.4.0",
     "electron-updater": "^6.8.9",
-    "js-yaml": "^4.3.2",
+    "js-yaml": "^5.4.2",
     "livekit-client": "^2.22.3",
     "qrcode-generator": "^2.0.4",
     "react": "^19.3.0",
