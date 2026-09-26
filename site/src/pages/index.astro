@@ -5,7 +5,7 @@ import '@fontsource/manrope/600.css'
 import '@fontsource/manrope/700.css'
 import '@fontsource/space-grotesk/600.css'
 import '../styles/home.css'
-import { downloads, github, version, webApp } from '../lib/release'
+import { downloads, github, serverDownloads, serverVersion, version, webApp } from '../lib/release'
 
 const title = 'Quarel — vos communautés, chez vous'
 const description = 'Alternative libre et auto-hébergeable à Discord : serveurs chez leurs hébergeurs, messages privés et appels chiffrés de bout en bout.'
@@ -175,8 +175,12 @@ const icons: Record<string, string> = {
               <pre><code>git clone https://github.com/anlekg/quarel.git
 cd quarel/deploy/server
 docker compose up -d --build</code></pre>
-              <p>Puis ouvrez la page d’administration sur <code>http://&lt;machine&gt;:8091</code> et devenez propriétaire depuis l’application. Un installateur Windows existe aussi.</p>
-              <a class="link" href="/wiki/heberger/serveur-communautaire/">Guide de l’hébergeur →</a>
+              <p>Puis ouvrez la page d’administration sur <code>http://&lt;machine&gt;:8091</code> et devenez propriétaire depuis l’application.</p>
+              <p>Sous Windows 10 ou 11, sans Docker : un installateur avec une icône près de l’horloge.</p>
+              <div class="host-links">
+                <a class="btn btn-ghost btn-sm" href={serverDownloads.community}>Installateur Windows · {serverVersion}</a>
+                <a class="link" href="/wiki/heberger/serveur-communautaire/">Guide de l’hébergeur →</a>
+              </div>
             </article>
             <article class="card">
               <h3>Un service d’identité</h3>
@@ -184,9 +188,13 @@ docker compose up -d --build</code></pre>
               <pre><code>cd quarel/deploy/identity
 cp .env.example .env   # domaine, SMTP
 docker compose up -d --build</code></pre>
-              <a class="link" href="/wiki/heberger/service-identite/">Déployer un service d’identité →</a>
+              <div class="host-links">
+                <a class="btn btn-ghost btn-sm" href={serverDownloads.identity}>Installateur Windows · {serverVersion}</a>
+                <a class="link" href="/wiki/heberger/service-identite/">Déployer un service d’identité →</a>
+              </div>
             </article>
           </div>
+          <p class="note">Installateurs Windows non signés (avertissement SmartScreen). Empreintes SHA-256 : <a class="link" href={serverDownloads.sums}>SHA256SUMS</a></p>
         </div>
       </section>
 

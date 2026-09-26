@@ -21,7 +21,7 @@ docker compose logs server     # affiche l'adresse de l'administration et le cod
 
 ### Sous Windows
 
-1. Lancez **`Quarel-Serveur-Setup-<version>.exe`** (Windows 10 ou 11, 64 bits). Windows demande l'autorisation d'administrateur : l'installateur place le programme dans `Program Files`, autorise le serveur et le vocal dans le pare-feu, et le fait démarrer avec votre session.
+1. Téléchargez **`Quarel-Serveur-Setup-<version>.exe`** depuis la [page d’accueil](/#heberger) (empreintes SHA-256 : [SHA256SUMS](https://quarel.app/telechargements/SHA256SUMS)) et lancez-le (Windows 10 ou 11, 64 bits). Windows demande l'autorisation d'administrateur : l'installateur place le programme dans `Program Files`, autorise le serveur et le vocal dans le pare-feu, et le fait démarrer avec votre session.
    > Les installateurs ne sont pas encore signés : Windows SmartScreen affiche « Windows a protégé votre ordinateur » ; cliquez sur « Informations complémentaires » puis « Exécuter quand même ».
 2. À la fin, la **page d'administration** s'ouvre dans votre navigateur (`http://127.0.0.1:8091`) : choisissez son mot de passe, puis suivez la page comme ci-dessous.
 3. Une **icône Quarel** (verte) reste près de l'horloge : clic → page d'administration ; clic droit → état du serveur, « Lancer au démarrage de Windows », « Quitter ».

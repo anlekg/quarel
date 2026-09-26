@@ -55,7 +55,7 @@ Pour que des serveurs communautaires acceptent vos comptes, leurs hébergeurs aj
 
 ### Sous Windows
 
-`Quarel-Identite-Setup-<version>.exe` installe le service avec une icône (violette) près de l'horloge et sa page d'administration sur `http://127.0.0.1:8081` (données dans `%LOCALAPPDATA%\Quarel\Identite`). Les prérequis restent les mêmes : nom de domaine, port 443 vers la machine (Let's Encrypt, à choisir dans les réglages), SMTP. Convient à une petite instance (association, famille) sur un PC allumé en permanence.
+`Quarel-Identite-Setup-<version>.exe` (à télécharger depuis la [page d’accueil](/#heberger)) installe le service avec une icône (violette) près de l'horloge et sa page d'administration sur `http://127.0.0.1:8081` (données dans `%LOCALAPPDATA%\Quarel\Identite`). Les prérequis restent les mêmes : nom de domaine, port 443 vers la machine (Let's Encrypt, à choisir dans les réglages), SMTP. Convient à une petite instance (association, famille) sur un PC allumé en permanence.
 
 ## Relais d'appels
 

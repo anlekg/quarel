@@ -1,6 +1,6 @@
 export PATH := $(HOME)/.local/go/bin:$(HOME)/.local/bin:$(PATH)
 
-.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages e2e-moderation e2e-accounts e2e-dm-groups e2e-calls e2e-ops windows client-interop client-install client-dev client-build client-test e2e-client site-dev site-build docs-mcp clean
+.PHONY: build test test-race vet run-identity run-server docker-identity docker-server e2e-voice e2e-dm e2e-security e2e-acme e2e-messages e2e-moderation e2e-accounts e2e-dm-groups e2e-calls e2e-ops windows client-interop client-install client-dev client-build client-test e2e-client windows-release site-dev site-build docs-mcp clean
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/anlekg/quarel/internal/backup.Release=$(VERSION)
@@ -114,6 +114,11 @@ client-dist:
 client-dist-win:
 	cd client && [ -d node_modules ] || npm ci
 	cd client && npm run dist:win
+
+# Windows installers of the servers published to quarel.app/telechargements: make windows-release VERSION=0.2.0
+windows-release:
+	@[ -n "$(VERSION)" ] || { echo "usage : make windows-release VERSION=x.y.z"; exit 1; }
+	packaging/windows/release.sh $(VERSION)
 
 # quarel.app: presentation site and wiki (Astro + Starlight) → site/dist/
 site-dev:
