@@ -2,66 +2,95 @@ package community
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/base64"
+	"encoding/binary"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/anlekg/quarel/internal/secret"
+	"github.com/anlekg/quarel/internal/tlsconf"
 	"github.com/anlekg/quarel/pkg/idtoken"
 )
 
 // --- login challenges ---
 
 const (
-	nonceTTL  = 2 * time.Minute
-	maxNonces = 10000
+	nonceTTL = 2 * time.Minute
+	maxUsed  = 100_000
 )
 
-// nonceStore holds outstanding login challenges; each can be consumed once.
+// nonceStore issues login challenges without keeping them: a nonce carries
+// its expiry and a MAC by a key of this process, so asking for challenges
+// costs nothing and cannot exhaust anything. Only nonces actually used by a
+// valid login are remembered (until they expire), so each works once.
 type nonceStore struct {
-	mu sync.Mutex
-	m  map[string]time.Time
+	key  []byte
+	mu   sync.Mutex
+	used map[string]time.Time
 }
 
-func newNonceStore() *nonceStore { return &nonceStore{m: map[string]time.Time{}} }
+func newNonceStore() *nonceStore {
+	key := make([]byte, 32)
+	rand.Read(key)
+	return &nonceStore{key: key, used: map[string]time.Time{}}
+}
 
-func (n *nonceStore) issue(now time.Time) (string, time.Time, bool) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	if len(n.m) >= maxNonces/2 {
-		for k, exp := range n.m {
-			if now.After(exp) {
-				delete(n.m, k)
-			}
-		}
-	}
-	if len(n.m) >= maxNonces {
-		return "", time.Time{}, false
-	}
-	nonce := secret.NewToken()
+func (n *nonceStore) mac(payload []byte) []byte {
+	m := hmac.New(sha256.New, n.key)
+	m.Write(payload)
+	return m.Sum(nil)[:16]
+}
+
+func (n *nonceStore) issue(now time.Time) (string, time.Time) {
 	exp := now.Add(nonceTTL)
-	n.m[nonce] = exp
-	return nonce, exp, true
+	payload := make([]byte, 24)
+	rand.Read(payload[:16])
+	binary.BigEndian.PutUint64(payload[16:], uint64(exp.UnixMilli()))
+	return base64.RawURLEncoding.EncodeToString(append(payload, n.mac(payload)...)), exp
 }
 
+// valid reports whether nonce was issued here and has not expired.
+func (n *nonceStore) valid(nonce string, now time.Time) bool {
+	raw, err := base64.RawURLEncoding.DecodeString(nonce)
+	if err != nil || len(raw) != 40 || !hmac.Equal(raw[24:], n.mac(raw[:24])) {
+		return false
+	}
+	return now.UnixMilli() <= int64(binary.BigEndian.Uint64(raw[16:24]))
+}
+
+// consume marks a valid nonce as used; false if it already was (or, in the
+// unlikely event of a flood of valid logins, if too many are remembered).
 func (n *nonceStore) consume(nonce string, now time.Time) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	exp, ok := n.m[nonce]
-	delete(n.m, nonce)
-	return ok && !now.After(exp)
+	if _, seen := n.used[nonce]; seen {
+		return false
+	}
+	if len(n.used) >= maxUsed {
+		for k, exp := range n.used {
+			if now.After(exp) {
+				delete(n.used, k)
+			}
+		}
+		if len(n.used) >= maxUsed {
+			return false
+		}
+	}
+	n.used[nonce] = now.Add(nonceTTL)
+	return true
 }
 
 func (s *Server) handleChallenge(w http.ResponseWriter, r *http.Request) {
-	nonce, exp, ok := s.nonces.issue(s.now())
-	if !ok {
-		writeErr(w, r, errf(http.StatusTooManyRequests, "busy", "too many pending logins, retry shortly"))
-		return
-	}
+	nonce, exp := s.nonces.issue(s.now())
 	writeJSON(w, http.StatusOK, map[string]any{"server_id": s.id, "nonce": nonce, "expires_at": exp.UTC()})
 }
 
@@ -71,7 +100,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		IdentityToken string `json:"identity_token"`
 		Nonce         string `json:"nonce"`
-		Proof         string `json:"proof"`  // idtoken.SignProof(device, server_id, nonce)
+		Proof         string `json:"proof"`  // idtoken.SignProofV2(device, server_id, nonce, host, tls)
+		Host          string `json:"host"`   // the host the client connected to ("" with a legacy v1 proof)
+		TLS           string `json:"tls"`    // how the client checked it: "binding" or "authority"
 		Invite        string `json:"invite"` // required to join a private server
 		Claim         string `json:"claim"`  // one-time owner claim code
 	}
@@ -80,8 +111,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if !s.nonces.consume(req.Nonce, s.now()) {
-		writeErr(w, r, errf(http.StatusUnauthorized, "invalid_nonce", "unknown or expired challenge; request a new one"))
+	badNonce := errf(http.StatusUnauthorized, "invalid_nonce", "unknown, expired or already used challenge; request a new one")
+	if !s.nonces.valid(req.Nonce, s.now()) {
+		writeErr(w, r, badNonce)
 		return
 	}
 	claims, err := s.verifyIdentity(ctx, req.IdentityToken)
@@ -89,8 +121,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	if err := idtoken.VerifyProof(claims, s.id, req.Nonce, req.Proof); err != nil {
-		writeErr(w, r, errf(http.StatusUnauthorized, "invalid_proof", "device proof does not match the identity token"))
+	if err := s.checkProof(claims, req.Nonce, req.Proof, req.Host, req.TLS); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if !s.nonces.consume(req.Nonce, s.now()) {
+		writeErr(w, r, badNonce)
 		return
 	}
 	if s.isDisabled(claims.Issuer, claims.Subject) {
@@ -131,6 +167,42 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		"server":        info,
 		"joined":        joined,
 	})
+}
+
+// checkProof verifies the device proof of a login. A v2 proof names the host
+// the client connected to and how it checked it:
+//   - "binding": every connection presented this server's certificate bound
+//     to its identity (pkg/tlsbind), which only this server can present;
+//   - "authority": an ordinary certificate (or plain HTTP on the same
+//     machine), which proves nothing about the server ID: the host must then
+//     be one of this server's names. Otherwise another server, holding a
+//     valid certificate for its own name, relayed the login here.
+//
+// Legacy v1 proofs (older clients) are still accepted for now.
+func (s *Server) checkProof(claims *idtoken.Claims, nonce, proof, host, mode string) error {
+	invalid := errf(http.StatusUnauthorized, "invalid_proof", "device proof does not match the identity token")
+	if host == "" && mode == "" {
+		if idtoken.VerifyProof(claims, s.id, nonce, proof) != nil {
+			return invalid
+		}
+		slog.Debug("login with a legacy (v1) proof", "subject", claims.Subject)
+		return nil
+	}
+	if idtoken.VerifyProofV2(claims, s.id, nonce, host, mode, proof) != nil {
+		return invalid
+	}
+	switch mode {
+	case idtoken.TLSBinding:
+		if s.cfg.TLS.Mode != tlsconf.SelfSigned {
+			return errf(http.StatusForbidden, "wrong_host", "this server does not use a certificate bound to its identity: the login went through another server")
+		}
+	case idtoken.TLSAuthority:
+		if !s.servesHost(host) {
+			slog.Warn("login refused: the client connected to another address (relayed login, or QUAREL_TLS_HOSTS to complete)", "host", host)
+			return errf(http.StatusForbidden, "wrong_host", "this server is not reachable as %s: the login went through another server, or its host must add this name to QUAREL_TLS_HOSTS", host)
+		}
+	}
+	return nil
 }
 
 // verifyIdentity checks an identity token against its issuer's published keys.

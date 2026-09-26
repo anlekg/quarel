@@ -264,10 +264,17 @@ func (c *cli) communityLogin(base, invite, claim, expectSID string) (*loginResul
 	if expectSID != "" && expectSID != ch.ServerID {
 		return nil, fmt.Errorf("le lien d'invitation désigne le serveur %s mais %s répond avec l'identifiant %s ; connexion refusée", expectSID, base, ch.ServerID)
 	}
-	// The identity proven by the TLS certificate must be the one the server claims.
-	if seen := c.tlsSeen[base]; seen != "" && seen != ch.ServerID {
+	// The proof names where we connected and what the certificates proved:
+	// a server relaying our login elsewhere cannot use it.
+	mode, seen := c.tlsMode(base)
+	switch {
+	case mode == "":
+		return nil, fmt.Errorf("ATTENTION : %s a présenté tantôt un certificat ordinaire, tantôt un certificat lié à son identité ; connexion refusée (possible interception)", base)
+	case mode == idtoken.TLSBinding && seen != ch.ServerID:
+		// The identity proven by the TLS certificate must be the one the server claims.
 		return nil, fmt.Errorf("ATTENTION : le certificat de %s prouve l'identité %s mais le serveur annonce %s ; connexion refusée (possible interception)", base, seen, ch.ServerID)
 	}
+	u, _ := url.Parse(base)
 	tok, err := c.tokenFor(ch.ServerID)
 	if err != nil {
 		return nil, fmt.Errorf("obtention du jeton d'identité : %w", err)
@@ -276,7 +283,9 @@ func (c *cli) communityLogin(base, invite, claim, expectSID string) (*loginResul
 	err = c.request(base, "", "POST", "/v1/auth/login", map[string]string{
 		"identity_token": tok,
 		"nonce":          ch.Nonce,
-		"proof":          idtoken.SignProof(c.device(), ch.ServerID, ch.Nonce),
+		"proof":          idtoken.SignProofV2(c.device(), ch.ServerID, ch.Nonce, u.Hostname(), mode),
+		"host":           idtoken.NormalizeHost(u.Hostname()),
+		"tls":            mode,
 		"invite":         invite,
 		"claim":          claim,
 	}, &res)
@@ -288,6 +297,17 @@ func (c *cli) communityLogin(base, invite, claim, expectSID string) (*loginResul
 	}
 	c.st.Communities[base] = &community{ServerID: ch.ServerID, Name: res.Server.Name, SessionToken: res.SessionToken, ExpiresAt: res.ExpiresAt}
 	return &res, c.save()
+}
+
+// tlsMode tells how the connections to base were checked (see
+// tlsbind.Verifier.Mode). Plain HTTP (development, on this machine) counts as
+// "authority": the server then checks the host name.
+func (c *cli) tlsMode(base string) (mode, sid string) {
+	if !strings.HasPrefix(base, "https://") {
+		return idtoken.TLSAuthority, ""
+	}
+	c.httpClient(base)
+	return c.verifiers[base].Mode()
 }
 
 func (c *cli) joinCmd(target, invite, claim string) error {

@@ -52,6 +52,7 @@ type Server struct {
 	previews *previewer    // nil: link previews disabled
 	phone    PhoneVerifier // nil: phone verification unavailable
 	disabled disabledSet   // accounts disabled by their identity service
+	names    []string      // host names clients may use with an ordinary certificate (see checkProof)
 }
 
 // ServerID derives the public server identifier from its key.
@@ -92,6 +93,7 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, keys KeySource) *Server
 		key:     key,
 		enc:     deriveEncKey(key),
 		proxies: cfg.TrustedProxies,
+		names:   hostNames(cfg.TLS),
 	}
 	s.limit.global = ratelimit.New(cfg.Limits.Global, time.Minute)
 	s.limit.auth = ratelimit.New(cfg.Limits.Auth, time.Minute)

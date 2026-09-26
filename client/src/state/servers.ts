@@ -9,10 +9,11 @@ import {
 import { toBase64url } from '../lib/base64'
 import { deviceKey, signWithDevice } from '../lib/device'
 import { identityLabel } from '../lib/identityURL'
+import { proofHost, proofMessage } from '../lib/proof'
 import { notifyServerMessage } from './notify'
 import type { NotificationSetting } from '../api/community'
 import type { Invite } from '../lib/invite'
-import { checkServer, pinServer, secrets } from '../platform'
+import { checkServer, forgetServerTLS, pinServer, secrets, tlsMode } from '../platform'
 import { identityClient, serverRules, signOut, type Account } from './account'
 import { currentVoice, leaveVoice } from './voice'
 import { engine, onEngineEvent } from './social'
@@ -50,13 +51,10 @@ export interface ServerState {
 const PAGE = 50
 const TYPING_MS = 8000
 
-function utf8(s: string) {
-  return new TextEncoder().encode(s)
-}
-
 // Signs in to a community server: identity token + proof of the device key
-// over the server's nonce. The server ID it announces must be the expected one
-// (the TLS layer already checked the certificate against it).
+// over the server's nonce and the address actually contacted (see lib/proof.ts).
+// The server ID it announces must be the expected one (the TLS layer already
+// checked the certificate against it).
 export async function communityLogin(account: Account, base: string, sid: string, invite?: string, claim?: string): Promise<LoginResult> {
   const c = new CommunityClient(base)
   const rules = await serverRules(account)
@@ -71,8 +69,13 @@ export async function communityLogin(account: Account, base: string, sid: string
   }
   const [ch, dk] = await Promise.all([c.challenge(), deviceKey(identityLabel(account.identity))])
   if (ch.server_id !== sid) throw new ApiError(0, 'server_mismatch', 'server identity changed')
-  const proof = toBase64url(signWithDevice(dk, utf8('quarel-auth-v1\0' + sid + '\0' + ch.nonce)))
-  return c.login({ identity_token: idToken, nonce: ch.nonce, proof, invite, claim })
+  // The proof names where we connected and how that was checked: a server
+  // relaying this login to the one it pretends to be cannot use it.
+  const host = proofHost(base)
+  const mode = await tlsMode(host, sid)
+  if (mode === 'conflict') throw new ApiError(0, 'tls_conflict', 'another identity was accepted for this host')
+  const proof = toBase64url(signWithDevice(dk, proofMessage(sid, ch.nonce, host, mode)))
+  return c.login({ identity_token: idToken, nonce: ch.nonce, proof, host, tls: mode, invite, claim })
 }
 
 // Public information shown before joining; also proves the certificate.
@@ -512,6 +515,7 @@ export async function leaveServer(conn: ServerConn, remote = true) {
   await save()
   emit()
   const { sid, base, host, name } = conn.saved
+  if (!conns.some((c) => c.saved.host === host)) forgetServerTLS(host).catch(() => {})
   shareServers([{ sid, base, host, name, joined: false, at: new Date().toISOString() }])
 }
 

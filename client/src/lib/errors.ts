@@ -70,6 +70,8 @@ const messages: Record<string, string> = {
   voice_disabled: 'Le vocal est désactivé sur ce serveur.',
   forbidden: 'Action refusée.',
   server_mismatch: 'L\u2019identité de ce serveur ne correspond pas au lien d\u2019invitation : lien erroné, ou quelqu\u2019un se fait passer pour le serveur.',
+  wrong_host: 'Ce serveur ne répond pas sous cette adresse : quelqu\u2019un s\u2019est peut-être fait passer pour lui (connexion refusée). Si l\u2019adresse est la bonne, l\u2019hébergeur doit la déclarer dans « Nom public du serveur ».',
+  tls_conflict: 'Cette adresse a présenté une autre identité depuis le lancement de l\u2019application : redémarrez Quarel puis réessayez. Si le problème persiste, quelqu\u2019un tente peut-être de se faire passer pour le serveur.',
   // Local (client-side) codes.
   bad_invite: 'Lien invalide : il doit ressembler à quarel://hôte:port/CODE?sid=…',
   mfa_needed_for_reset: 'Votre compte est protégé par la double authentification : entrez aussi un code.',

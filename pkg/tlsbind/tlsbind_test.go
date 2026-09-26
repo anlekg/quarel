@@ -37,22 +37,30 @@ func TestBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := serve(t, cert)
+	host := "127.0.0.1"
 
-	var seen string
-	if err := get(srv.URL, ClientConfig(sid, func(s string) { seen = s })); err != nil || seen != sid {
-		t.Fatalf("expected server: err=%v seen=%q", err, seen)
+	v := NewVerifier(host, sid)
+	if err := get(srv.URL, v.Config()); err != nil {
+		t.Fatalf("expected server: %v", err)
 	}
-	if err := get(srv.URL, ClientConfig("", func(s string) { seen = s })); err != nil || seen != sid {
-		t.Fatalf("first use: err=%v seen=%q", err, seen)
+	if mode, seen := v.Mode(); mode != "binding" || seen != sid {
+		t.Fatalf("mode after a bound connection: %q %q", mode, seen)
 	}
-	if err := get(srv.URL, ClientConfig("someoneelse", nil)); err == nil || !strings.Contains(err.Error(), "possible interception") {
+	v = NewVerifier(host, "")
+	if err := get(srv.URL, v.Config()); err != nil {
+		t.Fatalf("first use: %v", err)
+	}
+	if _, seen := v.Mode(); seen != sid {
+		t.Fatalf("first use: seen %q", seen)
+	}
+	if err := get(srv.URL, NewVerifier(host, "someoneelse").Config()); err == nil || !strings.Contains(err.Error(), "possible interception") {
 		t.Fatalf("wrong server accepted: %v", err)
 	}
 
 	// An interceptor with its own key cannot pretend to be the server.
 	_, other, _ := ed25519.GenerateKey(nil)
 	mitm, _ := LoadOrCreate(t.TempDir(), other, nil)
-	if err := get(serve(t, mitm).URL, ClientConfig(sid, nil)); err == nil {
+	if err := get(serve(t, mitm).URL, NewVerifier(host, sid).Config()); err == nil {
 		t.Fatal("interceptor accepted")
 	}
 
@@ -69,8 +77,58 @@ func TestBinding(t *testing.T) {
 	// A plain self-signed certificate without binding is refused.
 	plain := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer plain.Close()
-	if err := get(plain.URL, ClientConfig("", nil)); err == nil {
+	if err := get(plain.URL, NewVerifier(host, "").Config()); err == nil {
 		t.Fatal("unbound self-signed certificate accepted")
+	}
+}
+
+// A host that proved its binding keeps having to: an ordinary certificate
+// from an authority (someone else holding a valid certificate for the same
+// name) is refused afterwards. An authority certificate is checked against
+// the host dialled, IP addresses included.
+func TestVerifierAuthority(t *testing.T) {
+	ca := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer ca.Close()
+	roots := x509.NewCertPool()
+	roots.AddCert(ca.Certificate())
+
+	v := NewVerifier("127.0.0.1", "")
+	v.roots = roots
+	if err := get(ca.URL, v.Config()); err != nil {
+		t.Fatalf("authority certificate refused: %v", err)
+	}
+	if mode, _ := v.Mode(); mode != "authority" {
+		t.Fatalf("mode %q", mode)
+	}
+	// httptest's certificate covers 127.0.0.1, not 127.0.0.2.
+	other := NewVerifier("127.0.0.2", "")
+	other.roots = roots
+	if err := get(ca.URL, other.Config()); err == nil {
+		t.Fatal("authority certificate accepted for another IP")
+	}
+
+	_, identity, _ := ed25519.GenerateKey(nil)
+	cert, _ := LoadOrCreate(t.TempDir(), identity, nil)
+	bound := serve(t, cert)
+	v = NewVerifier("127.0.0.1", "")
+	v.roots = roots
+	if err := get(bound.URL, v.Config()); err != nil {
+		t.Fatal(err)
+	}
+	if err := get(ca.URL, v.Config()); err == nil || !strings.Contains(err.Error(), "certificat ordinaire") {
+		t.Fatalf("authority certificate accepted after a binding: %v", err)
+	}
+	if mode, sid := v.Mode(); mode != "binding" || sid != ServerID(identity.Public().(ed25519.PublicKey)) {
+		t.Fatalf("mode %q %q", mode, sid)
+	}
+
+	// Authority first, then a binding: mixed, no mode.
+	v = NewVerifier("127.0.0.1", "")
+	v.roots = roots
+	get(ca.URL, v.Config())
+	get(bound.URL, v.Config())
+	if mode, _ := v.Mode(); mode != "" {
+		t.Fatalf("mixed connections gave mode %q", mode)
 	}
 }
 

@@ -28,7 +28,8 @@ Les appels entre amis sont **pair à pair** et chiffrés (DTLS-SRTP). La mise en
 ## Connexion aux serveurs communautaires
 
 - **Identité portable** : un jeton signé par votre service, lié à la clé de votre appareil. Chaque connexion prouve la possession de cette clé en signant un défi à usage unique : un jeton volé seul ne suffit pas.
-- **Certificat lié à l’identité du serveur** : les liens d’invitation contiennent l’identifiant du serveur (`sid`). L’application vérifie pendant la connexion HTTPS que le serveur détient la clé correspondante, sans autorité de certification. Un intermédiaire ne peut pas se faire passer pour lui.
+- **Certificat lié à l’identité du serveur** : les liens d’invitation contiennent l’identifiant du serveur (`sid`). L’application vérifie pendant la connexion HTTPS que le serveur détient la clé correspondante, sans autorité de certification. Un intermédiaire ne peut pas se faire passer pour lui. Une adresse qui a prouvé ce lien doit continuer à le prouver : un certificat ordinaire y est ensuite refusé.
+- **Pas de connexion relayée** : la preuve signée à chaque connexion nomme aussi l’adresse contactée et la façon dont elle a été vérifiée. Un serveur malveillant (même muni d’un certificat reconnu) qui transmettrait votre connexion à un autre serveur en se faisant passer pour lui est refusé par ce dernier.
 - Les serveurs communautaires ne reçoivent jamais votre email.
 
 ## L’application

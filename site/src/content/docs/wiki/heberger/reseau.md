@@ -34,11 +34,13 @@ Réglage « HTTPS › Certificat » de la page d’administration (`QUAREL_TLS`)
 - **Auto-signé lié à l’identité** (par défaut) : rien à faire. Le certificat porte une preuve signée par la clé du serveur ; l’application le vérifie grâce à l’identifiant contenu dans les liens d’invitation. Pas besoin de nom de domaine. **Mais la version web (navigateur) ne peut pas rejoindre un tel serveur.**
 - **Let’s Encrypt** (`acme`) : avec un nom de domaine qui pointe vers votre box. Le port public **443** doit mener au port 8090 de la machine (défi TLS-ALPN). La version web peut alors rejoindre le serveur.
 - **Fichiers** : votre propre certificat (`QUAREL_TLS_CERT`, `QUAREL_TLS_KEY`).
-- **Désactivé** : derrière un proxy HTTPS (Caddy, nginx, Traefik…) qui transmet les WebSockets. Déclarez le proxy dans `QUAREL_TRUSTED_PROXIES` pour que les limites s’appliquent à la vraie adresse des clients. Le vocal (UDP) ne passe pas par le proxy : ses ports restent à ouvrir.
+- **Désactivé** : derrière un proxy HTTPS (Caddy, nginx, Traefik…) qui transmet les WebSockets. Déclarez le proxy dans `QUAREL_TRUSTED_PROXIES` pour que les limites s’appliquent à la vraie adresse des clients, et **son nom de domaine dans `QUAREL_TLS_HOSTS`** (obligatoire, voir ci-dessous). Le vocal (UDP) ne passe pas par le proxy : ses ports restent à ouvrir.
 
 ## Adresse publique et nom
 
 `QUAREL_TLS_HOSTS` (réglage « Nom public du serveur ») : le nom ou l’adresse que les membres utilisent, repris dans les liens d’invitation. Si votre IP change souvent, utilisez un nom de domaine dynamique (DynDNS).
+
+Avec un certificat ordinaire (proxy, Let’s Encrypt, fichiers), l’application signe à chaque connexion le nom qu’elle a contacté, et le serveur refuse un nom qui n’est pas le sien : un autre serveur ne peut pas relayer les connexions de vos membres en se faisant passer pour le vôtre. Le serveur connaît ses noms par ce réglage, le domaine Let’s Encrypt ou les noms du certificat fourni. **Derrière un proxy, ce réglage est donc obligatoire** (le tableau de bord le rappelle). Avec le certificat automatique lié à l’identité, rien à faire : l’application vérifie ce certificat à chaque connexion.
 
 ## Service d’identité
 

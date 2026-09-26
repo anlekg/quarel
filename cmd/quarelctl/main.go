@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -214,8 +215,8 @@ type cli struct {
 	// Community servers over HTTPS: one client per server, verifying the
 	// certificate's binding to the server ID (see pkg/tlsbind).
 	clients   map[string]*http.Client
-	expectSID map[string]string // server ID required by an invite link
-	tlsSeen   map[string]string // server ID proven by the certificate ("" if CA-issued)
+	expectSID map[string]string            // server ID required by an invite link
+	verifiers map[string]*tlsbind.Verifier // what each server's certificates proved
 }
 
 // httpClient returns the client for base: the default one for the Identity
@@ -231,10 +232,10 @@ func (c *cli) httpClient(base string) *http.Client {
 	if com := c.st.Communities[base]; com != nil && com.ServerID != "" {
 		expect = com.ServerID
 	}
-	cl := &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{
-		TLSClientConfig: tlsbind.ClientConfig(expect, func(sid string) { c.tlsSeen[base] = sid }),
-	}}
-	c.clients[base] = cl
+	u, _ := url.Parse(base)
+	v := tlsbind.NewVerifier(u.Hostname(), expect)
+	cl := &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{TLSClientConfig: v.Config()}}
+	c.clients[base], c.verifiers[base] = cl, v
 	return cl
 }
 
@@ -270,7 +271,7 @@ func load(profile string) (*cli, error) {
 		return nil, err
 	}
 	c := &cli{path: filepath.Join(dir, "quarelctl", profile+".json"), stdin: bufio.NewReader(os.Stdin),
-		clients: map[string]*http.Client{}, expectSID: map[string]string{}, tlsSeen: map[string]string{}}
+		clients: map[string]*http.Client{}, expectSID: map[string]string{}, verifiers: map[string]*tlsbind.Verifier{}}
 	data, err := os.ReadFile(c.path)
 	if err == nil {
 		err = json.Unmarshal(data, &c.st)

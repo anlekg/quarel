@@ -199,7 +199,7 @@ export class CommunityClient {
     return this.call<{ server_id: string; nonce: string }>('POST', '/v1/auth/challenge')
   }
 
-  login(req: { identity_token: string; nonce: string; proof: string; invite?: string; claim?: string }) {
+  login(req: { identity_token: string; nonce: string; proof: string; host: string; tls: 'binding' | 'authority'; invite?: string; claim?: string }) {
     return this.call<LoginResult>('POST', '/v1/auth/login', req)
   }
 

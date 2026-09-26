@@ -8,8 +8,10 @@
 //
 // Tokens carry no audience by default. To stop a server from replaying a
 // token against another server, the holder must also present a proof: a
-// signature, made with the device key, over the target server's audience and
-// a nonce chosen by that server.
+// signature, made with the device key, over the target server's audience, a
+// nonce chosen by that server, and the host the client actually connected to
+// (with how it checked it): a malicious server cannot relay a proof made for
+// its own address to the server it pretends to be.
 //
 // An Identity service that only lets approved servers use its accounts issues
 // tokens for one server (audience) and encrypts them for it (see Seal): only
@@ -24,6 +26,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -202,21 +206,70 @@ func proofMessage(audience, nonce string) []byte {
 	return []byte(proofContext + "\x00" + audience + "\x00" + nonce)
 }
 
-// SignProof signs a server challenge with the device private key.
+// How a client made sure it talks to the server it signs a proof for (v2 proofs).
+const (
+	// TLSBinding: every connection presented a certificate bound to the
+	// server ID (pkg/tlsbind), so no one else can have relayed the challenge.
+	TLSBinding = "binding"
+	// TLSAuthority: a certificate from a public authority for Host (or plain
+	// HTTP on this machine). It says nothing about the server ID: the server
+	// must check that Host is one of its own names.
+	TLSAuthority = "authority"
+)
+
+const proofContextV2 = "quarel-auth-v2"
+
+func proofMessageV2(audience, nonce, host, mode string) []byte {
+	return []byte(proofContextV2 + "\x00" + audience + "\x00" + nonce + "\x00" + host + "\x00" + mode)
+}
+
+// NormalizeHost returns the host name a proof names: lowercase, without
+// port, IPv6 brackets or trailing dot.
+func NormalizeHost(h string) string {
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		h = host
+	}
+	return strings.TrimSuffix(strings.ToLower(strings.Trim(h, "[]")), ".")
+}
+
+// SignProof signs a server challenge with the device private key (v1, legacy).
 // audience identifies the server being joined; nonce is its fresh challenge.
+//
+// A v1 proof does not say where the client connected: a malicious server with
+// a certificate from a public authority can relay it to the server it names.
+// Clients sign v2 proofs (SignProofV2).
 func SignProof(device ed25519.PrivateKey, audience, nonce string) string {
 	return b64.EncodeToString(ed25519.Sign(device, proofMessage(audience, nonce)))
 }
 
-// VerifyProof checks that proof was signed by the device bound to c.
+// SignProofV2 signs a server challenge, also naming the host the client
+// connected to and how it checked that host (TLSBinding or TLSAuthority).
+func SignProofV2(device ed25519.PrivateKey, audience, nonce, host, mode string) string {
+	return b64.EncodeToString(ed25519.Sign(device, proofMessageV2(audience, nonce, NormalizeHost(host), mode)))
+}
+
+// VerifyProof checks that proof (v1) was signed by the device bound to c.
 // The caller must ensure nonce was issued by itself and is used only once.
 func VerifyProof(c *Claims, audience, nonce, proof string) error {
+	return verifyDevice(c, proofMessage(audience, nonce), proof)
+}
+
+// VerifyProofV2 checks a v2 proof. The caller must also check that the host
+// is its own when mode is TLSAuthority.
+func VerifyProofV2(c *Claims, audience, nonce, host, mode, proof string) error {
+	if mode != TLSBinding && mode != TLSAuthority {
+		return errors.New("idtoken: unknown proof mode")
+	}
+	return verifyDevice(c, proofMessageV2(audience, nonce, NormalizeHost(host), mode), proof)
+}
+
+func verifyDevice(c *Claims, msg []byte, proof string) error {
 	pub, err := DecodeKey(c.DeviceKey)
 	if err != nil {
 		return err
 	}
 	sig, err := b64.DecodeString(proof)
-	if err != nil || !ed25519.Verify(pub, proofMessage(audience, nonce), sig) {
+	if err != nil || !ed25519.Verify(pub, msg, sig) {
 		return errors.New("idtoken: invalid proof")
 	}
 	return nil

@@ -57,7 +57,7 @@ var fields = []adminui.Field{
 		Options: []adminui.Option{opt("self-signed", "Automatique, lié à l'identité du serveur (recommandé sans nom de domaine)"),
 			opt("acme", "Let's Encrypt (nom de domaine requis, port 443 ouvert)"), opt("files", "Mes fichiers de certificat"), opt("off", "Aucun (derrière un proxy HTTPS)")}},
 	{Group: "HTTPS", Key: "QUAREL_TLS_HOSTS", Label: "Nom public du serveur", Kind: "list", ShowIf: "QUAREL_TLS=self-signed|off",
-		Help: "Derrière un proxy HTTPS : son nom de domaine (utilisé dans les liens). Avec le certificat automatique : facultatif, noms ajoutés au certificat."},
+		Help: "Derrière un proxy HTTPS : son nom de domaine, obligatoire (utilisé dans les liens ; les applications refusent de se connecter sous un nom que le serveur ne déclare pas, pour qu'aucun autre serveur ne puisse se faire passer pour lui). Avec le certificat automatique : facultatif, noms ajoutés au certificat."},
 	{Group: "HTTPS", Key: "QUAREL_TLS_DOMAIN", Label: "Nom de domaine", Kind: "text", ShowIf: "QUAREL_TLS=acme", Placeholder: "chat.exemple.fr"},
 	{Group: "HTTPS", Key: "QUAREL_TLS_EMAIL", Label: "Email pour Let's Encrypt", Kind: "text", ShowIf: "QUAREL_TLS=acme", Help: "Facultatif : avertissements d'expiration."},
 	{Group: "HTTPS", Key: "QUAREL_TLS_CERT", Label: "Fichier du certificat", Kind: "text", ShowIf: "QUAREL_TLS=files"},
@@ -139,6 +139,10 @@ func (l *live) status(r *http.Request) map[string]any {
 		} else if len(st.Errors) > 0 {
 			notices = append(notices, map[string]string{"level": "warn", "text": "Certains ports n'ont pas pu être ouverts : " + strings.Join(st.Errors, " ; ")})
 		}
+	}
+	if cfg.TLS.Mode == "off" && len(cfg.TLS.Hosts) == 0 {
+		notices = append(notices, map[string]string{"level": "warn", "text": "Derrière un proxy HTTPS, indiquez son nom de domaine dans « Nom public du serveur » (réglages › HTTPS) : " +
+			"les applications vérifient que le serveur répond bien sous l'adresse utilisée, et refusent la connexion sinon."})
 	}
 	if cfg.TLS.Mode == "self-signed" {
 		notices = append(notices, map[string]string{"level": "info", "text": "Certificat automatique : l'application de bureau vérifie ce serveur grâce à son identité, mais les navigateurs le refusent. " +
