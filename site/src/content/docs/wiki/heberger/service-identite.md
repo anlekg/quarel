@@ -31,7 +31,7 @@ Le certificat HTTPS est obtenu automatiquement au premier accès.
 
 ### Page d'administration
 
-Le service a une page d'administration sur le port **8081**, publiée seulement sur la machine elle-même (`127.0.0.1:8081`, et elle refuse toute adresse Internet). Sur un serveur loué, passez par un tunnel SSH :
+Le service a une page d'administration sur le port **8081**, publiée seulement sur la machine elle-même (`127.0.0.1:8081`, et elle refuse toute adresse Internet ; les fichiers Compose l'autorisent donc en HTTP, `QUAREL_ADMIN_TLS=off` — ailleurs, les autres machines doivent passer par HTTPS). Sur un serveur loué, passez par un tunnel SSH :
 
 ```sh
 ssh -L 8081:127.0.0.1:8081 utilisateur@mon-serveur    # puis ouvrir http://localhost:8081
@@ -52,6 +52,10 @@ Dans **Réglages** :
   - **seulement les serveurs approuvés** : un serveur demande l'accès depuis sa propre page d'administration, vous l'approuvez dans « Serveurs ». Les jetons d'identité sont alors chiffrés pour ce seul serveur : aucun autre ne peut accepter vos comptes. En contrepartie, votre service voit à quels serveurs chacun se connecte (il ne le conserve pas).
 
 Pour que des serveurs communautaires acceptent vos comptes, leurs hébergeurs ajoutent votre domaine : `QUAREL_TRUSTED_ISSUERS=identity.quarel.app,identity.mon-asso.fr`.
+
+### Place disque
+
+Le service ne garde que des données chiffrées en attente de livraison, avec des bornes réglables (« Messages privés ») : copies de fichiers en attente par personne (`QUAREL_DM_FILE_QUOTA_MB`, 500 Mo), messages en attente par appareil (`QUAREL_INBOX_MAX_MB`, 256 Mo, dont un quart au plus par expéditeur), effacés après 30 jours s'ils ne sont jamais récupérés (`QUAREL_INBOX_TTL`). Les fichiers sont refusés quand il reste moins de 1 Go libre sur la machine (`QUAREL_MIN_FREE_MB`). Les sessions inutilisées pendant 90 jours se terminent (`QUAREL_SESSION_IDLE`).
 
 ### Sous Windows
 

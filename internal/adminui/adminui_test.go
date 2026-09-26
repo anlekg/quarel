@@ -2,8 +2,11 @@ package adminui
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -113,8 +116,8 @@ func TestSetupCodeFromAnotherMachine(t *testing.T) {
 		t.Fatalf("setup code %q", code)
 	}
 	remote := func(body string) int {
-		req := httptest.NewRequest("POST", "/api/setup", strings.NewReader(body))
-		req.RemoteAddr = "192.168.1.30:50000"
+		req := httptest.NewRequest("POST", "https://192.168.1.10:8091/api/setup", strings.NewReader(body))
+		req.RemoteAddr, req.TLS = "192.168.1.30:50000", &tls.ConnectionState{}
 		req.Header.Set("X-Quarel-Admin", "1")
 		rec := httptest.NewRecorder()
 		f.ui.Handler().ServeHTTP(rec, req)
@@ -134,8 +137,8 @@ func TestSetupCodeFromAnotherMachine(t *testing.T) {
 func TestLocalNetworkOnly(t *testing.T) {
 	f := newFixture(t)
 	for addr, want := range map[string]int{"192.168.1.30:4000": 200, "10.0.0.2:4000": 200, "[fd00::5]:4000": 200, "203.0.113.9:4000": 403, "[2001:db8::1]:4000": 403} {
-		req := httptest.NewRequest("GET", "/api/session", nil)
-		req.RemoteAddr = addr
+		req := httptest.NewRequest("GET", "https://192.168.1.10:8091/api/session", nil)
+		req.RemoteAddr, req.TLS = addr, &tls.ConnectionState{}
 		rec := httptest.NewRecorder()
 		f.ui.Handler().ServeHTTP(rec, req)
 		if rec.Code != want {
@@ -237,4 +240,95 @@ func TestSupervisorRestartsAndWaitsForFix(t *testing.T) {
 	waitState(Running)
 	cancel()
 	<-done
+}
+
+// A web page pointing its own domain at this machine (DNS rebinding) must
+// not reach the page; other machines are sent to HTTPS; a request relayed by
+// a local proxy does not get the privileges of this machine.
+func TestHostAndTransport(t *testing.T) {
+	f := newFixture(t)
+	h := f.ui.Handler()
+	serve := func(method, host, remote string, tlsOn bool, hdr map[string]string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "http://"+host+"/api/session", strings.NewReader(`{"password":"motdepasse-admin"}`))
+		req.RemoteAddr = remote
+		req.Header.Set("X-Quarel-Admin", "1")
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		if tlsOn {
+			req.TLS = &tls.ConnectionState{}
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := serve("GET", "attacker.example:8091", "127.0.0.1:5000", false, nil); rec.Code != http.StatusForbidden {
+		t.Fatalf("rebinding host: %d", rec.Code)
+	}
+	for _, host := range []string{"127.0.0.1:8091", "localhost:8091", "[::1]:8091", "192.168.1.10:8091"} {
+		if rec := serve("GET", host, "127.0.0.1:5000", false, nil); rec.Code != http.StatusOK {
+			t.Fatalf("host %s: %d", host, rec.Code)
+		}
+	}
+	rec := serve("GET", "192.168.1.10:8091", "192.168.1.20:5000", false, nil)
+	if rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != "https://192.168.1.10:8091/api/session" {
+		t.Fatalf("plain HTTP from the network: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	if rec := serve("POST", "192.168.1.10:8091", "192.168.1.20:5000", false, nil); rec.Code != http.StatusForbidden {
+		t.Fatalf("plain POST from the network: %d", rec.Code)
+	}
+	if rec := serve("GET", "192.168.1.10:8091", "192.168.1.20:5000", true, nil); rec.Code != http.StatusOK {
+		t.Fatalf("HTTPS from the network: %d", rec.Code)
+	}
+	// Setup through a local proxy needs the code, like any other machine.
+	req := httptest.NewRequest("POST", "http://127.0.0.1:8091/api/setup", strings.NewReader(`{"password":"motdepasse-admin"}`))
+	req.RemoteAddr, req.TLS = "127.0.0.1:5000", &tls.ConnectionState{}
+	req.Header.Set("X-Quarel-Admin", "1")
+	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "invalid_setup_code") {
+		t.Fatalf("setup through a proxy without code: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// One port serves the page over plain HTTP and HTTPS.
+func TestSniffListener(t *testing.T) {
+	cert, fp, err := loadCertificate(t.TempDir())
+	if err != nil || len(fp) != 95 {
+		t.Fatalf("certificate: %v %q", err, fp)
+	}
+	raw, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln := newSniffListener(raw, &tls.Config{Certificates: []tls.Certificate{cert}})
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS != nil {
+			w.Write([]byte("tls"))
+		} else {
+			w.Write([]byte("plain"))
+		}
+	})}
+	go srv.Serve(ln)
+	defer srv.Close()
+	// A silent client does not hold up the others.
+	silent, _ := net.Dial("tcp", raw.Addr().String())
+	defer silent.Close()
+	get := func(url string, c *http.Client) string {
+		res, err := c.Get(url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		return string(b)
+	}
+	if got := get("http://"+raw.Addr().String(), http.DefaultClient); got != "plain" {
+		t.Fatalf("plain: %q", got)
+	}
+	insecure := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	if got := get("https://"+raw.Addr().String(), insecure); got != "tls" {
+		t.Fatalf("tls: %q", got)
+	}
 }

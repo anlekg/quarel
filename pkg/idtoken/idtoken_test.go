@@ -88,3 +88,31 @@ func TestVerifyRejects(t *testing.T) {
 		t.Error("alg=none token accepted")
 	}
 }
+
+func TestProofV2(t *testing.T) {
+	_, device, _ := ed25519.GenerateKey(nil)
+	c := &Claims{DeviceKey: EncodeKey(device.Public().(ed25519.PublicKey))}
+	proof := SignProofV2(device, "srv", "n1", "Chez-Moi.example:8090", TLSAuthority)
+	if err := VerifyProofV2(c, "srv", "n1", "chez-moi.example", TLSAuthority, proof); err != nil {
+		t.Fatalf("valid proof refused: %v", err)
+	}
+	for _, bad := range []struct{ aud, nonce, host, mode string }{
+		{"other", "n1", "chez-moi.example", TLSAuthority},
+		{"srv", "n2", "chez-moi.example", TLSAuthority},
+		{"srv", "n1", "evil.example", TLSAuthority},
+		{"srv", "n1", "chez-moi.example", TLSBinding},
+		{"srv", "n1", "chez-moi.example", "none"},
+	} {
+		if VerifyProofV2(c, bad.aud, bad.nonce, bad.host, bad.mode, proof) == nil {
+			t.Errorf("proof accepted for %+v", bad)
+		}
+	}
+	if VerifyProof(c, "srv", "n1", proof) == nil {
+		t.Error("v2 proof accepted as v1")
+	}
+	for in, want := range map[string]string{"[2001:DB8::1]:443": "2001:db8::1", "Example.ORG.": "example.org", "10.0.0.1:8090": "10.0.0.1"} {
+		if got := NormalizeHost(in); got != want {
+			t.Errorf("NormalizeHost(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

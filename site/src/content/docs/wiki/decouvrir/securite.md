@@ -10,8 +10,10 @@ Quarel n’invente pas sa cryptographie : il s’appuie sur des bibliothèques �
 ## Votre compte
 
 - Mots de passe hachés avec **argon2id** ; double authentification **TOTP** (application d’authentification) avec 10 codes de secours.
-- Blocage automatique après des échecs répétés (par compte et par adresse IP), sans révéler si un compte existe.
+- Blocage automatique après des échecs répétés (par compte et par adresse IP), sans révéler si un compte existe. Un appareil que vous avez déjà utilisé pour vous connecter n'est pas bloqué par des échecs venus d'ailleurs : personne ne peut vous tenir dehors en tapant de faux mots de passe.
+- L'inscription ne révèle pas non plus si une adresse email a déjà un compte (la personne concernée est prévenue par email).
 - Mot de passe oublié : un code par email, **et la double authentification reste exigée**. Toutes les sessions sont alors fermées.
+- Une session inutilisée pendant 90 jours se termine. Quand une session se termine (déconnexion, appareil retiré, changement de mot de passe), les serveurs communautaires en sont informés et ferment celles de cet appareil sous 10 minutes.
 
 ## Messages privés et fichiers
 
@@ -19,7 +21,8 @@ Quarel n’invente pas sa cryptographie : il s’appuie sur des bibliothèques �
 - **Chaque appareil a ses clés.** Un nouvel appareil doit être **validé** par un appareil déjà validé, après comparaison d’un code affiché sur les deux écrans. Sans cela, il ne reçoit rien.
 - **Phrase de récupération** : 12 mots (liste BIP-39 française) qui chiffrent une sauvegarde de vos clés et de votre historique, stockée sur le service sous forme illisible. Si vous perdez tous vos appareils, elle seule permet de tout retrouver : notez-la sur papier.
 - Les **fichiers** envoyés en privé sont chiffrés sur votre appareil, transmis de préférence directement aux appareils en ligne (pair à pair), sinon déposés chiffrés sur le service, puis effacés dès réception (7 jours au plus).
-- Le contact avec chaque personne est **épinglé** au premier échange : si ses clés changent de façon suspecte, l’application refuse d’envoyer et vous prévient.
+- Le contact avec chaque personne est **épinglé** au premier échange : si ses clés changent, l’application refuse d’envoyer et vous prévient. Un **code de sécurité**, le même des deux côtés, permet de vérifier hors ligne que personne (pas même votre service d’identité) n’a substitué ses clés.
+- Dans un **groupe**, l’application ne chiffre que pour les membres annoncés par un membre (chiffré) : un service compromis ne peut pas glisser quelqu’un dans une conversation pour lire les messages suivants.
 
 ## Appels
 
@@ -28,7 +31,8 @@ Les appels entre amis sont **pair à pair** et chiffrés (DTLS-SRTP). La mise en
 ## Connexion aux serveurs communautaires
 
 - **Identité portable** : un jeton signé par votre service, lié à la clé de votre appareil. Chaque connexion prouve la possession de cette clé en signant un défi à usage unique : un jeton volé seul ne suffit pas.
-- **Certificat lié à l’identité du serveur** : les liens d’invitation contiennent l’identifiant du serveur (`sid`). L’application vérifie pendant la connexion HTTPS que le serveur détient la clé correspondante, sans autorité de certification. Un intermédiaire ne peut pas se faire passer pour lui.
+- **Certificat lié à l’identité du serveur** : les liens d’invitation contiennent l’identifiant du serveur (`sid`). L’application vérifie pendant la connexion HTTPS que le serveur détient la clé correspondante, sans autorité de certification. Un intermédiaire ne peut pas se faire passer pour lui. Une adresse qui a prouvé ce lien doit continuer à le prouver : un certificat ordinaire y est ensuite refusé.
+- **Pas de connexion relayée** : la preuve signée à chaque connexion nomme aussi l’adresse contactée et la façon dont elle a été vérifiée. Un serveur malveillant (même muni d’un certificat reconnu) qui transmettrait votre connexion à un autre serveur en se faisant passer pour lui est refusé par ce dernier.
 - Les serveurs communautaires ne reçoivent jamais votre email.
 
 ## L’application
@@ -42,5 +46,6 @@ Les appels entre amis sont **pair à pair** et chiffrés (DTLS-SRTP). La mise en
 - Les **salons des serveurs** ne sont pas chiffrés de bout en bout : l’hébergeur du serveur peut les lire.
 - Pour le vocal des salons, votre adresse IP est visible du serveur vocal de ce serveur.
 - Les installateurs ne sont pas encore signés par un certificat d’éditeur (avertissement de Windows).
+- La **version web** reçoit son code de `app.quarel.app` à chaque ouverture : quiconque prendrait le contrôle de ce site pourrait y glisser du code capable de lire vos clés et vos messages privés dans le navigateur. C’est une limite de tout chiffrement de bout en bout dans une page web. L’application de bureau, elle, n’exécute que du code installé sur votre machine et ne se met à jour qu’avec des versions signées : préférez-la pour les conversations sensibles.
 
 Une faille ? Merci de la signaler en privé plutôt que dans un ticket public : voir [Contribuer](/wiki/developper/contribuer/).

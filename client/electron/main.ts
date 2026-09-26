@@ -229,30 +229,67 @@ ipcMain.handle('app:info', (e) => {
 })
 
 // --- community servers with a self-signed certificate bound to their identity ---
-// The UI pins, per host name, the server IDs it expects (from invite links).
-// A certificate that the system does not trust is accepted only if its
-// binding proves one of those IDs.
+// A host whose certificate proved a server's identity (quarel://binding, see
+// tlsbind.ts) is bound to that server ID: from then on Chromium accepts only
+// that server's bound certificate for it, never an ordinary one, so no one
+// holding a valid certificate for the same name can step in. The login proof
+// says whether the connection was checked this way ("binding") or only by an
+// authority ("authority": the server then checks that the name is its own).
 
 const pinsFile = () => join(app.getPath('userData'), 'server-pins.json')
-let pins: Record<string, string[]> = {}
+interface Pins {
+  v: 2
+  bindings: Record<string, string> // host → the one server ID its certificate proves
+  legacy: Record<string, string[]> // server IDs expected before this format: become a binding on first use
+}
+let pins: Pins = { v: 2, bindings: {}, legacy: {} }
+// Identities Chromium accepted for each host in this session ('ca' or a
+// server ID). Chromium caches its certificate decisions for the session, so
+// a host that changed identity meanwhile cannot be trusted until a restart.
+const accepted = new Map<string, Set<string>>()
 
 async function loadPins() {
   try {
-    pins = JSON.parse(await readFile(pinsFile(), 'utf8'))
+    const raw = JSON.parse(await readFile(pinsFile(), 'utf8'))
+    pins = raw?.v === 2 ? { v: 2, bindings: raw.bindings ?? {}, legacy: raw.legacy ?? {} } : { v: 2, bindings: {}, legacy: raw ?? {} }
   } catch {
-    pins = {}
+    pins = { v: 2, bindings: {}, legacy: {} }
   }
 }
 
+async function savePins() {
+  await mkdir(app.getPath('userData'), { recursive: true })
+  await writeFile(pinsFile(), JSON.stringify(pins), { mode: 0o600 })
+}
+
+function bind(host: string, sid: string) {
+  if (pins.bindings[host] === sid) return
+  pins.bindings[host] = sid
+  delete pins.legacy[host]
+  savePins().catch(() => {})
+}
+
+function note(host: string, identity: string) {
+  let set = accepted.get(host)
+  if (!set) accepted.set(host, (set = new Set()))
+  set.add(identity)
+}
+
+const validHost = (h: unknown): h is string => typeof h === 'string' && h.length > 0 && h.length <= 253
+const validSID = (s: unknown): s is string => typeof s === 'string' && /^[a-z2-7]{26}$/.test(s)
+const normHost = (h: string) => h.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+
+// The UI expects server sid at host (a saved server, or one shared by my own
+// device): its bound certificate will be accepted there, and the host bound to it.
 ipcMain.handle('tls:pin', async (e, host, sid) => {
   fromApp(e)
-  if (typeof host !== 'string' || typeof sid !== 'string' || !/^[a-z2-7]{26}$/.test(sid)) throw new Error('invalid pin')
-  host = host.toLowerCase()
-  const list = pins[host] ?? []
+  if (!validHost(host) || !validSID(sid)) throw new Error('invalid pin')
+  host = normHost(host)
+  if (pins.bindings[host]) return
+  const list = pins.legacy[host] ?? []
   if (!list.includes(sid)) {
-    pins[host] = [...list, sid]
-    await mkdir(app.getPath('userData'), { recursive: true })
-    await writeFile(pinsFile(), JSON.stringify(pins), { mode: 0o600 })
+    pins.legacy[host] = [...list, sid]
+    await savePins()
   }
 })
 
@@ -262,16 +299,61 @@ ipcMain.handle('tls:pin', async (e, host, sid) => {
 // talks to it once its certificate is known to match.
 ipcMain.handle('tls:check', async (e, host, port, sid) => {
   fromApp(e)
-  if (typeof host !== 'string' || typeof port !== 'number' || typeof sid !== 'string') throw new Error('invalid check')
-  return checkServer(host, port, sid)
+  if (!validHost(host) || typeof port !== 'number' || !validSID(sid)) throw new Error('invalid check')
+  host = normHost(host)
+  const res = await checkServer(host, port, sid)
+  if (res === 'binding' && pins.bindings[host] !== sid) {
+    bind(host, sid)
+    session.defaultSession.closeAllConnections() // no connection set up under the previous rule is reused
+  }
+  // A host bound to a server ID with an ordinary certificate now: someone else, or a
+  // server that changed its setup (leaving it releases the host, see tls:forget).
+  if (res === 'authority' && pins.bindings[host]) return 'mismatch'
+  return res
+})
+
+// How connections to host were checked, for the login proof: 'binding' when
+// the host is bound to sid and Chromium accepted nothing else for it in this
+// session, 'authority' when it is not bound to sid, 'conflict' otherwise.
+ipcMain.handle('tls:mode', (e, host, sid) => {
+  fromApp(e)
+  if (!validHost(host) || !validSID(sid)) throw new Error('invalid host')
+  host = normHost(host)
+  const seen = accepted.get(host) ?? new Set<string>()
+  if (pins.bindings[host] === sid) return [...seen].every((x) => x === sid) ? 'binding' : 'conflict'
+  return 'authority'
+})
+
+// The UI no longer uses any server at host (left): its binding is released.
+ipcMain.handle('tls:forget', async (e, host) => {
+  fromApp(e)
+  if (!validHost(host)) throw new Error('invalid host')
+  host = normHost(host)
+  delete pins.bindings[host]
+  delete pins.legacy[host]
+  await savePins()
 })
 
 function installVerifier() {
   session.defaultSession.setCertificateVerifyProc((req, cb) => {
-    if (req.verificationResult === 'net::OK') return cb(-3) // valid for a public authority
-    const expected = pins[req.hostname.toLowerCase()]
-    const sid = expected?.length ? boundServerID(req.certificate.data) : null
-    cb(sid && expected.includes(sid) ? 0 : -2)
+    const host = normHost(req.hostname)
+    const bound = pins.bindings[host]
+    if (req.verificationResult === 'net::OK') { // valid for a public authority
+      if (bound) return cb(-2) // this host proved a server identity: it must keep doing so
+      note(host, 'ca')
+      return cb(-3)
+    }
+    const sid = boundServerID(req.certificate.data)
+    if (!sid) return cb(-2)
+    if (!bound) {
+      // A saved server first seen since this format: its host becomes bound,
+      // unless something else was already accepted for it in this session.
+      const seen = accepted.get(host)
+      if (!pins.legacy[host]?.includes(sid) || (seen && [...seen].some((x) => x !== sid))) return cb(-2)
+      bind(host, sid)
+    } else if (sid !== bound) return cb(-2)
+    note(host, sid)
+    cb(0)
   })
 }
 

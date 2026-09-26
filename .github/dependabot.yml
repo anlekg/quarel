@@ -26,6 +26,15 @@ updates:
       site:
         update-types: [minor, patch]
 
+  # Base images are pinned by digest: Dependabot proposes the new digests.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      images:
+        patterns: ["*"]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

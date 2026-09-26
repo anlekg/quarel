@@ -17,7 +17,9 @@ const run = (cmd) => execSync(cmd, { stdio: 'inherit' })
 run(`npm version ${version} --no-git-tag-version --allow-same-version`)
 rmSync('release', { recursive: true, force: true })
 run('npm run build')
-run('npx electron-builder --linux --win --publish never')
+// Published builds also refuse --inspect (the fuse is left on in electron-builder.yml
+// so that test builds can be driven by Playwright, which needs it).
+run('npx electron-builder --linux --win --publish never -c.electronFuses.enableNodeCliInspectArguments=false')
 run('node scripts/sign-release.mjs release')
 
 mkdirSync(dest, { recursive: true })

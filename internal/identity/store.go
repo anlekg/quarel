@@ -282,6 +282,30 @@ CREATE TABLE server_approvals (
 	decided_at   INTEGER
 );
 `,
+	// 9 (audit, 2026-09-26): device keys of ended sessions, published so that
+	// community servers end the sessions those devices opened there; devices
+	// that signed in successfully (lockout); size of inbox items (quotas).
+	`
+CREATE TABLE revoked_devices (
+	device_key TEXT NOT NULL,
+	revoked_at INTEGER NOT NULL
+);
+CREATE INDEX revoked_devices_at ON revoked_devices(revoked_at);
+-- Every way a session ends (logout, revocation, password change or reset,
+-- idle expiry, account deletion by cascade) goes through this trigger.
+CREATE TRIGGER sessions_ended AFTER DELETE ON sessions BEGIN
+	INSERT INTO revoked_devices (device_key, revoked_at) VALUES (OLD.device_key, CAST(strftime('%s', 'now') AS INTEGER));
+END;
+CREATE TABLE known_devices (
+	user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	device_key TEXT NOT NULL,
+	last_login INTEGER NOT NULL,
+	PRIMARY KEY (user_id, device_key)
+);
+ALTER TABLE inbox ADD COLUMN size INTEGER NOT NULL DEFAULT 0;
+UPDATE inbox SET size = length(payload);
+CREATE INDEX inbox_created ON inbox(created_at);
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

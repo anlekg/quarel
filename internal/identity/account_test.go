@@ -290,10 +290,12 @@ func TestAdminDisableAndDisabledList(t *testing.T) {
 	e.expect(404, "not_found", e.call("GET", "/v1/users/"+alice.User.ID+"/profile", "", nil, nil))
 	var list struct {
 		Issuer   string
-		Accounts []struct{ Sub string }
+		Accounts []struct {
+			H string `json:"h"`
+		}
 	}
 	e.expect(200, "", e.call("GET", "/v1/disabled-accounts", "", nil, &list))
-	if list.Issuer != "id.test" || len(list.Accounts) != 1 || list.Accounts[0].Sub != alice.User.ID {
+	if list.Issuer != "id.test" || len(list.Accounts) != 1 || list.Accounts[0].H != idtoken.AccountHash(alice.User.ID) {
 		t.Fatalf("list = %+v", list)
 	}
 	if _, err := a.SetDisabled(ctx, alice.User.ID, false, "levée 2026-43", "opérateur"); err != nil {
@@ -346,4 +348,63 @@ func base64Seed(k ed25519.PrivateKey) string {
 	enc := json.NewEncoder(&b)
 	enc.Encode(k.Seed())
 	return strings.Trim(strings.TrimSpace(b.String()), `"`)
+}
+
+// Every ended session (logout, revocation, idle expiry, account deletion)
+// is published, hashed, so that community servers end the sessions its
+// device opened there; unused sessions end after QUAREL_SESSION_IDLE.
+func TestEndedDevicesAndIdleSessions(t *testing.T) {
+	e := newEnv(t)
+	ended := func() map[string]bool {
+		var list struct {
+			Devices []struct {
+				H string `json:"h"`
+			} `json:"ended_devices"`
+		}
+		e.expect(200, "", e.call("GET", "/v1/disabled-accounts", "", nil, &list))
+		out := map[string]bool{}
+		for _, d := range list.Devices {
+			out[d.H] = true
+		}
+		return out
+	}
+	deviceOf := func(token string) string {
+		var key string
+		e.srv.db.QueryRow(`SELECT device_key FROM sessions WHERE token_hash = ?`, sha256Hex(token)).Scan(&key)
+		return key
+	}
+
+	alice, _ := e.registerVerified("alice@example.com", "alice", "mot-de-passe-alice")
+	key := deviceOf(alice.SessionToken)
+	if ended()[idtoken.DeviceHash(key)] {
+		t.Fatal("a live session is listed as ended")
+	}
+	e.expect(204, "", e.call("POST", "/v1/auth/logout", alice.SessionToken, nil, nil))
+	if !ended()[idtoken.DeviceHash(key)] {
+		t.Fatal("logout not published")
+	}
+
+	// Idle sessions stop working, then are removed and published.
+	bob, _ := e.registerVerified("bob@example.com", "bob", "mot-de-passe-bob")
+	bobKey := deviceOf(bob.SessionToken)
+	e.expect(200, "", e.call("GET", "/v1/me", bob.SessionToken, nil, nil))
+	e.clock = e.clock.Add(e.srv.cfg.SessionIdle + time.Minute)
+	e.expect(401, "unauthorized", e.call("GET", "/v1/me", bob.SessionToken, nil, nil))
+	e.srv.cleanup(context.Background())
+	var n int
+	e.srv.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE token_hash = ?`, sha256Hex(bob.SessionToken)).Scan(&n)
+	if n != 0 {
+		t.Fatal("idle session not removed")
+	}
+	if !ended()[idtoken.DeviceHash(bobKey)] {
+		t.Fatal("idle expiry not published")
+	}
+
+	// Deleting an account ends its sessions too (by cascade).
+	carol, _ := e.registerVerified("carol@example.com", "carol", "mot-de-passe-carol")
+	carolKey := deviceOf(carol.SessionToken)
+	e.expect(204, "", e.call("DELETE", "/v1/me", carol.SessionToken, map[string]string{"password": "mot-de-passe-carol"}, nil))
+	if !ended()[idtoken.DeviceHash(carolKey)] {
+		t.Fatal("account deletion not published")
+	}
 }

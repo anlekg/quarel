@@ -252,6 +252,15 @@ async function pageDashboard(main) {
             alert(errText(e))
           }
         } }, 'Renommer le serveur') : null,
+        session.kind === 'community' && st.state === 'running' && svc.has_owner ? h('button', { class: 'btn btn-ghost btn-sm', onclick: async () => {
+          if (!confirm('Retirer le propriétaire actuel du serveur ?\n\nÀ faire seulement s\u2019il ne peut plus se connecter (compte perdu ou supprimé). Il reste membre ; un nouveau lien propriétaire s\u2019affichera ici.')) return
+          try {
+            await api('POST', '/x/reset-owner')
+            load()
+          } catch (e) {
+            alert(errText(e))
+          }
+        } }, 'Réinitialiser le propriétaire') : null,
         h('button', { class: 'btn btn-ghost btn-sm', onclick: async (ev) => {
           ev.target.disabled = true
           await api('POST', '/restart').catch(() => {})

@@ -12,6 +12,10 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      # The administration page is only published on 127.0.0.1 (below): it
+      # reaches the container through Docker's local network, never the
+      # Internet, so plain HTTP is fine (elsewhere it requires HTTPS).
+      QUAREL_ADMIN_TLS: "off"
       QUAREL_ADDR: ":8080"
       QUAREL_TLS: "off"
       # The proxy's address as seen from the container, so rate limits apply

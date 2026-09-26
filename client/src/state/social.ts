@@ -83,7 +83,9 @@ async function refreshFriends() {
 }
 
 async function refreshConversations() {
-  set({ conversations: await api().conversations() })
+  const conversations = await api().conversations()
+  await e2e?.observeAll(conversations)
+  set({ conversations })
 }
 
 export async function openSocial(a: Account) {
@@ -190,6 +192,7 @@ function handle(t: string, d: any) {
     case 'DM_UPDATE': {
       const c = d as Conversation
       const others = state.conversations.filter((x) => x.id !== c.id)
+      e2e?.observeAll([c]).catch(() => {})
       set({ conversations: [c, ...others] })
       return
     }
@@ -287,12 +290,14 @@ export async function removeFriend(u: PublicUser) {
 
 export async function openDirect(userId: string): Promise<Conversation> {
   const c = await api().openDirect(userId)
+  await e2e?.observeAll([c])
   if (!state.conversations.some((x) => x.id === c.id)) set({ conversations: [c, ...state.conversations] })
   return c
 }
 
 export async function createGroup(userIds: string[], name: string): Promise<Conversation> {
   const c = await api().createGroup(userIds, name)
+  await e2e?.observeAll([c])
   set({ conversations: [c, ...state.conversations.filter((x) => x.id !== c.id)] })
   return c
 }
@@ -302,7 +307,44 @@ export async function leaveGroup(c: Conversation) {
   set({ conversations: state.conversations.filter((x) => x.id !== c.id) })
 }
 
-const othersOf = (c: Conversation) => c.members.map((m) => m.id).filter((id) => id !== account?.user.id)
+// The members to encrypt for: those confirmed by the members themselves (see E2E.observe).
+const othersOf = (c: Conversation) => e2e!.recipients(c).confirmed
+
+// Members the Identity service lists, but no member announced: they get nothing.
+export function unconfirmedMembers(c: Conversation): string[] {
+  return e2e?.recipients(c).unconfirmed ?? []
+}
+
+// Adds a friend to a group and announces them to the members (encrypted).
+export async function addToGroup(c: Conversation, userId: string) {
+  const updated = await api().addToGroup(c.id, userId)
+  set({ conversations: [updated, ...state.conversations.filter((x) => x.id !== updated.id)] })
+  await e2e!.announceMember(updated, userId)
+}
+
+// Safety code with a contact (see E2E.safetyCode).
+export function safetyCode(userId: string) {
+  return e2e!.safetyCode(userId)
+}
+
+export async function markVerified(userId: string) {
+  await e2e!.markVerified(userId)
+  set({ version: state.version + 1 })
+}
+
+export async function trustNewKey(userId: string) {
+  await e2e!.trustNewKey(userId)
+  set({ version: state.version + 1 })
+}
+
+// Every device and the recovery phrase lost: new account master key, from this device.
+export async function resetKeys(password: string, totp?: string) {
+  await api().resetMasterKey(password, totp)
+  await e2e!.restartKeys()
+  set({ validated: true, version: state.version + 1 })
+  await refreshDevices()
+  await refreshBackup()
+}
 
 export async function sendText(c: Conversation, text: string) {
   return e2e!.send(c.id, othersOf(c), { text })

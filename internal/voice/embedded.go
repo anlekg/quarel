@@ -142,10 +142,12 @@ func waitReady(ctx context.Context, addr string, ready chan<- struct{}) {
 
 // Proxy forwards requests under prefix (e.g. "/lk") to a loopback
 // livekit-server, WebSocket signalling included, so clients only need the
-// community server's HTTP port plus LiveKit's media ports.
+// community server's HTTP port plus LiveKit's media ports. Only signalling
+// (prefix/rtc…) goes through: LiveKit's room API (/twirp) and anything else
+// stay on the loopback interface.
 func Proxy(prefix string, signalPort int) http.Handler {
 	target := &url.URL{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%d", signalPort)}
-	return &httputil.ReverseProxy{
+	rp := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			pr.Out.URL.Path = strings.TrimPrefix(pr.In.URL.Path, prefix)
@@ -153,4 +155,12 @@ func Proxy(prefix string, signalPort int) http.Handler {
 			pr.Out.Host = target.Host
 		},
 	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := strings.TrimPrefix(r.URL.Path, prefix)
+		if p != "/rtc" && !strings.HasPrefix(p, "/rtc/") || strings.Contains(p, "..") {
+			http.NotFound(w, r)
+			return
+		}
+		rp.ServeHTTP(w, r)
+	})
 }

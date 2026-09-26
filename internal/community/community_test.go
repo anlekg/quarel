@@ -15,6 +15,7 @@ import (
 
 	"github.com/anlekg/quarel/internal/httpapi"
 	"github.com/anlekg/quarel/internal/realtime"
+	"github.com/anlekg/quarel/internal/tlsconf"
 	"github.com/anlekg/quarel/pkg/idtoken"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -100,6 +101,23 @@ func (e *testEnv) expect(wantStatus int, wantCode string, got result) {
 	}
 }
 
+func TestHostNames(t *testing.T) {
+	s := &Server{names: hostNames(tlsconf.Config{Mode: tlsconf.Off, Hosts: []string{"Chez-Moi.example.", "*.dyn.example", "[2001:db8::1]"}})}
+	for host, want := range map[string]bool{
+		"chez-moi.example": true, "CHEZ-MOI.EXAMPLE:8090": true, "localhost": true, "127.0.0.1": true, "::1": true,
+		"a.dyn.example": true, "a.b.dyn.example": false, "dyn.example": false, "2001:db8::1": true, "[2001:db8::1]:443": true,
+		"evil.example": false, "": false,
+	} {
+		if got := s.servesHost(host); got != want {
+			t.Errorf("servesHost(%q) = %v, want %v", host, got, want)
+		}
+	}
+	acme := &Server{names: hostNames(tlsconf.Config{Mode: tlsconf.ACME, Domain: "quarel.example"})}
+	if !acme.servesHost("quarel.example") || acme.servesHost("other.example") {
+		t.Error("acme domain")
+	}
+}
+
 // user is a portable identity with a device key, as the Identity service would issue.
 type user struct {
 	sub, handle string
@@ -146,7 +164,9 @@ func (e *testEnv) login(u *user, o loginOpts, out *loginResp) result {
 	return e.call("POST", "/v1/auth/login", "", map[string]string{
 		"identity_token": tok,
 		"nonce":          ch.Nonce,
-		"proof":          idtoken.SignProof(u.device, ch.ServerID, ch.Nonce),
+		"proof":          idtoken.SignProofV2(u.device, ch.ServerID, ch.Nonce, "127.0.0.1", idtoken.TLSAuthority),
+		"host":           "127.0.0.1",
+		"tls":            idtoken.TLSAuthority,
 		"invite":         o.invite,
 		"claim":          o.claim,
 	}, out)
@@ -265,6 +285,30 @@ func TestLoginSecurity(t *testing.T) {
 	// A proof made for another server (relay attack) is refused.
 	n = challenge()
 	e.expect(401, "invalid_proof", login(bob.token(e.clock, time.Hour), n, idtoken.SignProof(bob.device, "other-server", n)))
+
+	// v2 proofs name the host the client connected to. A malicious server
+	// with an ordinary certificate for its own name relaying the login here
+	// is refused; so is a proof whose host was changed on the way.
+	loginV2 := func(nonce, proof, host, mode string) result {
+		return e.call("POST", "/v1/auth/login", "", map[string]string{"identity_token": bob.token(e.clock, time.Hour), "nonce": nonce, "proof": proof, "host": host, "tls": mode}, nil)
+	}
+	n = challenge()
+	e.expect(403, "wrong_host", loginV2(n, idtoken.SignProofV2(bob.device, e.srv.id, n, "evil.example", idtoken.TLSAuthority), "evil.example", idtoken.TLSAuthority))
+	n = challenge()
+	e.expect(401, "invalid_proof", loginV2(n, idtoken.SignProofV2(bob.device, e.srv.id, n, "evil.example", idtoken.TLSAuthority), "127.0.0.1", idtoken.TLSAuthority))
+	n = challenge()
+	e.expect(401, "invalid_proof", loginV2(n, idtoken.SignProofV2(bob.device, e.srv.id, n, "evil.example", idtoken.TLSAuthority), "evil.example", idtoken.TLSBinding))
+	// This test server has no certificate bound to its identity: a client
+	// cannot have checked one, the login came through someone else.
+	n = challenge()
+	e.expect(403, "wrong_host", loginV2(n, idtoken.SignProofV2(bob.device, e.srv.id, n, "evil.example", idtoken.TLSBinding), "evil.example", idtoken.TLSBinding))
+	n = challenge()
+	e.expect(200, "", loginV2(n, idtoken.SignProofV2(bob.device, e.srv.id, n, "LOCALHOST:8090", idtoken.TLSAuthority), "localhost", idtoken.TLSAuthority))
+	// With its bound certificate, any address will do: only this server can present it.
+	e.srv.cfg.TLS.Mode = tlsconf.SelfSigned
+	n = challenge()
+	e.expect(200, "", loginV2(n, idtoken.SignProofV2(bob.device, e.srv.id, n, "203.0.113.7", idtoken.TLSBinding), "203.0.113.7", idtoken.TLSBinding))
+	e.srv.cfg.TLS.Mode = ""
 
 	// A stolen token without the device key is useless.
 	_, thief, _ := ed25519.GenerateKey(nil)

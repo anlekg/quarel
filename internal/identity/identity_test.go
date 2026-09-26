@@ -2,12 +2,14 @@ package identity
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -143,7 +145,8 @@ func TestRegistrationAndLogin(t *testing.T) {
 	reg := map[string]string{"email": "Alice@Example.com", "pseudo": "Alice", "password": "correct horse battery"}
 
 	e.expect(201, "", e.call("POST", "/v1/auth/register", "", reg, nil))
-	e.expect(409, "email_taken", e.call("POST", "/v1/auth/register", "", reg, nil))
+	// Registering again over an unverified account replaces it (nobody could sign in with it).
+	e.expect(201, "", e.call("POST", "/v1/auth/register", "", reg, nil))
 	e.expect(409, "pseudo_taken", e.call("POST", "/v1/auth/register", "", map[string]string{"email": "b@example.com", "pseudo": "ALICE", "password": "correct horse battery"}, nil))
 	e.expect(400, "weak_password", e.call("POST", "/v1/auth/register", "", map[string]string{"email": "c@example.com", "pseudo": "carol", "password": "short"}, nil))
 	e.expect(400, "invalid_pseudo", e.call("POST", "/v1/auth/register", "", map[string]string{"email": "c@example.com", "pseudo": "a b", "password": "correct horse battery"}, nil))
@@ -155,6 +158,23 @@ func TestRegistrationAndLogin(t *testing.T) {
 	e.expect(400, "invalid_code", e.call("POST", "/v1/auth/verify-email", "", map[string]string{"email": "alice@example.com", "code": "000000x"}, nil))
 	code := e.mail.code(t, "alice@example.com")
 	e.expect(204, "", e.call("POST", "/v1/auth/verify-email", "", map[string]string{"email": "alice@example.com", "code": code}, nil))
+
+	// A verified address: same answer as for a new account (nothing to
+	// enumerate), no account created, and a notice to the owner.
+	var fake struct {
+		UserID string `json:"user_id"`
+		Handle string `json:"handle"`
+	}
+	e.expect(201, "", e.call("POST", "/v1/auth/register", "", map[string]string{"email": "alice@example.com", "pseudo": "alice2", "password": "correct horse battery"}, &fake))
+	if fake.UserID == "" || fake.Handle != "alice2@id.test" {
+		t.Fatalf("answer for a taken address: %+v", fake)
+	}
+	if !strings.Contains(e.mail.last["alice@example.com"], "déjà un") {
+		t.Fatalf("no notice to the owner: %q", e.mail.last["alice@example.com"])
+	}
+	if u, _ := e.srv.userBy(context.Background(), "pseudo_norm", "alice2"); u != nil {
+		t.Fatal("an account was created for a taken address")
+	}
 
 	e.expect(401, "invalid_credentials", e.call("POST", "/v1/auth/login", "", map[string]string{"login": "alice", "password": "wrong password!", "device_key": pub}, nil))
 	e.expect(401, "invalid_credentials", e.call("POST", "/v1/auth/login", "", map[string]string{"login": "nobody", "password": "wrong password!", "device_key": pub}, nil))

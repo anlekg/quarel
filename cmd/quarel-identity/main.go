@@ -25,7 +25,7 @@ import (
 
 func backupSpec(dir string) backup.Spec {
 	return backup.Spec{Kind: "quarel-identity", DataDir: dir, Database: "identity.db", Required: []string{"signing.key"},
-		Files: []string{"retired-keys.json", "turn.secret", settings.FileName}, Dirs: []string{"dm-files", "acme"}, Keep: []string{"admin.json"}}
+		Files: []string{"retired-keys.json", "turn.secret", settings.FileName}, Dirs: []string{"dm-files", "acme"}, Keep: adminui.KeepFiles}
 }
 
 func main() {
@@ -168,19 +168,7 @@ func serve(ctx context.Context, ready func(), state *live) error {
 	}
 	wg.Add(2)
 	go func() { defer wg.Done(); srv.WatchDisabled(ctx, 15*time.Second) }() // disabled accounts lose their live connections
-	go func() {                                                             // expired conversation files
-		defer wg.Done()
-		for {
-			if err := srv.CleanupFiles(ctx); err != nil {
-				slog.Warn("conversation files cleanup", "err", err)
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Hour):
-			}
-		}
-	}()
+	go func() { defer wg.Done(); srv.Housekeeping(ctx) }()                  // expired files, idle sessions, old lists
 	stopped := make(chan struct{})
 	go func() {
 		defer close(stopped)

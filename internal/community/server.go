@@ -52,6 +52,7 @@ type Server struct {
 	previews *previewer    // nil: link previews disabled
 	phone    PhoneVerifier // nil: phone verification unavailable
 	disabled disabledSet   // accounts disabled by their identity service
+	names    []string      // host names clients may use with an ordinary certificate (see checkProof)
 }
 
 // ServerID derives the public server identifier from its key.
@@ -92,6 +93,7 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, keys KeySource) *Server
 		key:     key,
 		enc:     deriveEncKey(key),
 		proxies: cfg.TrustedProxies,
+		names:   hostNames(cfg.TLS),
 	}
 	s.limit.global = ratelimit.New(cfg.Limits.Global, time.Minute)
 	s.limit.auth = ratelimit.New(cfg.Limits.Auth, time.Minute)
@@ -285,6 +287,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/members/{id}/timeout", s.authed(s.handleTimeout))
 	mux.HandleFunc("DELETE /v1/members/{id}/timeout", s.authed(s.handleTimeout))
 	mux.HandleFunc("POST /v1/members/{id}/purge", s.authed(s.handlePurge))
+	mux.HandleFunc("POST /v1/members/{id}/transfer-ownership", s.authed(s.handleTransferOwnership))
 	mux.HandleFunc("POST /v1/members/@me/accept-rules", s.authed(s.handleAcceptRules))
 	mux.HandleFunc("POST /v1/members/@me/phone", s.authed(s.handlePhoneStart))
 	mux.HandleFunc("POST /v1/members/@me/phone/verify", s.authed(s.handlePhoneVerify))
@@ -357,7 +360,11 @@ func (s *Server) Handler() http.Handler {
 		}
 		api.ServeHTTP(w, r)
 	})
-	return s.limit.global.Wrap(s.byIP, routed)
+	return s.limit.global.Wrap(s.byIP, httpapi.BodyDeadline(routed, 30*time.Second, 15*time.Minute,
+		func(r *http.Request) bool { return strings.HasSuffix(r.URL.Path, "/attachments") },
+		func(r *http.Request) bool {
+			return r.URL.Path == "/v1/gateway" || strings.HasPrefix(r.URL.Path, "/lk/")
+		}))
 }
 
 // InternalHandler serves the loopback-only endpoints: LiveKit webhooks,

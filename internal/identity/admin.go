@@ -30,29 +30,56 @@ import (
 // waiting for their identity tokens to expire. Only random identifiers are
 // published.
 func (s *Server) handleDisabledAccounts(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.db.QueryContext(r.Context(), `SELECT id, disabled_at FROM users WHERE disabled_at IS NOT NULL ORDER BY disabled_at`)
+	ctx := r.Context()
+	// Accounts and devices are named by hashes (idtoken.AccountHash,
+	// DeviceHash): a community server recognizes its own members, but the
+	// list reveals nothing to anyone else.
+	type account struct {
+		Hash  string    `json:"h"`
+		Since time.Time `json:"since"`
+	}
+	type device struct {
+		Hash string    `json:"h"`
+		At   time.Time `json:"at"`
+	}
+	accounts, devices := []account{}, []device{}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, disabled_at FROM users WHERE disabled_at IS NOT NULL ORDER BY disabled_at`)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	defer rows.Close()
-	type entry struct {
-		Subject string    `json:"sub"`
-		Since   time.Time `json:"since"`
-	}
-	list := []entry{}
 	for rows.Next() {
-		var e entry
+		var sub string
 		var at int64
-		if err := rows.Scan(&e.Subject, &at); err != nil {
+		if err := rows.Scan(&sub, &at); err != nil {
+			rows.Close()
 			writeErr(w, r, err)
 			return
 		}
-		e.Since = time.Unix(at, 0).UTC()
-		list = append(list, e)
+		accounts = append(accounts, account{idtoken.AccountHash(sub), time.Unix(at, 0).UTC()})
 	}
+	rows.Close()
+	// Sessions ended while the identity tokens they obtained may still be valid.
+	// (revoked_at comes from SQLite's clock: see the sessions_ended trigger.)
+	rows, err = s.db.QueryContext(ctx, `SELECT device_key, MAX(revoked_at) FROM revoked_devices
+		WHERE revoked_at > CAST(strftime('%s', 'now') AS INTEGER) - ? GROUP BY device_key ORDER BY 2`, int64((s.cfg.TokenTTL + time.Hour).Seconds()))
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	for rows.Next() {
+		var key string
+		var at int64
+		if err := rows.Scan(&key, &at); err != nil {
+			rows.Close()
+			writeErr(w, r, err)
+			return
+		}
+		devices = append(devices, device{idtoken.DeviceHash(key), time.Unix(at, 0).UTC()})
+	}
+	rows.Close()
 	w.Header().Set("Cache-Control", "public, max-age=60")
-	writeJSON(w, http.StatusOK, map[string]any{"issuer": s.cfg.Issuer, "accounts": list})
+	writeJSON(w, http.StatusOK, map[string]any{"issuer": s.cfg.Issuer, "accounts": accounts, "ended_devices": devices})
 }
 
 // WatchDisabled closes the live connections of accounts disabled by the

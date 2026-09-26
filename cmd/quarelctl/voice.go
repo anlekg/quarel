@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/anlekg/quarel/pkg/idtoken"
 )
 
 type voiceStateInfo struct {
@@ -106,9 +108,9 @@ func (c *cli) voiceTest() error {
 	}
 	fmt.Printf("Ouvrez cette adresse dans un navigateur (Chrome ou Firefox) :\n\n  %s/voice-test/#token=%s\n\n", base, com.SessionToken)
 	fmt.Println("⚠ Elle contient votre session : ne la partagez pas. Elle expire avec la session (12 h max).")
-	if strings.HasPrefix(base, "https://") && c.tlsSeen[base] != "" {
+	if mode, sid := c.tlsMode(base); mode == idtoken.TLSBinding {
 		fmt.Println("Le serveur utilise un certificat auto-signé : le navigateur affichera un avertissement à accepter.")
-		fmt.Printf("quarelctl a vérifié que ce certificat appartient bien au serveur %s.\n", c.tlsSeen[base])
+		fmt.Printf("quarelctl a vérifié que ce certificat appartient bien au serveur %s.\n", sid)
 	}
 	return nil
 }

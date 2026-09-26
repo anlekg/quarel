@@ -199,7 +199,7 @@ export class CommunityClient {
     return this.call<{ server_id: string; nonce: string }>('POST', '/v1/auth/challenge')
   }
 
-  login(req: { identity_token: string; nonce: string; proof: string; invite?: string; claim?: string }) {
+  login(req: { identity_token: string; nonce: string; proof: string; host: string; tls: 'binding' | 'authority'; invite?: string; claim?: string }) {
     return this.call<LoginResult>('POST', '/v1/auth/login', req)
   }
 
@@ -345,6 +345,11 @@ export class CommunityClient {
 
   kick(member: string, reason?: string) {
     return this.call<void>('POST', '/v1/members/' + encodeURIComponent(member) + '/kick', { reason })
+  }
+
+  // The owner hands the server over (they stay a member, without special rights).
+  transferOwnership(member: string) {
+    return this.call<void>('POST', '/v1/members/' + encodeURIComponent(member) + '/transfer-ownership')
   }
 
   ban(member: string, reason?: string, deleteMessages = 0) {

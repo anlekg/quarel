@@ -46,6 +46,7 @@ type histMsg struct {
 	Delivered bool      `json:"delivered,omitempty"`
 	Edited    bool      `json:"edited,omitempty"`
 	File      *fileRef  `json:"file,omitempty"`
+	Added     []string  `json:"added,omitempty"` // "members" event: users From added to the group
 }
 
 type outboundState struct {
@@ -84,6 +85,8 @@ type e2eStore struct {
 	Inbound     map[string]*inboundState  `json:"inbound"`                // by megolm session id
 	Seen        map[string]bool           `json:"seen"`                   // "session:index", replay protection
 	Pinned      map[string]string         `json:"pinned"`                 // user id → master key (trust on first use)
+	Verified    map[string]string         `json:"verified,omitempty"`     // user id → master key whose safety code was compared
+	Members     map[string]*convMembers   `json:"members,omitempty"`      // by dm id: members confirmed by the members themselves
 	History     map[string][]histMsg      `json:"history"`                // by dm id
 	Undecrypted []inboxItem               `json:"undecrypted"`            // waiting for their key
 	Names       map[string]string         `json:"names"`                  // user id → pseudo
@@ -382,7 +385,7 @@ func (e *e2e) pin(userID, master string) error {
 	case master:
 		return nil
 	}
-	return fmt.Errorf("⚠ la clé maîtresse de %s a changé depuis le premier contact : possible usurpation, opération refusée", e.name(userID))
+	return fmt.Errorf("⚠ la clé maîtresse de %s a changé depuis le premier contact : possible usurpation, opération refusée (comparez le code de sécurité avec cette personne : quarelctl safety %s, puis quarelctl trust-new-key %s)", e.name(userID), e.name(userID), e.name(userID))
 }
 
 // trusted lists userID's devices certified by their pinned master key.
@@ -590,8 +593,9 @@ type megolmEnvelope struct {
 // deletions are events too: the server cannot tell them from messages.
 type megolmPlain struct {
 	DMID         string    `json:"dm_id"`
-	Type         string    `json:"type,omitempty"`   // "" (text), "file", "edit", "delete"
-	Target       int64     `json:"target,omitempty"` // edit/delete: event id of the message
+	Type         string    `json:"type,omitempty"`    // "" (text), "file", "edit", "delete", "members"
+	Target       int64     `json:"target,omitempty"`  // edit/delete: event id of the message
+	Members      []string  `json:"members,omitempty"` // "members": users the sender added to the group
 	Text         string    `json:"text"`
 	File         *fileRef  `json:"file,omitempty"`
 	SenderUser   string    `json:"sender_user"`
@@ -716,6 +720,16 @@ func (e *e2e) sendDM(dmID string, members []string, content megolmPlain) (*histM
 // for a deletion) and a line describing it ("" if nothing changed).
 func (e *e2e) apply(eventID int64, p megolmPlain) (*histMsg, string) {
 	switch p.Type {
+	case "members":
+		// Not seen yet: its first sight will take the members as they are.
+		if e.st.Members[p.DMID] != nil && !e.confirmMembers(p.DMID, p.SenderUser, p.Members) {
+			return nil, fmt.Sprintf("⚠ %s, pas (ou plus) membre confirmé de cette conversation, annonce des membres : ignoré", e.name(p.SenderUser))
+		}
+		m := histMsg{EventID: eventID, From: p.SenderUser, At: p.SentAt, Added: p.Members}
+		if e.addHistory(p.DMID, m) {
+			return &m, e.format(m)
+		}
+		return &m, ""
 	case "edit", "delete":
 		list := e.st.History[p.DMID]
 		for i, h := range list {
@@ -1022,6 +1036,13 @@ func (e *e2e) format(m histMsg) string {
 	if m.File != nil {
 		text = strings.TrimSpace(fmt.Sprintf("📎 %s (%s) %s", m.File.Name, humanSize(m.File.Size), m.Text))
 	}
+	if m.Added != nil {
+		names := make([]string, len(m.Added))
+		for i, id := range m.Added {
+			names[i] = e.name(id)
+		}
+		text = "👥 a ajouté " + strings.Join(names, ", ") + " au groupe"
+	}
 	return fmt.Sprintf("[%s] #%-4d %s : %s%s", m.At.Local().Format("01-02 15:04"), m.EventID, e.name(m.From), text, mark)
 }
 
@@ -1093,4 +1114,118 @@ func (e *e2e) approve(target, code string) (*deviceInfo, int, error) {
 func (e *e2e) isVerifiedHere(d deviceInfo) bool {
 	master := e.st.Pinned[e.st.UserID]
 	return master != "" && e.deviceTrusted(e.st.UserID, d, master)
+}
+
+// --- group members confirmed by the members themselves ---
+//
+// The Identity service keeps the list of a conversation's members: a
+// compromised service could slip someone in and receive the next messages.
+// So each device only encrypts for members it saw at its first sight of the
+// conversation, or that a confirmed member announced in an encrypted
+// "members" event after adding them. Members added otherwise stay
+// unconfirmed: they get nothing, and the apps say so.
+
+type convMembers struct {
+	Kind      string   `json:"kind"`
+	Confirmed []string `json:"confirmed"`
+}
+
+// observe records the members of a conversation as the server lists them:
+// the first time, all are taken as confirmed; afterwards, members gone are
+// dropped (coming back needs a new announcement), newcomers stay unconfirmed.
+// A direct conversation only ever has its two people.
+func (e *e2e) observe(ci *convInfo) {
+	if e.st.Members == nil {
+		e.st.Members = map[string]*convMembers{}
+	}
+	listed := map[string]bool{}
+	for _, m := range ci.Members {
+		listed[m.ID] = true
+	}
+	cm := e.st.Members[ci.ID]
+	if cm == nil {
+		cm = &convMembers{Kind: ci.Kind}
+		if ci.Kind == "direct" && ci.User != nil {
+			cm.Confirmed = []string{e.st.UserID, ci.User.ID}
+		} else {
+			for _, m := range ci.Members {
+				cm.Confirmed = append(cm.Confirmed, m.ID)
+			}
+		}
+		e.st.Members[ci.ID] = cm
+		return
+	}
+	kept := cm.Confirmed[:0]
+	for _, id := range cm.Confirmed {
+		if listed[id] || id == e.st.UserID {
+			kept = append(kept, id)
+		}
+	}
+	cm.Confirmed = kept
+}
+
+func (e *e2e) isConfirmed(dmID, userID string) bool {
+	cm := e.st.Members[dmID]
+	if cm == nil {
+		return false
+	}
+	for _, id := range cm.Confirmed {
+		if id == userID {
+			return true
+		}
+	}
+	return false
+}
+
+// confirmMembers takes users announced by sender (who must be a confirmed
+// member) as confirmed members of the group.
+func (e *e2e) confirmMembers(dmID, sender string, users []string) bool {
+	cm := e.st.Members[dmID]
+	if cm == nil || cm.Kind == "direct" || !e.isConfirmed(dmID, sender) {
+		return false
+	}
+	for _, u := range users {
+		if !e.isConfirmed(dmID, u) {
+			cm.Confirmed = append(cm.Confirmed, u)
+		}
+	}
+	return true
+}
+
+// recipients splits the other members into those to encrypt for and the
+// unconfirmed ones.
+func (e *e2e) recipients(ci *convInfo) (confirmed, unconfirmed []string) {
+	e.observe(ci)
+	for _, id := range ci.others(e.st.UserID) {
+		if e.isConfirmed(ci.ID, id) {
+			confirmed = append(confirmed, id)
+		} else {
+			unconfirmed = append(unconfirmed, id)
+		}
+	}
+	return confirmed, unconfirmed
+}
+
+// --- safety codes between contacts ---
+
+// safetyCode is the code to compare with userID (e2ekeys.ContactCode), from
+// the master keys pinned here.
+func (e *e2e) safetyCode(userID string) (code string, changed bool, err error) {
+	k, err := e.keysOf(userID)
+	if err != nil {
+		return "", false, err
+	}
+	if k.MasterKey == nil {
+		return "", false, fmt.Errorf("%s n'a pas encore de clé de chiffrement", e.name(userID))
+	}
+	pinned := e.st.Pinned[userID]
+	if pinned == "" {
+		pinned = *k.MasterKey
+		e.st.Pinned[userID] = pinned
+	}
+	mine, err := e.master()
+	if err != nil {
+		return "", false, errors.New("cet appareil n'est pas encore validé")
+	}
+	return e2ekeys.ContactCode(e.st.UserID, string(mine.PublicKey()), userID, pinned), pinned != *k.MasterKey, nil
 }

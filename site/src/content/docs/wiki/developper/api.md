@@ -12,7 +12,7 @@ Un exemple complet de bot (~150 lignes de Go) se trouve dans [`examples/pingbot`
 ## 1. Principes
 
 - **Adresse** : chaque serveur est auto-hébergé, par exemple `https://mon-serveur.fr:8090`. Toutes les routes sont sous `/v1/`.
-- **HTTPS** : un serveur a soit un certificat d'une autorité (Let's Encrypt…), soit un **certificat auto-signé lié à son identité**. Dans ce second cas, le certificat contient une preuve signée par la clé du serveur ; le client connaît l'identifiant du serveur (`server_id`, 26 caractères, donné par le lien d'invitation ou `quarelctl bot-create`) et vérifie cette preuve pendant la poignée de main TLS. En Go : `tlsbind.ClientConfig(serverID, nil)` (paquet `github.com/anlekg/quarel/pkg/tlsbind`). Ne désactivez jamais simplement la vérification du certificat.
+- **HTTPS** : un serveur a soit un certificat d'une autorité (Let's Encrypt…), soit un **certificat auto-signé lié à son identité**. Dans ce second cas, le certificat contient une preuve signée par la clé du serveur ; le client connaît l'identifiant du serveur (`server_id`, 26 caractères, donné par le lien d'invitation ou `quarelctl bot-create`) et vérifie cette preuve pendant la poignée de main TLS. En Go : `tlsbind.NewVerifier(hôte, serverID).Config()` (paquet `github.com/anlekg/quarel/pkg/tlsbind`) : il accepte un certificat d'autorité valable pour l'hôte, ou le certificat lié à ce serveur — et plus jamais un certificat ordinaire une fois le lien vérifié. Ne désactivez jamais simplement la vérification du certificat.
 - **Format** : JSON en UTF-8 ; corps de requête de 64 Ko au plus (sauf envoi de fichiers) ; champs inconnus refusés (`400 bad_request`).
 - **Dates** : RFC 3339 en UTC (`2026-09-24T09:30:00Z`).
 - **Identifiants** : membres, fichiers : chaînes de 26 caractères ; salons, messages, rôles, entrées du journal : entiers croissants.
@@ -30,7 +30,7 @@ Un gestionnaire du serveur (permission `manage_server`) crée le bot : `POST /v1
 Un bot est un membre comme les autres (`"bot": true`) : il reçoit ses droits par des **rôles** (`PUT /v1/members/{id}/roles/{role}`), sans compte sur un service d'identité. Il n'est pas concerné par l'écran de règles ni par la vérification du téléphone.
 
 ### Membres (clients)
-Les personnes se connectent avec leur identité portable : `POST /v1/auth/challenge` → `{server_id, nonce}`, puis `POST /v1/auth/login {identity_token, nonce, proof, invite?}` → `{session_token, expires_at, member, server, joined}`. La session expire avec le jeton d'identité (12 h par défaut) ; le client se reconnecte alors. Ce processus est décrit dans [Sécurité et chiffrement](/wiki/decouvrir/securite/) ; un bot n'en a pas besoin.
+Les personnes se connectent avec leur identité portable : `POST /v1/auth/challenge` → `{server_id, nonce}`, puis `POST /v1/auth/login {identity_token, nonce, proof, host, tls, invite?}` → `{session_token, expires_at, member, server, joined}`. La preuve (`idtoken.SignProofV2`) est la signature, par la clé de l'appareil, de `quarel-auth-v2␀<server_id>␀<nonce>␀<host>␀<tls>` : `host` est le nom contacté (minuscules, sans port ni crochets), `tls` vaut `binding` (certificat lié à l'identité du serveur, vérifié à chaque connexion) ou `authority` (certificat ordinaire : le serveur refuse alors, par `403 wrong_host`, un nom qui n'est pas le sien). Un serveur malveillant ne peut donc pas relayer la connexion d'une personne vers celui qu'il prétend être. La session expire avec le jeton d'identité (12 h par défaut) ; le client se reconnecte alors. Ce processus est décrit dans [Sécurité et chiffrement](/wiki/decouvrir/securite/) ; un bot n'en a pas besoin.
 
 ## 3. Temps réel (`GET /v1/gateway`, WebSocket)
 
@@ -136,6 +136,7 @@ Légende : 🔑 = permission requise.
 | `GET /v1/bans` ; `PUT /v1/bans/{id}` ; `DELETE /v1/bans/{id}` | 🔑 `ban_members` | PUT : `{reason?, delete_messages?: secondes, -1 = tout}` |
 | `PUT /v1/members/{id}/timeout` ; `DELETE …` | 🔑 `moderate_members` | `{duration: secondes (≤ 28 j), reason?}` |
 | `POST /v1/members/{id}/purge` | 🔑 `manage_messages` | `{window: secondes ou -1, channel_id?, reason?}` → `{deleted}` |
+| `POST /v1/members/{id}/transfer-ownership` | propriétaire | Transmet le serveur à ce membre (une personne, pas un bot) ; l'ancien propriétaire reste membre |
 | `GET /v1/audit-log` | 🔑 `view_audit_log` | `?limit=&before=&action=&actor_id=&target_id=` → `[{id, actor_id, action, target_id, reason, details, created_at, actor_name?, target_name?}]` (noms des membres concernés, même partis) ; conservé 90 jours |
 
 On n'agit que sur un membre dont le rôle le plus haut est **strictement sous** le vôtre ; le propriétaire est intouchable, les administrateurs ne peuvent pas être exclus temporairement.

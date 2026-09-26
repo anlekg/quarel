@@ -4,6 +4,7 @@ import (
 	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/hpke"
+	"crypto/sha256"
 	"errors"
 	"slices"
 	"strings"
@@ -95,4 +96,18 @@ func VerifyApproval(issuer string, r ApprovalRequest) (ed25519.PublicKey, error)
 		return nil, errors.New("idtoken: invalid approval signature")
 	}
 	return pub, nil
+}
+
+// AccountHash and DeviceHash name, in an Identity service's public list of
+// disabled accounts and ended sessions, an account (its subject) or a device
+// (its key, as in tokens) without revealing it: a community server hashes
+// its own members' subjects and session device keys to find them.
+func AccountHash(subject string) string { return listHash("quarel-disabled-account-v1", subject) }
+
+// DeviceHash: see AccountHash.
+func DeviceHash(deviceKey string) string { return listHash("quarel-ended-device-v1", deviceKey) }
+
+func listHash(context, v string) string {
+	h := sha256.Sum256([]byte(context + "\x00" + v))
+	return b64.EncodeToString(h[:])
 }

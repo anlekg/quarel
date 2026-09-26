@@ -32,6 +32,12 @@ func (l *live) set(srv *community.Server, cfg community.Config, claim, voice str
 	l.srv, l.cfg, l.claim, l.voice, l.mapper, l.ports = srv, cfg, claim, voice, mapper, ports
 }
 
+func (l *live) setClaim(claim string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.claim = claim
+}
+
 func (l *live) get() (*community.Server, community.Config, string, string, *netdiag.PortMapper, []netdiag.Mapping) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -57,7 +63,7 @@ var fields = []adminui.Field{
 		Options: []adminui.Option{opt("self-signed", "Automatique, lié à l'identité du serveur (recommandé sans nom de domaine)"),
 			opt("acme", "Let's Encrypt (nom de domaine requis, port 443 ouvert)"), opt("files", "Mes fichiers de certificat"), opt("off", "Aucun (derrière un proxy HTTPS)")}},
 	{Group: "HTTPS", Key: "QUAREL_TLS_HOSTS", Label: "Nom public du serveur", Kind: "list", ShowIf: "QUAREL_TLS=self-signed|off",
-		Help: "Derrière un proxy HTTPS : son nom de domaine (utilisé dans les liens). Avec le certificat automatique : facultatif, noms ajoutés au certificat."},
+		Help: "Derrière un proxy HTTPS : son nom de domaine, obligatoire (utilisé dans les liens ; les applications refusent de se connecter sous un nom que le serveur ne déclare pas, pour qu'aucun autre serveur ne puisse se faire passer pour lui). Avec le certificat automatique : facultatif, noms ajoutés au certificat."},
 	{Group: "HTTPS", Key: "QUAREL_TLS_DOMAIN", Label: "Nom de domaine", Kind: "text", ShowIf: "QUAREL_TLS=acme", Placeholder: "chat.exemple.fr"},
 	{Group: "HTTPS", Key: "QUAREL_TLS_EMAIL", Label: "Email pour Let's Encrypt", Kind: "text", ShowIf: "QUAREL_TLS=acme", Help: "Facultatif : avertissements d'expiration."},
 	{Group: "HTTPS", Key: "QUAREL_TLS_CERT", Label: "Fichier du certificat", Kind: "text", ShowIf: "QUAREL_TLS=files"},
@@ -75,6 +81,8 @@ var fields = []adminui.Field{
 	{Group: "Vocal et vidéo", Key: "QUAREL_LIVEKIT_SECRET", Label: "Secret d'API LiveKit", Kind: "secret", ShowIf: "QUAREL_VOICE=external"},
 
 	{Group: "Messages", Key: "QUAREL_MAX_UPLOAD_MB", Label: "Taille maximale des fichiers (Mo)", Kind: "number", Default: "25"},
+	{Group: "Messages", Key: "QUAREL_MIN_FREE_MB", Label: "Espace disque réservé (Mo)", Kind: "number", Default: "1024",
+		Help: "Les fichiers sont refusés quand il reste moins d'espace libre sur la machine."},
 	{Group: "Messages", Key: "QUAREL_LINK_PREVIEWS", Label: "Aperçus des liens", Kind: "bool", Default: "on",
 		Help: "Le serveur visite les liens publiés pour en afficher le titre (jamais d'adresse privée)."},
 
@@ -140,11 +148,15 @@ func (l *live) status(r *http.Request) map[string]any {
 			notices = append(notices, map[string]string{"level": "warn", "text": "Certains ports n'ont pas pu être ouverts : " + strings.Join(st.Errors, " ; ")})
 		}
 	}
+	if cfg.TLS.Mode == "off" && len(cfg.TLS.Hosts) == 0 {
+		notices = append(notices, map[string]string{"level": "warn", "text": "Derrière un proxy HTTPS, indiquez son nom de domaine dans « Nom public du serveur » (réglages › HTTPS) : " +
+			"les applications vérifient que le serveur répond bien sous l'adresse utilisée, et refusent la connexion sinon."})
+	}
 	if cfg.TLS.Mode == "self-signed" {
 		notices = append(notices, map[string]string{"level": "info", "text": "Certificat automatique : l'application de bureau vérifie ce serveur grâce à son identité, mais les navigateurs le refusent. " +
 			"Pour que la version web (" + webApp + ") puisse aussi le rejoindre, donnez-lui un nom de domaine et choisissez Let's Encrypt (réglages › HTTPS), ou placez-le derrière un proxy HTTPS."})
 	}
-	resp := map[string]any{"items": items, "notices": notices}
+	resp := map[string]any{"items": items, "notices": notices, "has_owner": ov.HasOwner}
 	if !ov.HasOwner && claim != "" {
 		addr := strings.TrimPrefix(httpsURL(host, port), "https://")
 		resp["claim_code"] = claim
@@ -201,6 +213,24 @@ func (l *live) api() http.Handler {
 			adminui.WriteError(w, r, err)
 			return
 		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	// The owner can no longer sign in (account lost or deleted): the host
+	// removes them and gets a new owner link.
+	mux.HandleFunc("POST /reset-owner", func(w http.ResponseWriter, r *http.Request) {
+		srv, _, _, _, _, _ := l.get()
+		if srv == nil {
+			http.Error(w, "service not running", http.StatusServiceUnavailable)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		claim, err := srv.ResetOwnership(ctx)
+		if err != nil {
+			adminui.WriteError(w, r, err)
+			return
+		}
+		l.setClaim(claim)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /identity", func(w http.ResponseWriter, r *http.Request) {

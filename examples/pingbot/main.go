@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -36,8 +37,12 @@ func main() {
 	if b.base == "" || b.token == "" {
 		log.Fatal("QUAREL_URL and QUAREL_BOT_TOKEN are required")
 	}
+	u, err := url.Parse(b.base)
+	if err != nil {
+		log.Fatal("QUAREL_URL: ", err)
+	}
 	b.http = &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{
-		TLSClientConfig: tlsbind.ClientConfig(os.Getenv("QUAREL_SERVER_ID"), nil),
+		TLSClientConfig: tlsbind.NewVerifier(u.Hostname(), os.Getenv("QUAREL_SERVER_ID")).Config(),
 	}}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()

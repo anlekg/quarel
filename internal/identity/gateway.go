@@ -27,7 +27,7 @@ func (s *Server) sessionForToken(ctx context.Context, token string) (*session, b
 	err := s.db.QueryRowContext(ctx, `
 		SELECT s.id, s.user_id, s.device_key, u.disabled_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
-		WHERE s.token_hash = ?`, sha256Hex(token)).Scan(&sess.ID, &sess.UserID, &sess.DeviceKey, &disabled)
+		WHERE s.token_hash = ? AND s.last_seen_at > ?`, sha256Hex(token), s.now().Add(-s.cfg.SessionIdle).Unix()).Scan(&sess.ID, &sess.UserID, &sess.DeviceKey, &disabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
 	}
@@ -44,6 +44,7 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 			if err != nil || sess == nil || disabled {
 				return nil, err
 			}
+			s.db.ExecContext(ctx, `UPDATE sessions SET last_seen_at = ? WHERE id = ?`, s.now().Unix(), sess.ID)
 			return &realtime.Auth{Key: sess.ID, Group: sess.UserID}, nil
 		},
 		func(ctx context.Context, a *realtime.Auth) (any, error) {

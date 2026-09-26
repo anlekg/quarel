@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anlekg/quarel/internal/netguard"
 	"github.com/anlekg/quarel/internal/settings"
 
 	"github.com/pion/turn/v5"
@@ -50,11 +51,6 @@ func turnConfigFromEnv() (TURNConfig, error) {
 		return c, errors.New("relais d'appels : adresse IP publique invalide (une adresse IPv4, ou « auto » pour la trouver automatiquement)")
 	}
 	return c, nil
-}
-
-func publicPeer(ip net.IP) bool {
-	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsMulticast() || ip.IsUnspecified() || (ip.To4() != nil && ip.To4()[0] == 100 && ip.To4()[1]&0xC0 == 64))
 }
 
 func (s *Server) turnSecret() (string, error) {
@@ -124,7 +120,7 @@ func (s *Server) StartTURN() (io.Closer, error) {
 				RelayAddress: net.ParseIP(s.TURNPublicIP()), Address: "0.0.0.0",
 				MinPort: uint16(c.MinPort), MaxPort: uint16(c.MaxPort),
 			}, s.TURNPublicIP},
-			PermissionHandler: func(_ net.Addr, peer net.IP) bool { return c.AllowPrivatePeers || publicPeer(peer) },
+			PermissionHandler: func(_ net.Addr, peer net.IP) bool { return c.AllowPrivatePeers || netguard.Public(peer) },
 		}},
 	})
 	if err != nil {

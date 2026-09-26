@@ -33,6 +33,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -175,41 +176,88 @@ func Verify(cs tls.ConnectionState) (string, error) {
 	return ServerID(pub), nil
 }
 
-// ClientConfig returns a TLS configuration accepting either a certificate
-// valid for the host under the system's authorities, or a self-signed one
-// whose binding proves server ID expectSID (any ID if expectSID is empty:
-// trust on first use). seen, if not nil, receives the ID proven by a binding
-// ("" for authority-issued certificates) so the caller can pin it and compare
-// it with the ID the server claims at the application level.
-func ClientConfig(expectSID string, seen func(sid string)) *tls.Config {
+// Verifier checks the certificates of one community server for a client:
+// either a certificate valid for host under the system's authorities, or a
+// self-signed one whose binding proves the expected server ID (any ID when
+// none is expected yet: trust on first use).
+//
+// Once a connection proved a binding, certificates from authorities are
+// refused: a server known to hold its identity key must keep proving it, so
+// nobody with an ordinary certificate for the same name can step in. Mode
+// tells the application what every connection so far has proven, for the
+// login proof (see idtoken.SignProofV2).
+type Verifier struct {
+	host   string
+	mu     sync.Mutex
+	expect string
+	bound  string         // server ID proven by bindings ("" if none yet)
+	ca     bool           // a certificate from an authority was accepted
+	roots  *x509.CertPool // nil: the system's authorities (tests set their own)
+}
+
+// NewVerifier returns a verifier for connections to host (a name or an IP,
+// without port). expectSID may be empty.
+func NewVerifier(host, expectSID string) *Verifier {
+	return &Verifier{host: strings.Trim(host, "[]"), expect: expectSID}
+}
+
+// Config returns the TLS configuration to dial the server with.
+func (v *Verifier) Config() *tls.Config {
 	return &tls.Config{
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: true, // verification is done below
-		VerifyConnection: func(cs tls.ConnectionState) error {
-			if len(cs.PeerCertificates) == 0 {
-				return errors.New("tlsbind: no certificate")
-			}
-			inter := x509.NewCertPool()
-			for _, c := range cs.PeerCertificates[1:] {
-				inter.AddCert(c)
-			}
-			if _, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{DNSName: cs.ServerName, Intermediates: inter}); err == nil {
-				if seen != nil {
-					seen("")
-				}
-				return nil
-			}
-			sid, err := Verify(cs)
-			if err != nil {
-				return fmt.Errorf("certificat non reconnu : ni autorité de confiance, ni lien Quarel valide (%w)", err)
-			}
-			if expectSID != "" && sid != expectSID {
-				return fmt.Errorf("ce serveur prouve l'identité %s au lieu de %s attendue : connexion refusée (possible interception)", sid, expectSID)
-			}
-			if seen != nil {
-				seen(sid)
-			}
-			return nil
-		},
+		VerifyConnection:   v.verify,
 	}
+}
+
+func (v *Verifier) verify(cs tls.ConnectionState) error {
+	if len(cs.PeerCertificates) == 0 {
+		return errors.New("tlsbind: no certificate")
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	inter := x509.NewCertPool()
+	for _, c := range cs.PeerCertificates[1:] {
+		inter.AddCert(c)
+	}
+	// The name checked is the host dialled: cs.ServerName is empty for IP addresses.
+	if _, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{DNSName: v.host, Intermediates: inter, Roots: v.roots}); err == nil {
+		if v.bound != "" {
+			return fmt.Errorf("ce serveur a jusqu'ici prouvé son identité %s par son certificat lié, il présente maintenant un certificat ordinaire : connexion refusée (possible interception)", v.bound)
+		}
+		v.ca = true
+		return nil
+	}
+	sid, err := Verify(cs)
+	if err != nil {
+		return fmt.Errorf("certificat non reconnu : ni autorité de confiance, ni lien Quarel valide (%w)", err)
+	}
+	if want := v.expected(); want != "" && sid != want {
+		return fmt.Errorf("ce serveur prouve l'identité %s au lieu de %s attendue : connexion refusée (possible interception)", sid, want)
+	}
+	v.bound = sid
+	return nil
+}
+
+func (v *Verifier) expected() string {
+	if v.bound != "" {
+		return v.bound
+	}
+	return v.expect
+}
+
+// Mode reports how the connections so far were checked: idtoken.TLSBinding
+// ("binding") with the proven server ID when every connection presented a
+// certificate bound to that ID; "authority" when only authority certificates
+// were seen; "" when nothing was seen yet or both kinds were.
+func (v *Verifier) Mode() (mode, sid string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	switch {
+	case v.bound != "" && !v.ca:
+		return "binding", v.bound
+	case v.ca && v.bound == "":
+		return "authority", ""
+	}
+	return "", ""
 }

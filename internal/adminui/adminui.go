@@ -170,11 +170,35 @@ func (u *UI) Handler() http.Handler {
 // secure adds protective headers and refuses cross-site writes: the session
 // cookie is SameSite=Strict and writes need a custom header, which another
 // site cannot send without a CORS preflight (never granted here).
+//
+// It also refuses unknown host names: a web page could otherwise point its
+// own domain at this machine (DNS rebinding) and act as a same-origin page
+// from the administrator's browser. And other machines must use HTTPS (see
+// listen.go): plain HTTP is only for this machine itself.
 func secure(h http.Handler) http.Handler {
-	public := os.Getenv("QUAREL_ADMIN_PUBLIC") == "1"
+	// Environment only (see adminEnv): the page cannot open itself to the Internet.
+	public := adminEnv("QUAREL_ADMIN_PUBLIC") == "1"
+	extra := map[string]bool{}
+	for _, n := range strings.Split(adminEnv("QUAREL_ADMIN_HOSTS"), ",") {
+		if n = normalizeHost(n); n != "" {
+			extra[n] = true
+		}
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !public && !fromLocalNetwork(r) {
 			http.Error(w, "Administration accessible seulement depuis cette machine ou le réseau local (QUAREL_ADMIN_PUBLIC=1 pour lever cette restriction).", http.StatusForbidden)
+			return
+		}
+		if !knownHost(r.Host, extra) {
+			http.Error(w, "Nom d'hôte inconnu : ouvrez l'administration par l'adresse IP de la machine ou par localhost (autres noms : QUAREL_ADMIN_HOSTS).", http.StatusForbidden)
+			return
+		}
+		if r.TLS == nil && !isLoopback(r) && !plainHTTPAllowed() {
+			if r.Method == http.MethodGet || r.Method == http.MethodHead {
+				http.Redirect(w, r, "https://"+r.Host+r.URL.RequestURI(), http.StatusPermanentRedirect)
+				return
+			}
+			http.Error(w, "HTTPS obligatoire depuis une autre machine.", http.StatusForbidden)
 			return
 		}
 		hd := w.Header()
@@ -195,6 +219,39 @@ func secure(h http.Handler) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+func normalizeHost(h string) string {
+	h = strings.TrimSpace(h)
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		h = host
+	}
+	return strings.TrimSuffix(strings.ToLower(strings.Trim(h, "[]")), ".")
+}
+
+// knownHost accepts the names this machine is reached by without anyone
+// else's DNS: IP addresses, localhost, the machine's own name (and its usual
+// local-network forms), plus QUAREL_ADMIN_HOSTS.
+func knownHost(hostport string, extra map[string]bool) bool {
+	host := normalizeHost(hostport)
+	if host == "" {
+		return false
+	}
+	if net.ParseIP(host) != nil || host == "localhost" || strings.HasSuffix(host, ".localhost") || extra[host] {
+		return true
+	}
+	name, err := os.Hostname()
+	if err != nil || name == "" {
+		return false
+	}
+	name = strings.ToLower(name)
+	short, _, _ := strings.Cut(name, ".")
+	for _, n := range []string{name, short, short + ".local", short + ".lan", short + ".home", short + ".home.arpa", short + ".internal"} {
+		if host == n {
+			return true
+		}
+	}
+	return false
 }
 
 func (u *UI) authed(h http.HandlerFunc) http.HandlerFunc {
@@ -254,7 +311,7 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("admin interface: password chosen", "from", ip)
-	u.auth.newSession(w)
+	u.auth.newSession(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -275,7 +332,7 @@ func (u *UI) handleLogin(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteErr(w, r, httpapi.Errf(http.StatusUnauthorized, "invalid_credentials", "wrong password"))
 		return
 	}
-	u.auth.newSession(w)
+	u.auth.newSession(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -303,7 +360,7 @@ func (u *UI) handlePassword(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteErr(w, r, err)
 		return
 	}
-	u.auth.newSession(w)
+	u.auth.newSession(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 

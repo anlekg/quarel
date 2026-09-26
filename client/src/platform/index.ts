@@ -59,6 +59,8 @@ interface DesktopBridge {
   screenSources(): Promise<ScreenSource[]>
   chooseScreenSource(id: string): Promise<void>
   checkServer(host: string, port: number, sid: string): Promise<'authority' | 'binding' | 'mismatch' | 'unreachable'>
+  tlsMode(host: string, sid: string): Promise<'binding' | 'authority' | 'conflict'>
+  forgetServer(host: string): Promise<void>
 }
 
 declare global {
@@ -141,6 +143,19 @@ export async function pinServer(host: string, sid: string) {
 // Browsers check it themselves (authority certificates only).
 export async function checkServer(host: string, port: number, sid: string) {
   return desktop ? desktop.checkServer(host, port, sid) : 'authority'
+}
+
+// How the connections to host were checked, for the login proof: 'binding'
+// (certificate bound to server sid, desktop only), 'authority' (ordinary
+// certificate: the server checks that host is its own name), or 'conflict'
+// (the desktop app accepted another identity for host in this session).
+export async function tlsMode(host: string, sid: string): Promise<'binding' | 'authority' | 'conflict'> {
+  return desktop ? desktop.tlsMode(host, sid) : 'authority'
+}
+
+// Desktop: no saved server uses host any more; its certificate binding is released.
+export async function forgetServerTLS(host: string) {
+  await desktop?.forgetServer(host)
 }
 
 // Desktop screen sharing: list the screens and windows, then choose the one

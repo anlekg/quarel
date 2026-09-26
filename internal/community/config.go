@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anlekg/quarel/internal/diskspace"
 	"github.com/anlekg/quarel/internal/settings"
 
 	"github.com/anlekg/quarel/internal/ratelimit"
@@ -49,6 +50,7 @@ type Config struct {
 	PublicPort     int  // external port of the HTTP(S) service (UPnP mapping); 0 = same as the listening port
 
 	MaxUploadBytes int64 // attachment size limit
+	MinFreeBytes   int64 // uploads refused below this free disk space (0: no check)
 	LinkPreviews   bool  // fetch previews of posted links (the server contacts the linked sites)
 
 	// Phone verification provider: "off" (default), "webhook", "ovh", "twilio",
@@ -120,6 +122,7 @@ func ConfigFromEnv() (Config, error) {
 	}
 	c.UPnP = env("QUAREL_UPNP", "on") != "off"
 	c.MaxUploadBytes = int64(envInt("QUAREL_MAX_UPLOAD_MB", 25)) << 20
+	c.MinFreeBytes = int64(envInt("QUAREL_MIN_FREE_MB", diskspace.DefaultReserveMB)) << 20
 	c.LinkPreviews = env("QUAREL_LINK_PREVIEWS", "on") != "off"
 	c.PublicPort = envInt("QUAREL_PUBLIC_PORT", 0)
 	if c.DisabledPoll, err = time.ParseDuration(env("QUAREL_DISABLED_POLL", "10m")); err != nil || c.DisabledPoll < time.Second {
