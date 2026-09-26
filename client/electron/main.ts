@@ -5,6 +5,7 @@ import { hostname } from 'node:os'
 import { extname, join, normalize, sep } from 'node:path'
 import { readFile, writeFile, rename, mkdir, rm } from 'node:fs/promises'
 import { boundServerID, checkServer } from './tlsbind'
+import { setupUpdates } from './updater'
 
 const devURL = process.env.QUAREL_DEV_URL
 if (process.env.QUAREL_USER_DATA) app.setPath('userData', process.env.QUAREL_USER_DATA)
@@ -320,6 +321,7 @@ app.whenReady().then(async () => {
   const allowed = new Set(['media', 'display-capture', 'notifications', 'clipboard-sanitized-write', 'fullscreen'])
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)))
   createWindow()
+  setupUpdates(fromApp)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

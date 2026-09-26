@@ -115,6 +115,12 @@ client-dist-win:
 	cd client && [ -d node_modules ] || npm ci
 	cd client && npm run dist:win
 
+# Signed release of the desktop app published to app.quarel.app/updates: make client-release VERSION=0.2.0
+client-release:
+	@[ -n "$(VERSION)" ] || { echo "usage : make client-release VERSION=x.y.z"; exit 1; }
+	cd client && [ -d node_modules ] || npm ci
+	cd client && node scripts/release.mjs $(VERSION)
+
 e2e-web: build     # the web client only, in Chromium (invite links, encrypted storage, installable app, phone layout)
 	cd client && [ -d node_modules ] || npm ci
 	cd client && npx vite build && npx playwright test --project=web

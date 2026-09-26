@@ -1,10 +1,14 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import { readFileSync } from 'node:fs'
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
 
 // The renderer is a plain web app: the same build serves the desktop app
 // (loaded from disk by Electron) and, later, the web client.
 export default defineConfig({
   plugins: [react()],
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   base: './',
   // Assets stay separate files: the page's CSP only allows fonts from itself.
   build: { outDir: 'dist', emptyOutDir: true, assetsInlineLimit: 0 },

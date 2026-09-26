@@ -25,6 +25,17 @@ interface Vault {
   set(key: string, value: string): Promise<void>
 }
 
+// Desktop app updates (electron/updater.ts).
+export interface UpdateState {
+  status: 'disabled' | 'idle' | 'checking' | 'none' | 'downloading' | 'ready' | 'manual' | 'error'
+  current: string
+  version?: string
+  progress?: number
+  download?: string
+  error?: string
+}
+
+
 interface FileStore {
   get(id: string): Promise<Uint8Array | null>
   put(id: string, data: Uint8Array): Promise<void>
@@ -37,6 +48,12 @@ interface DesktopBridge {
   files: FileStore
   info(): Promise<AppInfo>
   takeInvite(): Promise<string>
+  updates: {
+    state(): Promise<UpdateState>
+    check(): Promise<UpdateState>
+    install(): Promise<void>
+    onState(cb: (s: UpdateState) => void): () => void
+  }
   onInvite(cb: (link: string) => void): () => void
   pinServer(host: string, sid: string): Promise<void>
   screenSources(): Promise<ScreenSource[]>
@@ -51,6 +68,8 @@ declare global {
 }
 
 const desktop = typeof window !== 'undefined' ? window.quarelDesktop : undefined
+
+export const updates = desktop?.updates ?? null
 
 // Web: secrets in IndexedDB, encrypted (see "at rest" below). Older versions
 // kept them in localStorage in clear: moved on first read.

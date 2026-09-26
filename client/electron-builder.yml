@@ -20,6 +20,10 @@ protocols:
   - name: Invitation Quarel
     schemes: [quarel]
 asar: true
+# Update feed (electron-updater, generic): see electron/updater.ts and scripts/release.mjs.
+publish:
+  - provider: generic
+    url: https://app.quarel.app/updates
 electronLanguages: [fr, en-US]
 win:
   target: [nsis]

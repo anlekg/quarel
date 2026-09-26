@@ -644,3 +644,4 @@ code.secret { font-family: ui-monospace, monospace; letter-spacing: .06em; word-
 }
 .server-notify { position: absolute; left: 10px; right: 10px; top: 52px; z-index: 30; }
 .server-notify .notify-menu { position: static; }
+.update-banner { display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 8px 12px; background: var(--accent-soft); color: var(--accent-soft-text); font-size: 13px; font-weight: 600; }

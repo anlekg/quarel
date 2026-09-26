@@ -516,3 +516,11 @@ Découpage : **4a** amis, conversations et groupes chiffrés ; **4b** validation
 | 2026-09-25 | Périmètre de l'étape 7 (choix du CP) : **liens d'invitation web**, **stockage chiffré dans le navigateur**, **application installable (PWA)**, **affichage téléphone** | Rendre la version web utilisable au quotidien, y compris sur mobile. |
 
 | 2026-09-25 | **La liste des serveurs rejoints suit le compte sur tous ses appareils**, chiffrée de bout en bout (messages Olm entre ses appareils, historique transmis à la validation, sauvegarde de la phrase de récupération) | Constat du CP : un nouvel appareil validé retrouvait ses messages privés mais pas ses serveurs. Le service d'identité ne voit toujours pas quels serveurs on fréquente. |
+
+### Mise à jour automatique de l'application de bureau (2026-09-26)
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-09-26 | Mises à jour servies par **`app.quarel.app/updates`** (choix du CP), moteur `electron-updater` (MIT, flux « generic ») | Hébergement déjà en place, pas de dépendance à GitHub ni à un service tiers. |
+| 2026-09-26 | **Chaque version est signée par une clé Ed25519 de publication** (clé publique dans l'application, `electron/releasesig.ts`) : l'application ne télécharge que ce que la signature couvre et n'installe qu'un fichier dont l'empreinte SHA-512 est celle signée | Les installateurs ne sont pas encore signés (Authenticode) : sans cela, quiconque prendrait la main sur l'hébergement web pourrait pousser du code sur toutes les machines. La clé privée reste hors du serveur web (`~/.config/quarel-release/`). **La perdre = plus de mise à jour automatique possible** (il faudrait réinstaller à la main une version portant une nouvelle clé) : à sauvegarder hors de la machine. |
+| 2026-09-26 | Windows (installateur NSIS) et Linux AppImage se mettent à jour seuls (téléchargement en fond, bandeau « Redémarrer », sinon installation à la fermeture) ; le paquet **.deb** affiche seulement qu'une version existe, avec le lien | Un `.deb` s'installe avec les droits administrateur : l'application ne doit pas le faire elle-même. |

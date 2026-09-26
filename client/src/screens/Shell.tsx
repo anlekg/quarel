@@ -17,6 +17,7 @@ import { clearPendingInvite, usePendingInvite } from '../state/invite'
 import { showNav, useMobilePane } from '../state/mobile'
 import { Settings } from './Settings'
 import { CallBar, IncomingCall } from './Call'
+import { UpdateBanner } from './Update'
 import { closeCalls } from '../state/calls'
 
 export function Shell({ account }: { account: Account }) {
@@ -67,6 +68,7 @@ export function Shell({ account }: { account: Account }) {
 
   const userbar = (
     <>
+    <UpdateBanner />
     <CallBar onOpen={(userId) => {
       select('home')
       window.dispatchEvent(new CustomEvent('quarel:open-dm', { detail: { userId } }))

@@ -18,6 +18,16 @@ contextBridge.exposeInMainWorld('quarelDesktop', {
     delete: (id: string) => ipcRenderer.invoke('files:delete', id),
   },
   takeInvite: () => ipcRenderer.invoke('invite:take'),
+  updates: {
+    state: () => ipcRenderer.invoke('update:state'),
+    check: () => ipcRenderer.invoke('update:check'),
+    install: () => ipcRenderer.invoke('update:install'),
+    onState: (cb: (s: unknown) => void) => {
+      const l = (_e: unknown, s: unknown) => cb(s)
+      ipcRenderer.on('update:state', l)
+      return () => ipcRenderer.removeListener('update:state', l)
+    },
+  },
   onInvite: (cb: (link: string) => void) => {
     const l = (_e: unknown, link: string) => cb(link)
     ipcRenderer.on('invite:open', l)
