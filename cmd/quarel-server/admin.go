@@ -75,6 +75,8 @@ var fields = []adminui.Field{
 		Help: "« auto » : adresse publique de la box ; « local » : réseau local seulement ; ou une adresse IP."},
 	{Group: "Vocal et vidéo", Key: "QUAREL_VOICE_UDP_PORT", Label: "Port UDP", Kind: "number", Default: "7882", ShowIf: "QUAREL_VOICE=embedded"},
 	{Group: "Vocal et vidéo", Key: "QUAREL_VOICE_TCP_PORT", Label: "Port TCP (secours)", Kind: "number", Default: "7881", ShowIf: "QUAREL_VOICE=embedded"},
+	{Group: "Vocal et vidéo", Key: "QUAREL_VOICE_SIGNAL_PORT", Label: "Port de signalisation (local)", Kind: "number", Default: "7880", ShowIf: "QUAREL_VOICE=embedded",
+		Help: "Sur cette machine seulement (jamais ouvert sur la box). À changer si un autre serveur Quarel tourne sur la même machine."},
 	{Group: "Vocal et vidéo", Key: "QUAREL_LIVEKIT_URL", Label: "Adresse LiveKit pour les applications", Kind: "text", ShowIf: "QUAREL_VOICE=external", Placeholder: "wss://…"},
 	{Group: "Vocal et vidéo", Key: "QUAREL_LIVEKIT_API_URL", Label: "Adresse de l'API LiveKit", Kind: "text", ShowIf: "QUAREL_VOICE=external", Placeholder: "https://…"},
 	{Group: "Vocal et vidéo", Key: "QUAREL_LIVEKIT_KEY", Label: "Clé d'API LiveKit", Kind: "text", ShowIf: "QUAREL_VOICE=external"},

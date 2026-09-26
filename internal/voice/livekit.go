@@ -127,6 +127,9 @@ func (l *LiveKit) call(ctx context.Context, method string, g grant, in, out any)
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("livekit %s: %w", method, ErrUnauthorized)
+	}
 	if resp.StatusCode != http.StatusOK {
 		var te struct{ Code, Msg string }
 		json.Unmarshal(data, &te)
@@ -143,6 +146,15 @@ func (l *LiveKit) call(ctx context.Context, method string, g grant, in, out any)
 
 // ErrNotFound is returned when the room or participant does not exist.
 var ErrNotFound = errors.New("livekit: not found")
+
+// ErrUnauthorized: the LiveKit server refused our API key (another LiveKit,
+// with other keys, answers at this address).
+var ErrUnauthorized = errors.New("livekit: API key refused")
+
+// Ping checks that the LiveKit server answers and accepts our API key.
+func (l *LiveKit) Ping(ctx context.Context) error {
+	return l.call(ctx, "ListRooms", grant{RoomList: true}, map[string]any{}, nil)
+}
 
 // RemoveParticipant disconnects identity from room.
 func (l *LiveKit) RemoveParticipant(ctx context.Context, room, identity string) error {

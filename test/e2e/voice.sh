@@ -6,7 +6,7 @@ REPO=$(cd "$(dirname "$0")/../.." && pwd); B=$REPO/bin
 D=$(mktemp -d); trap 'pkill -P $$ 2>/dev/null; kill $IDP $SRVP 2>/dev/null; rm -rf "$D"' EXIT
 export XDG_CONFIG_HOME=$D/cfg QUAREL_PASSWORD=motdepasse-solide PATH="$HOME/.local/bin:$PATH"
 QUAREL_RATE_LIMITS=off QUAREL_ADDR=127.0.0.1:28080 QUAREL_ISSUER=localhost:28080 QUAREL_DATA_DIR=$D/id $B/quarel-identity > $D/id.log 2>&1 & IDP=$!
-QUAREL_ADDR=127.0.0.1:28090 QUAREL_TRUSTED_ISSUERS=localhost:28080 QUAREL_DATA_DIR=$D/srv QUAREL_UPNP=off QUAREL_VOICE_PUBLIC_IP=local QUAREL_RATE_LIMITS=off $B/quarel-server > $D/srv.log 2>&1 & SRVP=$!
+QUAREL_ADDR=127.0.0.1:28090 QUAREL_TRUSTED_ISSUERS=localhost:28080 QUAREL_DATA_DIR=$D/srv QUAREL_UPNP=off QUAREL_VOICE_PUBLIC_IP=local QUAREL_VOICE_SIGNAL_PORT=28880 QUAREL_VOICE_TCP_PORT=28881 QUAREL_VOICE_UDP_PORT=28882 QUAREL_RATE_LIMITS=off $B/quarel-server > $D/srv.log 2>&1 & SRVP=$!
 for _ in $(seq 1 50); do grep -q "voice ready" $D/srv.log && break; sleep 0.2; done
 grep -q "voice ready" $D/srv.log || { echo "voice did not start"; cat $D/srv.log; exit 1; }
 Q() { local p=$1; shift; $B/quarelctl -s http://127.0.0.1:28080 -p "$p" "$@"; }

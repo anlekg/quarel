@@ -16,6 +16,8 @@ sidebar:
 
 Par défaut, le serveur ouvre lui-même ces ports sur votre box par **UPnP** (bail d’une heure renouvelé, retiré à l’arrêt). Avec Docker, il faut pour cela le réseau de l’hôte (`network_mode: host`, déjà dans le `compose.yaml` fourni). Pour l’empêcher : `QUAREL_UPNP=off`, puis redirigez ces ports à la main vers la machine dans l’interface de votre box.
 
+**Plusieurs serveurs sur la même machine** : donnez à chacun ses propres ports (page d’administration › Réglages › Réseau et Vocal et vidéo, ou `QUAREL_ADDR`, `QUAREL_ADMIN_ADDR`, `QUAREL_VOICE_SIGNAL_PORT`, `QUAREL_VOICE_TCP_PORT`, `QUAREL_VOICE_UDP_PORT`). Si les ports vocaux sont déjà pris par un autre serveur, le vocal reste indisponible et le journal l’indique (« voice unavailable »).
+
 ## Diagnostic
 
 Le tableau de bord de la page d’administration indique si le serveur est joignable :

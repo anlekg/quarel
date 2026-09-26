@@ -89,7 +89,7 @@ func RunEmbedded(ctx context.Context, c EmbeddedConfig, k Keys, ready chan<- str
 	if err := os.WriteFile(cfgPath, []byte(c.yaml(k)), 0o600); err != nil {
 		return err
 	}
-	go waitReady(ctx, fmt.Sprintf("http://127.0.0.1:%d/", c.SignalPort), ready)
+	go waitReady(ctx, NewLiveKit(fmt.Sprintf("http://127.0.0.1:%d", c.SignalPort), k.Key, k.Secret), c.SignalPort, ready)
 
 	backoff := time.Second
 	for {
@@ -128,13 +128,23 @@ func relayLogs(r io.Reader) {
 	}
 }
 
-func waitReady(ctx context.Context, addr string, ready chan<- struct{}) {
-	client := &http.Client{Timeout: time.Second}
+// waitReady closes ready once the LiveKit server on the signalling port
+// answers with our keys. Answering is not enough: another LiveKit already
+// listening there (another Quarel server on this machine with the same voice
+// ports) answers too, but with other keys; members sent to it could not join.
+func waitReady(ctx context.Context, lk *LiveKit, port int, ready chan<- struct{}) {
+	warned := false
 	for ctx.Err() == nil {
-		if resp, err := client.Get(addr); err == nil {
-			resp.Body.Close()
+		cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		err := lk.Ping(cctx)
+		cancel()
+		if err == nil {
 			close(ready)
 			return
+		}
+		if errors.Is(err, ErrUnauthorized) && !warned {
+			warned = true
+			slog.Error("voice unavailable: another LiveKit server (other keys) already uses the signalling port: choose other voice ports (QUAREL_VOICE_SIGNAL_PORT, _TCP_PORT, _UDP_PORT)", "port", port)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}

@@ -2,6 +2,7 @@ package voice
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -148,5 +150,35 @@ func TestProxyPaths(t *testing.T) {
 		if res.StatusCode != want {
 			t.Errorf("%s: %d, want %d", path, res.StatusCode, want)
 		}
+	}
+}
+
+// The embedded LiveKit is ready only once it accepts our keys: another
+// LiveKit already on the same port (other keys) must not count as ours.
+func TestWaitReadyNeedsOurKeys(t *testing.T) {
+	var accept atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !accept.Load() {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"code":"unauthenticated","msg":"invalid token"}`))
+			return
+		}
+		w.Write([]byte(`{"rooms":[]}`))
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready := make(chan struct{})
+	go waitReady(ctx, NewLiveKit(srv.URL, "key", "secret"), 7880, ready)
+	select {
+	case <-ready:
+		t.Fatal("ready with a LiveKit that refuses our keys")
+	case <-time.After(700 * time.Millisecond):
+	}
+	accept.Store(true)
+	select {
+	case <-ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("not ready once our keys are accepted")
 	}
 }
