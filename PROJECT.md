@@ -533,3 +533,12 @@ Découpage : **4a** amis, conversations et groupes chiffrés ; **4b** validation
 | 2026-09-26 | **Français d'abord, anglais ensuite** ; page d'accueil présentée comme **version de test** (choix du CP) | Cohérent avec l'application et la phase actuelle (inscriptions sur invitation). |
 | 2026-09-26 | Le wiki devient **la** documentation publique (guides d'hébergement et API déplacés depuis `docs/`) | Une seule source, publiée. |
 | 2026-09-26 | **MCP de la documentation** (choix du CP) sur `quarel.app/mcp` : serveur Go du dépôt, lecture seule, sans compte ; plus `llms.txt` / `llms-full.txt` | Les assistants IA répondent aux questions d'hébergement et d'API à partir de la documentation à jour, en citant les pages. |
+
+### Ouverture publique du dépôt (2026-09-26)
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-09-26 | **Dépôt `anlekg/quarel` public** (choix du CP), après vérification de l'historique (gitleaks, recherche de l'IP publique, de l'email personnel, du mot de passe SMTP : rien), des dépendances (govulncheck, npm audit) et relecture ciblée du code sensible | Projet open source : le code doit pouvoir être lu, audité et amélioré. |
+| 2026-09-26 | Documents de travail (`CLAUDE.md`, `PROJECT.md`, `PLAN.md`, guides de test) **gardés publics**, détails de l'infrastructure personnelle retirés ; l'historique n'est pas réécrit (choix du CP) | Transparence des décisions ; pas de secret dans l'historique. |
+| 2026-09-26 | Tests GitHub (5 jobs) exigés sur `main`, historique non réécrivable ; signalement privé des failles, alertes et correctifs Dependabot, détection de secrets avec blocage à l'envoi | Garder `main` sain et traiter les failles en privé. |
+| 2026-09-26 | Essai à plusieurs **après** l'ouverture (choix du CP) | `docs/tests/essai-a-plusieurs.md`. |
