@@ -62,7 +62,7 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
     <>
       <aside className="sidebar">
         <ServerMenu conn={conn} ready={r} />
-        {state.status === 'offline' && <div className="conn-banner" role="status">Connexion perdue, nouvelle tentative…</div>}
+        {state.status === 'offline' && <div className="conn-banner" role="status">{state.problem ?? 'Connexion perdue, nouvelle tentative…'}</div>}
         <div className="sidebar-body">
           {r && <ChannelList conn={conn} ready={r} state={state} active={channel?.id} onPick={(c) => {
             setChannelID(c.id)

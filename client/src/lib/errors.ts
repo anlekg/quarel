@@ -77,6 +77,8 @@ const messages: Record<string, string> = {
   inbox_full: 'Un appareil destinataire a trop de messages en attente : il doit d\u2019abord se reconnecter.',
   too_many_pending_uploads: 'Envoyez d\u2019abord les fichiers déjà joints (les fichiers non envoyés sont retirés après une heure).',
   wrong_host: 'Ce serveur ne répond pas sous cette adresse : quelqu\u2019un s\u2019est peut-être fait passer pour lui (connexion refusée). Si l\u2019adresse est la bonne, l\u2019hébergeur doit la déclarer dans « Nom public du serveur ».',
+  server_outdated: 'Ce serveur utilise une version de Quarel trop ancienne pour cette application : son hébergeur doit le mettre à jour (0.3.0 ou plus récente).',
+  session_ended: 'La session de cet appareil a été fermée sur son service d\u2019identité : reconnectez-vous.',
   tls_conflict: 'Cette adresse a présenté une autre identité depuis le lancement de l\u2019application : redémarrez Quarel puis réessayez. Si le problème persiste, quelqu\u2019un tente peut-être de se faire passer pour le serveur.',
   // Local (client-side) codes.
   bad_invite: 'Lien invalide : il doit ressembler à quarel://hôte:port/CODE?sid=…',

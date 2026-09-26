@@ -7,6 +7,7 @@ import {
   type Role, type ServerInfo, type VoiceState,
 } from '../api/community'
 import { toBase64url } from '../lib/base64'
+import { errorMessage } from '../lib/errors'
 import { deviceKey, signWithDevice } from '../lib/device'
 import { identityLabel } from '../lib/identityURL'
 import { proofHost, proofMessage } from '../lib/proof'
@@ -42,6 +43,9 @@ export interface ServerState {
   status: Status
   removed?: 'kicked' | 'banned' | 'left' | 'disabled' | 'blocked' | 'not_approved'
   blockedReason?: string
+  // Why signing in keeps failing when retrying cannot help (server to update,
+  // address it does not declare…): shown instead of "reconnecting".
+  problem?: string
   ready?: Ready
   reads: Record<number, ReadState>
   messages: Record<number, ChannelMessages>
@@ -75,7 +79,14 @@ export async function communityLogin(account: Account, base: string, sid: string
   const mode = await tlsMode(host, sid)
   if (mode === 'conflict') throw new ApiError(0, 'tls_conflict', 'another identity was accepted for this host')
   const proof = toBase64url(signWithDevice(dk, proofMessage(sid, ch.nonce, host, mode)))
-  return c.login({ identity_token: idToken, nonce: ch.nonce, proof, host, tls: mode, invite, claim })
+  try {
+    return await c.login({ identity_token: idToken, nonce: ch.nonce, proof, host, tls: mode, invite, claim })
+  } catch (e) {
+    // Servers before 0.3.0 refuse the fields of v2 proofs. Falling back to a v1
+    // proof would let a relaying server use it again: the host must update.
+    if (e instanceof ApiError && e.code === 'bad_request' && /unknown field/.test(e.message)) throw new ApiError(e.status, 'server_outdated', e.message)
+    throw e
+  }
 }
 
 // Public information shown before joining; also proves the certificate.
@@ -135,7 +146,9 @@ export class ServerConn {
         const res = await communityLogin(this.account, this.saved.base, this.saved.sid)
         this.saved = { ...this.saved, token: res.session_token, expiresAt: res.expires_at, name: res.server.name, memberId: res.member.id }
         this.persist()
+        if (this.state.problem) this.set({ problem: undefined })
       } catch (e) {
+        if (e instanceof ApiError && ['server_outdated', 'wrong_host', 'tls_conflict'].includes(e.code)) this.set({ problem: errorMessage(e) })
         if (e instanceof ApiError && ['banned', 'invite_required', 'account_disabled', 'server_blocked', 'server_not_approved'].includes(e.code)) {
           const reason = ({ banned: 'banned', account_disabled: 'disabled', server_blocked: 'blocked', server_not_approved: 'not_approved' } as const)[e.code as 'banned'] ?? 'kicked'
           this.markRemoved(reason, e.code === 'server_blocked' ? e.message : undefined)
