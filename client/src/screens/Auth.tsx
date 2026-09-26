@@ -33,7 +33,11 @@ export function Auth({ notice }: { notice?: string }) {
   const [policy, setPolicy] = useState<Policy | null>(null)
   useEffect(() => {
     setPolicy(null)
-    new IdentityClient(identity).policy().then(setPolicy, () => {})
+    let current = true // a slow answer from the previous service must not win
+    new IdentityClient(identity).policy().then((p) => current && setPolicy(p), () => {})
+    return () => {
+      current = false
+    }
   }, [identity])
 
   async function finishLogin(login: string, password: string, totp?: string) {

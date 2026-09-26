@@ -650,7 +650,11 @@ function PinsPanel({ conn, ready, channel, names, onClose, onOpen }: {
   // Reloaded when a message of the channel changes (pinned or unpinned elsewhere).
   const version = conn.state.messages[channel.id]?.list.filter((m) => m.pinned_at).map((m) => m.id).join(',')
   useEffect(() => {
-    conn.api((c) => c.pins(channel.id)).then(setList, (e) => setError(errorMessage(e)))
+    let current = true // switching channels quickly: only the latest answer counts
+    conn.api((c) => c.pins(channel.id)).then((l) => current && setList(l), (e) => current && setError(errorMessage(e)))
+    return () => {
+      current = false
+    }
   }, [conn, channel.id, version])
   return (
     <aside className="side-panel" aria-label="Messages épinglés">
