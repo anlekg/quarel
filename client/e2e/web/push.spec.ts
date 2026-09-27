@@ -6,7 +6,7 @@ import { Identity } from '../fixtures'
 
 test.use({ channel: 'chromium' }) // the full browser: the headless shell has no notifications
 
-const id = new Identity(19660)
+const id = new Identity(19660, { QUAREL_PUSH_HOSTS: 'push.example' }) // the stubbed subscription's push service
 const password = 'motdepasse-solide'
 
 test.beforeAll(async () => {

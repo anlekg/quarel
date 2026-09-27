@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -27,15 +28,43 @@ import (
 
 // Web Push (P2, decided by the PM: "empty wake-up"). The web app (PWA) of a
 // device that is not connected gets an EMPTY push through its browser's push
-// service when something arrives in its inbox: no content, no sender, no
-// conversation — the push service only learns that something happened. The
-// service worker then shows a notification without details. Pushes are
-// signed with this service's VAPID key (RFC 8292, data/vapid.key) and sent
-// only to https addresses that resolve to public IPs; at most one per device
-// every pushInterval; a subscription the push service no longer knows (404,
-// 410) is deleted.
+// service when something arrives in its inbox from someone else (not what its
+// own devices send it): no content, no sender, no conversation — the push
+// service only learns that something happened. The service worker then shows
+// a notification without details. Pushes are signed with this service's VAPID
+// key (RFC 8292, data/vapid.key) and sent only to the browsers' push services
+// (knownPushHosts, port 443; QUAREL_PUSH_HOSTS adds others) at public IPs: an
+// endpoint cannot make this service call anything else. At most one per
+// device every pushInterval; a subscription the push service no longer knows
+// (404, 410) is deleted.
 
 const pushInterval = 30 * time.Second
+
+// knownPushHosts are the push services of the browsers (and their subdomains):
+// Chrome, Edge (Chromium), Opera, Samsung Internet: FCM; Firefox: Mozilla
+// autopush; Safari: Apple; Edge (legacy): WNS.
+var knownPushHosts = []string{"fcm.googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com"}
+
+// pushEndpointOK says whether this service may send pushes to endpoint.
+func (s *Server) pushEndpointOK(endpoint string) bool {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || len(endpoint) > 1024 {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	match := func(list []string) bool {
+		for _, h := range list {
+			if host == h || strings.HasSuffix(host, "."+h) {
+				return true
+			}
+		}
+		return false
+	}
+	if match(s.cfg.PushHosts) {
+		return true
+	}
+	return match(knownPushHosts) && (u.Port() == "" || u.Port() == "443")
+}
 
 type webPush struct {
 	once     sync.Once
@@ -110,9 +139,8 @@ func (s *Server) handleSetPush(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	u, err := url.Parse(req.Endpoint)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || len(req.Endpoint) > 1024 {
-		writeErr(w, r, errf(http.StatusBadRequest, "invalid_endpoint", "a push endpoint is an https address"))
+	if !s.pushEndpointOK(req.Endpoint) {
+		writeErr(w, r, errf(http.StatusBadRequest, "invalid_endpoint", "a push endpoint is an https address of a browser's push service"))
 		return
 	}
 	if _, err := s.db.ExecContext(ctx, `INSERT INTO push_subscriptions (session_id, endpoint, created_at) VALUES (?, ?, ?)
@@ -123,9 +151,22 @@ func (s *Server) handleSetPush(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// wake sends an empty push to a device that is not connected, if it asked for it.
-func (s *Server) wake(deviceID string) {
+// wake sends an empty push to a device that is not connected, if it asked
+// for it, unless everything that arrived comes from its own account (another
+// of its devices syncing: nothing to see).
+func (s *Server) wake(deviceID string, senders []string) {
 	if s.hub.KeyOnline(deviceID) {
+		return
+	}
+	var owner string
+	if err := s.db.QueryRow(`SELECT s.user_id FROM push_subscriptions p JOIN sessions s ON s.id = p.session_id WHERE p.session_id = ?`, deviceID).Scan(&owner); err != nil {
+		return // no subscription
+	}
+	others := false
+	for _, u := range senders {
+		others = others || u != owner
+	}
+	if !others {
 		return
 	}
 	now := s.now()
@@ -151,7 +192,8 @@ func (s *Server) sendPush(ctx context.Context, deviceID string) {
 		return
 	}
 	u, err := url.Parse(endpoint)
-	if err != nil {
+	if err != nil || !s.pushEndpointOK(endpoint) { // subscribed before the list of push services
+		s.db.ExecContext(ctx, `DELETE FROM push_subscriptions WHERE session_id = ?`, deviceID)
 		return
 	}
 	k, err := s.vapidKey()

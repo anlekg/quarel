@@ -46,6 +46,7 @@ type Config struct {
 	MinFreeBytes    int64         // uploads refused below this free disk space (0: no check)
 	DMFileTTL       time.Duration // how long the server keeps conversation files
 	GroupMaxMembers int           // members of a group conversation (QUAREL_DM_GROUP_MAX)
+	PushHosts       []string      // push services accepted besides the browsers' (QUAREL_PUSH_HOSTS; any port)
 
 	TURN TURNConfig // relay for peer-to-peer calls
 
@@ -137,6 +138,11 @@ func ConfigFromEnv() (Config, error) {
 				return c, fmt.Errorf("domaines d'email autorisés (QUAREL_REGISTRATION_DOMAINS) : %q n'est pas un nom de domaine", d)
 			}
 			c.RegistrationDomains = append(c.RegistrationDomains, d)
+		}
+	}
+	for _, h := range strings.Split(settings.Get("QUAREL_PUSH_HOSTS"), ",") {
+		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
+			c.PushHosts = append(c.PushHosts, h)
 		}
 	}
 	c.MaxAccounts = envInt("QUAREL_MAX_ACCOUNTS", 0)
