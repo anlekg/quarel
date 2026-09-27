@@ -96,6 +96,10 @@ docker compose exec identity /quarel-identity admin enable  <pseudo|email|id> --
 docker compose exec identity /quarel-identity admin log
 ```
 
+**Supprimer son compte** (par la personne, dans l'application) efface tout sur le service ; son empreinte est publiée 400 jours dans la même liste (`deleted_accounts`) pour que les serveurs communautaires remplacent son nom par « Ancien compte ». **Exporter ses données** : `GET /v1/me/export` (dans l'application : Paramètres › Confidentialité), sans aucun secret.
+
+**Notifications de l'application web** (Web Push) : le service n'envoie de réveil qu'aux services de notification des navigateurs (Google FCM, Mozilla, Apple, Microsoft), sur le port 443. `QUAREL_PUSH_HOSTS` en ajoute d'autres (noms séparés par des virgules), pour des tests ou un navigateur particulier.
+
 **Désactiver un compte** ne se fait que sur ordre juridique : la personne ne peut plus se connecter ni obtenir de jeton, ses connexions ouvertes sont fermées, et les serveurs communautaires l'apprennent sous 10 minutes (liste publique `GET /v1/disabled-accounts`). Ses données sont conservées : une réactivation la rétablit à l'identique. Le service central ne peut ni bannir d'un serveur ni lire les messages : chaque serveur modère lui-même, et les messages privés sont chiffrés de bout en bout.
 
 **Changer la clé de signature** (par précaution, ou en cas de doute sur sa confidentialité) :

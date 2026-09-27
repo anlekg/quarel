@@ -13,7 +13,7 @@ Les messages privés (en tête à tête ou en groupe jusqu’à 10 personnes) so
 - Vous voyez **Envoyé**, **Distribué** puis **Vu** (si la personne a laissé les accusés de lecture), et « … écrit ».
 - Fichiers : trombone ou glisser-déposer (100 Mo au plus). Ils sont chiffrés sur votre appareil et envoyés en direct aux appareils en ligne ; les autres les récupèrent chiffrés plus tard.
 - Paramètres › Confidentialité : désactiver « … écrit » et les accusés de lecture.
-- **Messages éphémères** : l’horloge en haut de la conversation règle la durée de vie des **prochains** messages (5 minutes, 1 heure, 1 jour, 7 jours ou désactivés), pour tout le monde. N’importe quel membre peut la changer ; le changement s’affiche dans la conversation. Passé ce délai, chaque appareil efface le message et son fichier. Cela protège si un appareil est perdu ou saisi, pas contre la personne qui les reçoit : elle peut toujours faire une capture d’écran.
+- **Messages éphémères** : l’horloge en haut de la conversation règle la durée de vie des **prochains** messages (5 minutes, 1 heure, 1 jour, 7 jours ou désactivés), pour tout le monde. N’importe quel membre peut la changer ; le changement s’affiche dans la conversation. Passé ce délai, chaque appareil efface le message et son fichier. Cela protège si un appareil est perdu ou saisi, pas contre la personne qui les reçoit : elle peut toujours faire une capture d’écran. Les messages éphémères ne sont jamais sauvegardés (ni dans la sauvegarde liée à votre phrase de récupération, ni dans l’historique envoyé à un nouvel appareil) et leurs notifications n’en montrent pas le texte.
 
 ## Notifications sur téléphone
 

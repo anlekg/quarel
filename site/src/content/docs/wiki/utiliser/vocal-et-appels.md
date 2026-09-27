@@ -31,7 +31,15 @@ Un salon vocal peut être une **scène** (conférence, soirée quiz…) : case �
 - **6 personnes au plus** : chaque participant·e envoie son son et sa vidéo directement à chacun·e des autres (aucun serveur ne voit le flux), ce qui demande plus de débit montant qu’un appel à deux.
 - Micro, caméra et partage d’écran comme pour un appel à deux. Il faut Quarel 0.4.0 ou plus récent.
 
-Les appels sont **pair à pair et chiffrés**. Quand aucun chemin direct n’existe, le relais de votre service d’identité transmet le flux chiffré. Paramètres › Voix et vidéo › décochez « Utiliser le relais si aucune connexion directe n’est possible » pour le refuser (l’appel échouera alors sans chemin direct).
+Les appels sont **pair à pair et chiffrés**. Quand aucun chemin direct n’existe, le relais de votre service d’identité transmet le flux chiffré.
+
+Une connexion directe montre votre **adresse IP** à l’autre appareil. Paramètres › Voix et vidéo › « Qui peut voir mon adresse IP » :
+
+- **Mes amis seulement** (par défaut) : direct avec vos amis ; avec les membres d’un groupe qui ne sont pas vos amis, par le relais (et, pour les fichiers des messages privés, par la copie chiffrée du service).
+- **Personne** : toujours par le relais (l’appel échoue si votre service n’en a pas).
+- **Tout le monde** : jamais de relais (certains appels échoueront, derrière certaines box ou réseaux d’entreprise).
+
+Le chemin de chaque personne s’affiche pendant l’appel (en direct, réseau local, relais).
 
 ## Micro, haut-parleurs, caméra
 

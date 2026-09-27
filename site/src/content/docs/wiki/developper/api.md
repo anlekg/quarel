@@ -104,7 +104,8 @@ Légende : 🔑 = permission requise.
 ### Salons
 | | | |
 |---|---|---|
-| `GET /v1/channels` | | Salons visibles |
+| `GET /v1/channels` | | Salons visibles (sans les fils archivés) |
+| `GET /v1/channels/{id}` | 🔑 `view_channel` | Un salon, y compris un fil archivé (`archived_at`) |
 | `POST /v1/channels` | 🔑 `manage_channels` | `{type, name, topic?, parent_id?, position?}` |
 | `PATCH/DELETE /v1/channels/{id}` | 🔑 `manage_channels` | |
 | `PUT/DELETE /v1/channels/{id}/overrides/{role\|member}/{id}` | 🔑 `manage_roles` | `{allow: [...], deny: [...]}` |
@@ -122,12 +123,13 @@ Légende : 🔑 = permission requise.
 | `PUT/DELETE /v1/channels/{id}/messages/{mid}/reactions/{emoji}` | 🔑 `add_reactions` | Emoji encodé dans l'URL |
 | `DELETE …/reactions/{emoji}/{member}` | 🔑 `manage_messages` | |
 | `GET /v1/channels/{id}/pins` ; `PUT/DELETE /v1/channels/{id}/pins/{mid}` | 🔑 `manage_messages` pour modifier | |
-| `POST /v1/channels/{id}/messages/{mid}/threads` | 🔑 `send_messages` | `{name?}` → salon `thread` |
+| `POST /v1/channels/{id}/messages/{mid}/threads` | 🔑 `send_messages` | `{name?}` → salon `thread` (5 fils ou posts par 10 min et par membre, sauf `manage_channels` ; sans message pendant 7 jours, un fil est archivé : `CHANNEL_UPDATE` avec `archived_at`, absent de READY ; un message le rouvre : `CHANNEL_CREATE`) |
 | `POST /v1/channels/{id}/typing` | 🔑 `send_messages` | |
 | `POST /v1/channels/{id}/ack` | | `{message_id?}` : marquer lu |
 | `GET /v1/read-states` | | Non-lus et mentions par salon |
 | `GET /v1/notification-settings` ; `PUT /v1/notification-settings/{salon\|0}` | | `{level: default\|all\|mentions\|none, mute_for?: secondes, -1 = toujours}` |
 | `GET /v1/search` | | `?q=&channel_id=&author_id=&before=&limit=` (≤ 50) |
+| `GET /v1/members/@me/export` | | Vos données sur ce serveur : profil, rôles, réglages, réactions, fichiers et tous vos messages (JSON, 3 par heure) |
 
 ### Modération
 | | | |
