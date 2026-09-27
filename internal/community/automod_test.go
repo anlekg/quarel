@@ -17,6 +17,12 @@ func TestBannedWordMatching(t *testing.T) {
 		"rien à signaler":         false,
 		"arnaq":                   true,
 		"une arnaq* écrite telle": true,
+		"cr\u200bétin":            true, // zero-width space
+		"cré\u00adtin":            true, // soft hyphen
+		"сrétin":                  true, // Cyrillic с
+		"ＣＲÉＴＩＮ":                  true, // full-width
+		"𝐜𝐫𝐞𝐭𝐢𝐧":                  true, // mathematical bold
+		"quel crétin­ard":         false,
 	} {
 		if got := bannedWord(words, text); got != want {
 			t.Errorf("bannedWord(%q) = %v, want %v", text, got, want)
@@ -70,7 +76,7 @@ func TestAutoMod(t *testing.T) {
 			timeouts++
 		}
 	}
-	if blocks != 3 || timeouts != 1 {
+	if blocks != 2 || timeouts != 1 { // the same rule for the same member: logged once a minute
 		t.Fatalf("audit: %d blocks, %d timeouts: %+v", blocks, timeouts, log)
 	}
 	c.clock = c.clock.Add(301 * time.Second)
@@ -83,6 +89,14 @@ func TestAutoMod(t *testing.T) {
 	c.expect(403, "automod_duplicate", send("bob", "achetez"))
 	c.clock = c.clock.Add(31 * time.Second)
 	c.expect(201, "", send("bob", "achetez"))
+
+	// Thread names and nicknames too.
+	var m2 message
+	c.expect(201, "", c.call("POST", fmt.Sprint("/v1/channels/", gen, "/messages"), c.tok("bob"), map[string]any{"content": "un sujet"}, &m2))
+	c.expect(403, "automod_word", c.call("POST", fmt.Sprintf("/v1/channels/%d/messages/%d/threads", gen, m2.ID), c.tok("bob"), map[string]any{"name": "le fil du с\u200brétin"}, nil))
+	c.expect(403, "automod_word", c.call("PATCH", "/v1/members/@me", c.tok("bob"), map[string]any{"nickname": "Arnaqueur"}, nil))
+	c.expect(200, "", c.call("PATCH", "/v1/members/@me", c.tok("bob"), map[string]any{"nickname": "Bobby"}, nil))
+	c.expect(200, "", c.call("PATCH", "/v1/members/@me", c.tok("mod"), map[string]any{"nickname": "Chasseur d'arnaques"}, nil)) // exempt
 
 	// Moderators (manage_messages) and the owner are exempt.
 	c.expect(201, "", send("mod", "crétin, https://exemple.org"))

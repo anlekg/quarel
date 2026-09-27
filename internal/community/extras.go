@@ -354,6 +354,10 @@ func (s *Server) handleCreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	if err := s.checkAutoModName(ctx, ps, memberFrom(r).ID, c.ID, name); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO channels (type, name, topic, parent_id, position, created_at, thread, thread_starter) VALUES ('text', ?, '', ?, 0, ?, 1, ?)`,
 		name, c.ID, s.nowMs(), msg.ID)
 	if err != nil {

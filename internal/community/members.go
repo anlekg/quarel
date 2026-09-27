@@ -151,6 +151,15 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, r, errf(http.StatusBadRequest, "invalid_nickname", "nickname must be at most 32 characters"))
 				return
 			}
+			ps, err := s.loadPerms(r.Context(), s.db)
+			if err != nil {
+				writeErr(w, r, err)
+				return
+			}
+			if err := s.checkAutoModName(r.Context(), ps, m.ID, 0, nick); err != nil {
+				writeErr(w, r, err)
+				return
+			}
 			m.Nickname = sql.NullString{String: nick, Valid: true}
 		}
 	}
