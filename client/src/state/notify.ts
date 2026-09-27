@@ -3,7 +3,7 @@
 // private conversations. Nothing while the message is in view, nothing in
 // "do not disturb", nothing from blocked people.
 import type { Message, NotificationSetting, NotifyLevel, Ready } from '../api/community'
-import { prefs } from '../platform'
+import { prefs, showWindow } from '../platform'
 import { engine, isBlockedMember, onEngineEvent, socialState } from './social'
 
 // What the person is looking at.
@@ -43,7 +43,7 @@ function show(title: string, body: string, onClick: () => void, tag: string) {
   try {
     const n = new Notification(title, { body: body.length > 180 ? body.slice(0, 180) + '…' : body, tag, icon: '/icons/icon-192.png', silent: false })
     n.onclick = () => {
-      window.focus()
+      showWindow()
       onClick()
       n.close()
     }

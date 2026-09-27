@@ -1,8 +1,8 @@
 // Update banner (above the user bar) and the "À propos" settings section.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Alert } from '../components/ui'
 import { checkUpdate, installUpdate, useUpdate } from '../state/updates'
-import type { UpdateState } from '../platform'
+import { closeToTray, type UpdateState } from '../platform'
 
 export function UpdateBanner() {
   const u = useUpdate()
@@ -52,10 +52,29 @@ export function AboutSection({ version }: { version: string }) {
           </div>
         )}
       </div>
+      <TraySetting />
       {!u && <Alert kind="info">Version web : toujours à jour (rechargez la page pour la dernière version).</Alert>}
       <p className="muted small" style={{ lineHeight: 1.5 }}>
         Logiciel libre (licence Apache-2.0). Les mises à jour sont signées par Quarel : l&apos;application refuse tout fichier qui ne l&apos;est pas.
       </p>
     </>
+  )
+}
+
+// Desktop app: the close button leaves Quarel in the notification area.
+function TraySetting() {
+  const [on, setOn] = useState<boolean | null>(null)
+  useEffect(() => {
+    closeToTray().then(setOn, () => setOn(null))
+  }, [])
+  if (on === null) return null
+  return (
+    <label className="check-line card" style={{ padding: '14px 16px', marginTop: 12 }}>
+      <input type="checkbox" checked={on} onChange={(e) => closeToTray(e.target.checked).then((v) => setOn(v ?? false))} />
+      <span className="grow">
+        <span className="title">Réduire dans la zone de notification à la fermeture</span>
+        <span className="sub">La croix cache Quarel près de l&apos;horloge : messages, notifications et appels continuent d&apos;arriver. « Quitter Quarel » dans le menu de l&apos;icône le ferme vraiment.</span>
+      </span>
+    </label>
   )
 }

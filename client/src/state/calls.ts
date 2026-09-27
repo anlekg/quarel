@@ -28,7 +28,7 @@ import type { Conversation, DeviceInfo, PublicUser } from '../api/identity'
 import type { CallSignal } from '../e2e/engine'
 import { UserError } from '../lib/errors'
 import { applyOutput, audioConstraints, onDeviceChange, videoConstraints } from '../lib/media'
-import { prefs } from '../platform'
+import { prefs, showWindow } from '../platform'
 import { engine, identityAPI, onEngineEvent, socialState } from './social'
 import { leaveVoice } from './voice'
 
@@ -253,7 +253,11 @@ function stopRing() {
 function notify(title: string) {
   if (document.hasFocus()) return
   try {
-    new Notification(title, { body: 'Ouvrez Quarel pour répondre.', silent: true })
+    const n = new Notification(title, { body: 'Ouvrez Quarel pour répondre.', silent: true })
+    n.onclick = () => {
+      showWindow()
+      n.close()
+    }
   } catch {
     /* notifications unavailable */
   }

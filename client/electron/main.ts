@@ -1,6 +1,6 @@
 // Electron main process: one window running the web UI, with the renderer
 // sandboxed (no Node access). The only bridge is the small API in preload.ts.
-import { app, BrowserWindow, desktopCapturer, ipcMain, protocol, safeStorage, shell, session } from 'electron'
+import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, nativeImage, protocol, safeStorage, shell, session, Tray } from 'electron'
 import { hostname } from 'node:os'
 import { extname, join, normalize, sep } from 'node:path'
 import { readFile, writeFile, rename, mkdir, rm } from 'node:fs/promises'
@@ -21,10 +21,7 @@ if (!app.requestSingleInstanceLock()) app.exit(0)
 app.on('second-instance', (_e, argv) => {
   const link = findInvite(argv)
   if (link) deliverInvite(link)
-  if (win) {
-    if (win.isMinimized()) win.restore()
-    win.focus()
-  }
+  showWindow()
 })
 app.on('open-url', (e, url) => { // macOS
   e.preventDefault()
@@ -66,6 +63,65 @@ function serveApp() {
   })
 }
 
+// --- closing hides the window in the notification area (tray) ---
+// On by default under Windows (off on Linux, where the tray icon depends on
+// the desktop and may be invisible; and in tests); "Quitter Quarel" in the
+// icon's menu really quits.
+let tray: Tray | null = null
+let quitting = false
+let closeToTray = process.platform === 'win32' && !process.env.QUAREL_USER_DATA
+const desktopPrefsFile = () => join(app.getPath('userData'), 'desktop-prefs.json')
+
+async function loadDesktopPrefs() {
+  try {
+    const p = JSON.parse(await readFile(desktopPrefsFile(), 'utf8'))
+    if (typeof p.closeToTray === 'boolean') closeToTray = p.closeToTray
+  } catch {
+    /* defaults */
+  }
+}
+
+function showWindow() {
+  if (!win) return createWindow()
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+function updateTray() {
+  if (closeToTray && !tray) {
+    const icon = nativeImage.createFromPath(join(__dirname, '..', 'dist', 'icons', 'icon-192.png')).resize({ width: 32, height: 32 })
+    tray = new Tray(icon)
+    tray.setToolTip('Quarel')
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Ouvrir Quarel', click: showWindow },
+      { type: 'separator' },
+      { label: 'Quitter Quarel', click: () => { quitting = true; app.quit() } },
+    ]))
+    tray.on('click', showWindow)
+  } else if (!closeToTray && tray) {
+    tray.destroy()
+    tray = null
+  }
+}
+
+app.on('before-quit', () => { quitting = true }) // also when an update restarts Quarel
+
+ipcMain.handle('app:close-to-tray', async (e, on?: boolean) => {
+  fromApp(e)
+  if (typeof on === 'boolean') {
+    closeToTray = on
+    await writeFile(desktopPrefsFile(), JSON.stringify({ closeToTray }), { mode: 0o600 })
+    updateTray()
+  }
+  return closeToTray
+})
+
+ipcMain.handle('app:show', (e) => {
+  fromApp(e)
+  showWindow()
+})
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1280,
@@ -93,6 +149,13 @@ function createWindow() {
       openExternal(url)
     }
   })
+  win.on('close', (e) => {
+    if (!quitting && closeToTray && tray) {
+      e.preventDefault()
+      win?.hide()
+    }
+  })
+  win.on('closed', () => { win = null })
   win.loadURL(devURL || APP_ORIGIN + '/index.html')
 }
 
@@ -402,7 +465,9 @@ app.whenReady().then(async () => {
   // Microphone, camera and notifications are needed later (voice, calls).
   const allowed = new Set(['media', 'display-capture', 'notifications', 'clipboard-sanitized-write', 'fullscreen'])
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)))
+  await loadDesktopPrefs()
   createWindow()
+  updateTray()
   setupUpdates(fromApp)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

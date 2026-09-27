@@ -188,6 +188,20 @@ test('settings: profile, security, presence, privacy, devices, deletion', async 
   await settings.getByLabel('Caméra').selectOption({ index: (await cams.count()) - 1 })
   expect(await page.evaluate(() => localStorage.getItem('quarel.pref.media.videoinput'))).not.toBe('""')
 
+  // Closing leaves Quarel in the notification area (option, off in tests by default).
+  await settings.getByRole('button', { name: 'À propos' }).click()
+  const tray = settings.getByRole('checkbox', { name: /Réduire dans la zone de notification/ })
+  await expect(tray).not.toBeChecked()
+  await tray.click()
+  await expect(tray).toBeChecked()
+  const visible = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.isVisible()))
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+  await expect.poll(visible).toEqual([false]) // hidden, still running
+  await page.evaluate(() => (window as unknown as { quarelDesktop: { showWindow(): Promise<void> } }).quarelDesktop.showWindow())
+  await expect.poll(visible).toEqual([true])
+  await tray.click()
+  await expect(tray).not.toBeChecked()
+
   // Account deletion: back to the sign-in screen; the account is gone.
   await settings.getByRole('button', { name: 'Sécurité' }).click()
   await settings.getByRole('button', { name: 'Supprimer', exact: true }).click()

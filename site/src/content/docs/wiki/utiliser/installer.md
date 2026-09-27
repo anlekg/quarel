@@ -37,3 +37,10 @@ Chaque mise à jour est **signée** par la clé de publication de Quarel : l’a
 - Linux : supprimez l’AppImage, ou `sudo apt remove quarel`.
 
 Vos données locales (clés, historique des messages privés) sont dans `%APPDATA%\quarel-client` (Windows) ou `~/.config/quarel-client` (Linux). Sans elles, vous retrouvez tout avec votre [phrase de récupération](/wiki/utiliser/messages-prives/#phrase-de-récupération) ou un autre appareil validé.
+
+## Fermer ou réduire
+
+Sous Windows, la croix **cache Quarel près de l’horloge** (zone de notification) : messages, notifications et appels continuent d’arriver ; un clic sur l’icône rouvre la fenêtre, et **Quitter Quarel** dans son menu la ferme vraiment. Réglage : Paramètres › À propos › « Réduire dans la zone de notification à la fermeture » (désactivé par défaut sous Linux).
+
+Les **mises à jour** se téléchargent seules ; « Redémarrer » (ou la prochaine fermeture) les installe sans fenêtre d’installation, puis Quarel se rouvre.
+

@@ -56,6 +56,8 @@ interface DesktopBridge {
   }
   onInvite(cb: (link: string) => void): () => void
   pinServer(host: string, sid: string): Promise<void>
+  closeToTray(on?: boolean): Promise<boolean>
+  showWindow(): Promise<void>
   screenSources(): Promise<ScreenSource[]>
   chooseScreenSource(id: string): Promise<void>
   checkServer(host: string, port: number, sid: string): Promise<'authority' | 'binding' | 'mismatch' | 'unreachable'>
@@ -319,4 +321,15 @@ export async function install() {
   if (outcome === 'accepted') installPrompt = null
   installListeners.forEach((l) => l())
   return outcome === 'accepted'
+}
+
+// Desktop: closing the window leaves Quarel in the notification area (null: web).
+export async function closeToTray(on?: boolean): Promise<boolean | null> {
+  return desktop ? desktop.closeToTray(on) : null
+}
+
+// Brings the window back (hidden in the notification area, minimized…).
+export function showWindow() {
+  if (desktop) desktop.showWindow().catch(() => {})
+  else window.focus()
 }

@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('quarelDesktop', {
   checkServer: (host: string, port: number, sid: string) => ipcRenderer.invoke('tls:check', host, port, sid),
   tlsMode: (host: string, sid: string) => ipcRenderer.invoke('tls:mode', host, sid),
   forgetServer: (host: string) => ipcRenderer.invoke('tls:forget', host),
+  closeToTray: (on?: boolean) => ipcRenderer.invoke('app:close-to-tray', on),
+  showWindow: () => ipcRenderer.invoke('app:show'),
   screenSources: () => ipcRenderer.invoke('screen:sources'),
   chooseScreenSource: (id: string) => ipcRenderer.invoke('screen:choose', id),
 })
