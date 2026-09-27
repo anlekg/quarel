@@ -89,7 +89,12 @@ func (s *Server) readyPayload(ctx context.Context, m *member) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
+	theme, err := s.serverTheme(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ready := s.memberState(ps, m.ID)
+	ready["theme"] = theme
 	ready["member"], ready["server"], ready["members"], ready["roles"] = me, info, members, roles
 	ready["read_states"], ready["notification_settings"], ready["emojis"] = readStates, notifications, emojis
 	return ready, nil

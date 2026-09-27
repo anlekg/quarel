@@ -148,6 +148,15 @@
 - [x] **P1** Client web *(livré le 2026-09-25, `docs/tests/client-etape-7.md` : serveurs à certificat reconnu, liens d'invitation web, stockage chiffré, application installable, affichage téléphone)*
 - [x] **P2** Application mobile *(décision du CP, 2026-09-27 : l'application web installable (PWA) tient lieu d'application mobile, avec les notifications push ; pas d'application des stores)*
 
+### C1. Bloc cosmétique (demande du CP, 2026-09-27 ; livré le 2026-09-27, `docs/tests/cosmetique.md`)
+
+- [x] **Mon CSS** : CSS libre dans mon application (bureau ou navigateur), sans filtre, avec un mode sans échec
+- [x] **Thème d'un serveur communautaire** (« Gérer le serveur ») : couleurs, dégradé, image de fond, police, CSS filtré ; appliqué à la zone du serveur (salons, messages, membres, vocal)
+- [x] **Priorité** : le thème d'un serveur passe avant mon CSS (réglage coché par défaut) ; ignorer le thème d'un serveur, ou ceux de tout le monde
+- [x] **Profil d'identité** : thème de la carte de profil et bannière
+- [x] **Profil par serveur** : avatar, bannière, présentation et thème propres à un serveur ; retirables par la modération
+- [x] **Carte de profil** dans l'application (clic sur une personne)
+
 ---
 
 ## Ordre de développement proposé

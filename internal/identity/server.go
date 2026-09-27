@@ -309,11 +309,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/me/email", s.authed(s.handleChangeEmail))
 	mux.HandleFunc("POST /v1/me/email/confirm", s.authed(s.handleConfirmEmail))
 	mux.HandleFunc("PATCH /v1/me/profile", s.authed(s.handleUpdateProfile))
-	mux.HandleFunc("PUT /v1/me/avatar", s.authed(s.handleSetAvatar))
-	mux.HandleFunc("DELETE /v1/me/avatar", s.authed(s.handleDeleteAvatar))
+	mux.HandleFunc("PUT /v1/me/avatar", s.authed(s.handleSetImage("avatar")))
+	mux.HandleFunc("DELETE /v1/me/avatar", s.authed(s.handleDeleteImage("avatar")))
+	mux.HandleFunc("PUT /v1/me/banner", s.authed(s.handleSetImage("banner")))
+	mux.HandleFunc("DELETE /v1/me/banner", s.authed(s.handleDeleteImage("banner")))
 	mux.HandleFunc("PUT /v1/me/presence", s.authed(s.handleSetPresence))
 	mux.HandleFunc("GET /v1/users/{id}/profile", s.handleProfile)
-	mux.HandleFunc("GET /v1/users/{id}/avatar", s.handleAvatar)
+	mux.HandleFunc("GET /v1/users/{id}/avatar", s.handleImage("avatar"))
+	mux.HandleFunc("GET /v1/users/{id}/banner", s.handleImage("banner"))
 	mux.HandleFunc("GET /v1/blocks", s.authed(s.handleListBlocks))
 	mux.HandleFunc("POST /v1/blocks", s.authed(s.handleBlock))
 	mux.HandleFunc("PUT /v1/blocks/{id}", s.authed(s.handleBlock))
@@ -376,7 +379,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/gateway", s.handleGateway)
 	uploads := func(r *http.Request) bool { // file copies, backups, avatars
 		p := r.URL.Path
-		return strings.Contains(p, "/files") || p == "/v1/backup" || p == "/v1/me/avatar" || p == "/v1/to-device"
+		return strings.Contains(p, "/files") || p == "/v1/backup" || p == "/v1/me/avatar" || p == "/v1/me/banner" || p == "/v1/to-device"
 	}
 	gateway := func(r *http.Request) bool { return r.URL.Path == "/v1/gateway" }
 	return httpapi.CORS(s.limit.global.Wrap(s.byIP, httpapi.BodyDeadline(mux, 30*time.Second, 15*time.Minute, uploads, gateway)))

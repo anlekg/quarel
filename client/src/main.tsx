@@ -5,7 +5,11 @@ import { App } from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ContextMenuHost } from './components/ContextMenu'
 import { ConfirmHost } from './components/ConfirmDialog'
+import { ThemeHost } from './components/ThemeHost'
 import { isDesktop } from './platform'
+import { startThemes } from './state/themes'
+
+startThemes()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -13,6 +17,7 @@ createRoot(document.getElementById('root')!).render(
       <App />
       <ContextMenuHost />
       <ConfirmHost />
+      <ThemeHost />
     </ErrorBoundary>
   </StrictMode>,
 )

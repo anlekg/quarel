@@ -48,6 +48,8 @@ const (
 	auditVoiceSpeaker     = "voice_speaker"
 	auditEmojiCreate      = "emoji_create"
 	auditEmojiDelete      = "emoji_delete"
+	auditProfileReset     = "member_profile_reset" // a member's profile on this server, by the moderation
+	auditServerTheme      = "server_theme"
 )
 
 type auditEntry struct {

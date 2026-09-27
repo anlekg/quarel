@@ -156,7 +156,8 @@ function createWindow() {
     }
   })
   win.on('closed', () => { win = null })
-  win.loadURL(devURL || APP_ORIGIN + '/index.html')
+  // --safe-mode: custom CSS off for this launch (state/themes.ts reads ?safe).
+  win.loadURL((devURL || APP_ORIGIN + '/index.html') + (process.argv.includes('--safe-mode') ? '?safe' : ''))
 }
 
 function isAppURL(url: string) {

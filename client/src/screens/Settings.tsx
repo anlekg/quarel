@@ -16,9 +16,10 @@ import { listDevices, useSocial } from '../state/social'
 import { ApproveDialog, RecoverySection } from './Security'
 import { PrivacySection, ProfileSection, SecuritySection } from './SettingsAccount'
 import { MediaSection } from './SettingsMedia'
+import { AppearanceSection } from './Appearance'
 import { AboutSection } from './Update'
 
-type Section = 'profile' | 'security' | 'devices' | 'recovery' | 'privacy' | 'media' | 'notifications' | 'about' | 'invites'
+type Section = 'profile' | 'security' | 'devices' | 'recovery' | 'privacy' | 'media' | 'notifications' | 'appearance' | 'about' | 'invites'
 
 const dateFmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long' })
 const dateTimeFmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
@@ -47,6 +48,7 @@ export function Settings({ account, onClose }: { account: Account; onClose: () =
         <span className="group">APPLICATION</span>
         {nav('media', 'Voix et vidéo')}
         {nav('notifications', 'Notifications')}
+        {nav('appearance', 'Apparence')}
         {nav('about', 'À propos')}
         <InstallButton />
         <span className="group" />
@@ -60,6 +62,7 @@ export function Settings({ account, onClose }: { account: Account; onClose: () =
                 : section === 'privacy' ? <PrivacySection account={account} />
                   : section === 'media' ? <MediaSection />
                     : section === 'notifications' ? <NotificationsSection account={account} />
+                      : section === 'appearance' ? <AppearanceSection />
                       : section === 'about' ? <AboutSection version={__APP_VERSION__} /> : <InvitesSection account={account} />}
       </main>
       <button className="icon-btn settings-close" aria-label="Fermer les paramètres" title="Fermer (Échap)" onClick={onClose}>

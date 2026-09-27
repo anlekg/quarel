@@ -294,6 +294,29 @@ UPDATE channel_overrides SET deny = deny | 1048576 WHERE deny & 32 != 0;
 	`
 ALTER TABLE channels ADD COLUMN archived_at INTEGER;
 `,
+	// 14 (cosmetics, 2026-09-27): each member's profile on this server (bio,
+	// theme of the card — internal/theme —, avatar and banner) and the
+	// server's own theme's background image. *_at: versions for the apps' caches.
+	`
+ALTER TABLE members ADD COLUMN bio TEXT NOT NULL DEFAULT '';
+ALTER TABLE members ADD COLUMN theme TEXT NOT NULL DEFAULT '';
+ALTER TABLE members ADD COLUMN profile_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE members ADD COLUMN avatar_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE members ADD COLUMN banner_at INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE member_images (
+	member_id    TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+	kind         TEXT NOT NULL CHECK (kind IN ('avatar', 'banner')),
+	content_type TEXT NOT NULL,
+	data         BLOB NOT NULL,
+	PRIMARY KEY (member_id, kind)
+);
+CREATE TABLE server_images (
+	kind         TEXT PRIMARY KEY CHECK (kind IN ('background')),
+	content_type TEXT NOT NULL,
+	data         BLOB NOT NULL,
+	updated_at   INTEGER NOT NULL
+);
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

@@ -275,6 +275,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/server", s.handleServerInfo)
 	mux.HandleFunc("GET /v1/server/network", s.authed(s.needPerm(permManageServer, s.handleNetwork)))
 	mux.HandleFunc("PATCH /v1/server", s.authed(s.needPerm(permManageServer, s.handleServerUpdate)))
+	mux.HandleFunc("GET /v1/server/theme", s.authed(s.handleGetTheme))
+	mux.HandleFunc("PUT /v1/server/theme", s.authed(s.needPerm(permManageServer, s.handleSetTheme)))
+	mux.HandleFunc("GET /v1/server/theme/background", s.authed(s.handleBackground))
+	mux.HandleFunc("PUT /v1/server/theme/background", s.authed(s.needPerm(permManageServer, s.handleSetBackground)))
+	mux.HandleFunc("DELETE /v1/server/theme/background", s.authed(s.needPerm(permManageServer, s.handleSetBackground)))
 	mux.HandleFunc("GET /v1/server/automod", s.authed(s.needPerm(permManageServer, s.handleAutoMod)))
 	mux.HandleFunc("PUT /v1/server/automod", s.authed(s.needPerm(permManageServer, s.handleAutoMod)))
 
@@ -286,6 +291,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/members/@me", s.authed(s.handleMe))
 	mux.HandleFunc("GET /v1/members/@me/export", s.authed(s.handleExport))
 	mux.HandleFunc("PATCH /v1/members/@me", s.authed(s.handleUpdateMe))
+	mux.HandleFunc("PUT /v1/members/@me/avatar", s.authed(s.handleSetMemberImage("avatar")))
+	mux.HandleFunc("DELETE /v1/members/@me/avatar", s.authed(s.handleSetMemberImage("avatar")))
+	mux.HandleFunc("PUT /v1/members/@me/banner", s.authed(s.handleSetMemberImage("banner")))
+	mux.HandleFunc("DELETE /v1/members/@me/banner", s.authed(s.handleSetMemberImage("banner")))
+	mux.HandleFunc("GET /v1/members/{id}/profile", s.authed(s.handleMemberProfile))
+	mux.HandleFunc("DELETE /v1/members/{id}/profile", s.authed(s.handleResetProfile))
+	mux.HandleFunc("GET /v1/members/{id}/avatar", s.authed(s.handleMemberImage("avatar")))
+	mux.HandleFunc("GET /v1/members/{id}/banner", s.authed(s.handleMemberImage("banner")))
 	mux.HandleFunc("DELETE /v1/members/@me", s.authed(s.handleLeave))
 	mux.HandleFunc("GET /v1/members/@me/permissions", s.authed(s.handleMyPermissions))
 	mux.HandleFunc("PUT /v1/members/{id}/roles/{role}", s.authed(s.handleMemberRole))
@@ -383,7 +396,10 @@ func (s *Server) Handler() http.Handler {
 		api.ServeHTTP(w, r)
 	})
 	return s.limit.global.Wrap(s.byIP, httpapi.BodyDeadline(routed, 30*time.Second, 15*time.Minute,
-		func(r *http.Request) bool { return strings.HasSuffix(r.URL.Path, "/attachments") },
+		func(r *http.Request) bool { // file and image uploads
+			p := r.URL.Path
+			return strings.HasSuffix(p, "/attachments") || strings.HasSuffix(p, "/avatar") || strings.HasSuffix(p, "/banner") || strings.HasSuffix(p, "/background")
+		},
 		func(r *http.Request) bool {
 			return r.URL.Path == "/v1/gateway" || strings.HasPrefix(r.URL.Path, "/lk/")
 		}))

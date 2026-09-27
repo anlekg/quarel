@@ -59,11 +59,23 @@ export function memberColor(r: Ready, m: Member | undefined): string | undefined
   return roleColor(roles[0]?.color ?? 0)
 }
 
-export function memberAvatar(m: Member): string | undefined {
+// The identity service of a member (people only: bots and webhooks have none).
+export function memberIdentity(m: Member): string | undefined {
   if (m.bot || m.issuer.startsWith('#')) return undefined
   const host = m.issuer.replace(/:\d+$/, '')
   const local = host === 'localhost' || /^127\./.test(host) || host === '[::1]'
-  return (local ? 'http://' : 'https://') + m.issuer + '/v1/users/' + encodeURIComponent(m.subject) + '/avatar'
+  return (local ? 'http://' : 'https://') + m.issuer
+}
+
+// A member's picture: the one of their profile on this server when they set
+// one (downloaded with the session: conn), else their identity service's.
+export function memberAvatar(m: Member, conn?: { imageURL(path: string): string | undefined }): string | undefined {
+  if (m.avatar_v && conn) {
+    const own = conn.imageURL('/v1/members/' + m.id + '/avatar?v=' + m.avatar_v)
+    if (own) return own
+  }
+  const id = memberIdentity(m)
+  return id && id + '/v1/users/' + encodeURIComponent(m.subject) + '/avatar'
 }
 
 // --- administration ---

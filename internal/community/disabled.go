@@ -252,8 +252,12 @@ func (s *Server) ApplyDeleted(ctx context.Context, issuer string, accounts []end
 			tx.Rollback()
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE members SET handle = '', nickname = NULL, is_owner = 0,
+		if _, err := tx.ExecContext(ctx, `UPDATE members SET handle = '', nickname = NULL, is_owner = 0, bio = '', theme = '', profile_at = 0, avatar_at = 0, banner_at = 0,
 			phone_hash = CASE WHEN EXISTS (SELECT 1 FROM bans WHERE member_id = members.id) THEN phone_hash END WHERE id = ?`, h.id); err != nil {
+			tx.Rollback()
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM member_images WHERE member_id = ?`, h.id); err != nil {
 			tx.Rollback()
 			return err
 		}

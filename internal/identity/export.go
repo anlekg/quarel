@@ -23,21 +23,24 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	x := &exporter{ctx: ctx, db: s.db}
 	q := x.rows
-	var avatar map[string]any
-	var ct string
-	var data []byte
-	var at int64
-	if s.db.QueryRowContext(ctx, `SELECT content_type, data, updated_at FROM avatars WHERE user_id = ?`, me).Scan(&ct, &data, &at) == nil {
-		avatar = map[string]any{"content_type": ct, "updated_at": time.Unix(at, 0).UTC(), "data_base64": base64.StdEncoding.EncodeToString(data)}
+	image := func(table string) map[string]any {
+		var ct string
+		var data []byte
+		var at int64
+		if s.db.QueryRowContext(ctx, `SELECT content_type, data, updated_at FROM `+table+` WHERE user_id = ?`, me).Scan(&ct, &data, &at) != nil {
+			return nil
+		}
+		return map[string]any{"content_type": ct, "updated_at": time.Unix(0, at).UTC(), "data_base64": base64.StdEncoding.EncodeToString(data)} // nanoseconds
 	}
 	doc := map[string]any{
 		"format":      "quarel-identity-export-1",
 		"service":     s.cfg.Issuer,
 		"exported_at": s.now().UTC(),
 		"account": first(q(`SELECT id, email, pseudo, created_at, email_verified_at, totp_enabled_at IS NOT NULL AS two_factor,
-			bio, pseudo_changed_at, presence, share_typing, share_read_receipts, friend_requests, invited_by
+			bio, profile_theme, pseudo_changed_at, presence, share_typing, share_read_receipts, friend_requests, invited_by
 			FROM users WHERE id = ?`, me)),
-		"avatar":      avatar,
+		"avatar":      image("avatars"),
+		"banner":      image("banners"),
 		"sessions":    q(`SELECT id, device_name, created_at, last_seen_at FROM sessions WHERE user_id = ? ORDER BY created_at`, me),
 		"master_key":  first(q(`SELECT ed25519, created_at FROM master_keys WHERE user_id = ?`, me)),
 		"device_keys": q(`SELECT session_id AS device_id, curve25519, ed25519, master_signature IS NOT NULL AS verified, created_at FROM device_keys WHERE user_id = ?`, me),

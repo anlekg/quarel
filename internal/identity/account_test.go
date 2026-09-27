@@ -191,6 +191,33 @@ func TestProfileAndAvatar(t *testing.T) {
 	}
 	e.expect(204, "", e.call("DELETE", "/v1/me/avatar", lr.SessionToken, nil, nil))
 	e.expect(404, "not_found", e.call("GET", "/v1/users/"+lr.User.ID+"/avatar", "", nil, nil))
+
+	// Banner (2 MB) and theme of the profile card, public with the profile.
+	req, _ := http.NewRequest("PUT", e.http.URL+"/v1/me/banner", bytes.NewReader(append(png, bytes.Repeat([]byte{2}, 1<<20)...)))
+	req.Header.Set("Authorization", "Bearer "+lr.SessionToken)
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("banner upload: %v %v", resp, err)
+	}
+	theme := map[string]any{"theme": map[string]any{"colors": map[string]string{"accent": "#ff8800"}, "font": "serif", "css": ".card { color: #fff }"}}
+	e.expect(200, "", e.call("PATCH", "/v1/me/profile", lr.SessionToken, theme, nil))
+	e.expect(400, "invalid_theme", e.call("PATCH", "/v1/me/profile", lr.SessionToken,
+		map[string]any{"theme": map[string]any{"css": ".x { background: url(https://example.org/t.png) }"}}, nil))
+	e.expect(200, "", e.call("GET", "/v1/users/"+lr.User.ID+"/profile", "", nil, &p))
+	if p.BannerURL == nil || !strings.Contains(string(p.Theme), `"accent":"#ff8800"`) || p.Bio != "Joueur de tarot." {
+		t.Fatalf("profile = %+v %s", p, p.Theme)
+	}
+	e.expect(200, "", e.call("GET", *p.BannerURL, "", nil, nil))
+	e.expect(200, "", e.call("PATCH", "/v1/me/profile", lr.SessionToken, map[string]any{"theme": nil}, &p)) // null: unchanged
+	if p.Theme == nil {
+		t.Fatal("null removed the theme")
+	}
+	p = profileJSON{}
+	e.expect(200, "", e.call("PATCH", "/v1/me/profile", lr.SessionToken, map[string]any{"theme": map[string]any{}}, &p)) // {}: removed
+	if p.Theme != nil {
+		t.Fatalf("theme not removed: %s", p.Theme)
+	}
+	e.expect(204, "", e.call("DELETE", "/v1/me/banner", lr.SessionToken, nil, nil))
+	e.expect(404, "not_found", e.call("GET", "/v1/users/"+lr.User.ID+"/banner", "", nil, nil))
 }
 
 func TestBlocks(t *testing.T) {

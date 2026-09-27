@@ -4,6 +4,16 @@ Quarel est en **version de test** : les versions `0.x` peuvent encore changer en
 
 ## Prochaine version (non publiée)
 
+> **À mettre à jour ensemble.** Serveurs communautaires (schéma 14) et services d'identité (schéma 14) d'abord, application ensuite.
+
+### Personnalisation
+- **Mon CSS** (Paramètres › Apparence) : votre propre CSS dans l'application, sur cet appareil, avec un **mode sans échec** (Ctrl + Maj + 0) si un CSS la rend inutilisable.
+- **Thème d'un serveur** (Paramètres du serveur › Apparence) : couleurs, dégradé, image de fond, police et CSS, sur les salons, les messages, les membres et le vocal du serveur.
+- Le thème d'un serveur **passe avant votre CSS** par défaut ; on peut inverser, ignorer le thème d'un serveur, ou ceux de tout le monde.
+- **Cartes de profil** : un clic sur une personne montre sa bannière, son image, ses rôles et sa présentation, dans son thème.
+- **Profil par serveur** : surnom, présentation, image, bannière et thème propres à un serveur (menu du serveur › Mon profil sur ce serveur) ; la modération peut le réinitialiser.
+- **Sécurité** : le CSS des serveurs et des cartes est filtré par votre application (rien n'est chargé depuis un autre site : votre adresse IP reste privée ; pas de faux texte ni de faux boutons ; rien hors de sa zone).
+
 ### Outils
 - **Migrer depuis Discord** : `tools/discord-import` recrée sur un serveur Quarel les rôles (permissions comprises), catégories, salons, droits des salons et emojis d'un serveur Discord, avec un rapport de ce qui n'a pas d'équivalent. Essai sans rien modifier, relançable sans doublon.
 

@@ -1,5 +1,7 @@
 // An open text channel: history, composer, typing indicator, read state.
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { openProfile } from '../components/ProfileCard'
 import { fetchBlob } from '../api/http'
 import type { Attachment, Channel, Message, Ready } from '../api/community'
 import { Avatar } from '../components/Avatar'
@@ -243,7 +245,7 @@ function MessageList({ conn, ready, channel, messages, hasMore, loading, names, 
           </div>
         </Dialog>
       )}
-      {lightbox && <div className="lightbox" onClick={() => setLightbox(null)}><img src={lightbox} alt="" /></div>}
+      {lightbox && createPortal(<div className="lightbox" onClick={() => setLightbox(null)}><img src={lightbox} alt="" /></div>, document.body)}
     </div>
   )
 }
@@ -317,7 +319,8 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
         {grouped
           ? <span className="t" title={formatFull(m.created_at)}>{formatTime(m.created_at)}</span>
           : author
-            ? <Avatar id={author.subject || author.id} name={name} src={memberAvatar(author)} size={40} />
+            ? <span className="avatar-btn" role="button" tabIndex={-1} aria-label={'Profil de ' + name} onClick={(e) => author && !m.webhook && openProfile(e, author)}>
+              <Avatar id={author.subject || author.id} name={name} src={memberAvatar(author, conn)} size={40} /></span>
             : <Avatar id={m.author_id} name={m.webhook?.name ?? '?'} size={40} />}
       </div>
       <div className="body">
@@ -332,7 +335,8 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
         )}
         {!grouped && (
           <div className="meta">
-            <span className="author" style={{ color: memberColor(ready, author) }} onContextMenu={authorMenu}>{name}</span>
+            <span className="author" role="button" style={{ color: memberColor(ready, author) }} onContextMenu={authorMenu}
+              onClick={(e) => author && !m.webhook && openProfile(e, author)}>{name}</span>
             {m.webhook ? <span className="bot-tag">WEBHOOK</span> : author?.bot && <span className="bot-tag">BOT</span>}
             <span className="when" title={formatFull(m.created_at)}>{formatStamp(m.created_at)}</span>
           </div>

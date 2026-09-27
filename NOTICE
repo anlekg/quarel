@@ -31,6 +31,8 @@ This product includes or bundles third-party software:
   their own licenses, listed in the LICENSES.chromium.html file of each build),
   React (MIT), @noble/ed25519, @noble/hashes and @noble/ciphers (MIT, Paul Miller),
   qrcode-generator (MIT, Kazuhiko Arase),
+  postcss (MIT, Andrey Sitnik; CSS filter of the themes) with nanoid (MIT), picocolors (ISC)
+  and source-map-js (BSD-3-Clause),
   electron-updater (MIT) with js-yaml, fs-extra, builder-util-runtime, lazy-val,
   lodash.isequal, lodash.escaperegexp, debug, ms (MIT), semver, graceful-fs (ISC)
   and sax (Blue Oak Model License 1.0.0, permissive),

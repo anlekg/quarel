@@ -6,6 +6,13 @@
 @import '@fontsource/space-grotesk/600.css';
 @import '@fontsource/space-grotesk/700.css';
 
+/* Cascade layers (cosmetics block): the app, then my own CSS and the themes
+   of the others, in the order chosen in Settings › Appearance (state/themes.ts
+   puts each in "low" or "high"). */
+@layer app, low, high;
+
+@layer app {
+
 /* Colors from the validated mockups (dark theme). */
 :root {
   --bg-deep: #0d0f12;
@@ -165,6 +172,7 @@ p { margin: 0; }
   border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 16px;
 }
 .dialog h3 { font-size: 20px; }
+.dialog.wide { width: 820px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .confirm-dialog { display: flex; flex-direction: column; gap: 16px; }
 .confirm-text { color: var(--text-2); line-height: 1.5; }
@@ -746,3 +754,66 @@ code.secret { font-family: ui-monospace, monospace; letter-spacing: .06em; word-
 /* --- archived threads --- */
 .archived-note { margin: 0 16px 8px; padding: 8px 12px; border-radius: 8px; background: var(--bg-2); color: var(--text-3); font-size: 13px; }
 .archived-tag { margin-left: 8px; padding: 1px 6px; border-radius: 6px; background: var(--bg-3); color: var(--text-3); font-size: 11px; font-weight: 600; vertical-align: middle; }
+
+/* Themes (state/themes.ts, lib/themecss.ts). The values of the app's colours
+   at the root (my own CSS included), for the areas a theme must not change. */
+:root {
+  --q-root-bg-deep: var(--bg-deep);
+  --q-root-bg: var(--bg);
+  --q-root-bg-1: var(--bg-1);
+  --q-root-bg-2: var(--bg-2);
+  --q-root-bg-3: var(--bg-3);
+  --q-root-line: var(--line);
+  --q-root-text: var(--text);
+  --q-root-text-2: var(--text-2);
+  --q-root-text-3: var(--text-3);
+  --q-root-accent: var(--accent);
+  --q-root-accent-ink: var(--accent-ink);
+  --q-root-accent-text: var(--accent-text);
+  --q-root-font: var(--font);
+  --q-root-font-display: var(--font-display);
+}
+/* The app's own elements inside a themed area (the user bar in a server's
+   column): my colours, and above anything the theme draws. */
+[data-qnotheme] { --bg-deep: var(--q-root-bg-deep); --bg: var(--q-root-bg); --bg-1: var(--q-root-bg-1); --bg-2: var(--q-root-bg-2); --bg-3: var(--q-root-bg-3); --line: var(--q-root-line); --text: var(--q-root-text); --text-2: var(--q-root-text-2); --text-3: var(--q-root-text-3); --accent: var(--q-root-accent); --accent-ink: var(--q-root-accent-ink); --accent-text: var(--q-root-accent-text); --font: var(--q-root-font); --font-display: var(--q-root-font-display); font-family: var(--font); }
+.userbar-zone { position: relative; z-index: 2; }
+/* A server's area: its theme draws inside its panels, never over the rest. */
+.server-zone { display: contents; }
+.avatar-btn { display: inline-flex; cursor: pointer; border-radius: 50%; }
+/* Theme editors (screens/Appearance.tsx). */
+textarea.css-code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; line-height: 1.45; tab-size: 2; letter-spacing: 0; text-align: left; }
+.theme-editor { display: flex; flex-direction: column; gap: 14px; }
+.theme-colors { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.theme-color { display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: var(--bg-3); border-radius: 8px; font-size: 13px; }
+.theme-color input[type="color"], .theme-gradient input[type="color"] { width: 30px; height: 26px; padding: 0; border: 1px solid var(--line-strong); border-radius: 6px; background: none; cursor: pointer; }
+.theme-gradient { display: flex; align-items: center; gap: 10px; }
+.theme-gradient input[type="range"] { flex: 1; max-width: 260px; accent-color: var(--accent); }
+.image-picker { display: flex; align-items: center; gap: 8px; }
+.image-picker .grow { display: flex; flex-direction: column; gap: 2px; }
+.theme-with-preview { display: flex; gap: 20px; align-items: flex-start; }
+.theme-with-preview > .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.theme-with-preview > .profile-card { position: sticky; top: 0; flex-shrink: 0; }
+@media (max-width: 900px) { .theme-with-preview { flex-direction: column-reverse; } }
+.msg .author[role="button"] { cursor: pointer; }
+.msg .author[role="button"]:hover { text-decoration: underline; }
+/* Profile cards (components/ProfileCard.tsx). */
+.card-popover { position: fixed; z-index: 70; }
+.profile-card { width: 300px; background: var(--bg-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .5); font-family: var(--font); }
+.profile-card .pc-banner { height: 96px; background: linear-gradient(135deg, var(--accent-soft), var(--bg-3)); }
+.profile-card .pc-banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.profile-card .pc-body { padding: 0 16px 14px; display: flex; flex-direction: column; gap: 4px; }
+.profile-card .pc-avatar { margin-top: -40px; width: 84px; height: 84px; border-radius: 50%; border: 4px solid var(--bg-2); background: var(--bg-2); display: flex; }
+.profile-card .pc-avatar .avatar { border-radius: 50%; }
+.profile-card .pc-name { font-family: var(--font-display); font-weight: 700; font-size: 19px; margin-top: 4px; }
+.profile-card .pc-handle { font-size: 13px; color: var(--text-3); }
+.profile-card .pc-roles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.profile-card .pc-role { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; background: var(--bg-3); font-size: 12px; }
+.profile-card .pc-role i { width: 10px; height: 10px; border-radius: 50%; }
+.profile-card .pc-bio { margin-top: 10px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); }
+.profile-card .pc-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--bg-1); }
+.safe-banner { position: fixed; z-index: 1002; top: 10px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px 8px 16px; background: var(--bg-3); color: var(--text); border: 1px solid var(--line-strong); border-radius: 10px; font-size: 13px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .4); max-width: calc(100vw - 32px); }
+.server-zone > .sidebar, .server-zone > .content { contain: paint; }
+}

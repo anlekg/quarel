@@ -10,6 +10,8 @@ import { errorMessage } from '../lib/errors'
 import { identityClient, signOut, updateUser, type Account } from '../state/account'
 import { engine, refreshBlocks } from '../state/social'
 import { saveJSON } from '../lib/download'
+import { imageLimits, prepareImage } from '../lib/image'
+import { IdentityThemeSection } from './Appearance'
 
 const api = (a: Account) => identityClient(a)
 
@@ -44,18 +46,7 @@ function useAction() {
 // --- profile ---
 
 // Images larger than the service accepts (1 MB) or than useful are reduced here.
-async function prepareAvatar(file: File): Promise<Blob> {
-  const bitmap = await createImageBitmap(file).catch(() => null)
-  if (!bitmap) throw new Error('image')
-  if (file.size <= 1 << 20 && bitmap.width <= 1024 && bitmap.height <= 1024) return file
-  const side = Math.min(512, Math.max(bitmap.width, bitmap.height))
-  const scale = side / Math.max(bitmap.width, bitmap.height)
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.round(bitmap.width * scale)
-  canvas.height = Math.round(bitmap.height * scale)
-  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('image'))), 'image/webp', 0.9))
-}
+const prepareAvatar = (f: File) => prepareImage(f, ...imageLimits.avatar)
 
 export function ProfileSection({ account }: { account: Account }) {
   const u = account.user
@@ -68,7 +59,7 @@ export function ProfileSection({ account }: { account: Account }) {
   const input = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    api(account).profile(u.id).then((p) => {
+    api(account).profile(u.id, true).then((p) => {
       setProfile(p)
       setBio(p.bio)
     }, () => {})
@@ -143,6 +134,8 @@ export function ProfileSection({ account }: { account: Account }) {
         <Alert kind="info">{about.info}</Alert>
         <div><Submit busy={about.busy} className="btn btn-primary btn-sm" disabled={!profile || bio === profile.bio}>Enregistrer la présentation</Submit></div>
       </form>
+
+      <IdentityThemeSection account={account} profile={profile} onProfile={setProfile} />
     </>
   )
 }

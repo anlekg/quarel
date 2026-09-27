@@ -47,7 +47,7 @@ export function VoiceMembers({ ready, channel, conn }: { ready: Ready; channel: 
         return (
           <span key={s.member_id} className={'vu' + (speaking.has(s.member_id) ? ' speaking' : '')}
             onContextMenu={(e) => m && showMenu(e, memberMenuItems(conn, ready, m, setDialog))}>
-            <span className="mini avatar-wrap">{m && <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={20} />}</span>
+            <span className="mini avatar-wrap">{m && <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m, conn)} size={20} />}</span>
             <span className="n">{m?.display_name ?? '…'}</span>
             {s.video && <Camera size={13} aria-label="caméra" />}
             {s.screen && <Monitor size={13} aria-label="partage d'écran" />}
@@ -167,9 +167,9 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
               </div>
             ))}
             {here.participants.filter((id) => onStage(id) && !here.videos.some((t) => t.source === 'camera' && (t.local ? ready.member.id : t.memberId) === id))
-              .map((id) => !stage ? <PersonTile key={id} m={name(id)} state={stateOf(id)} me={id === ready.member.id} speaking={here.speaking.has(id)} onMenu={menu(id)} /> : (
+              .map((id) => !stage ? <PersonTile conn={conn} key={id} m={name(id)} state={stateOf(id)} me={id === ready.member.id} speaking={here.speaking.has(id)} onMenu={menu(id)} /> : (
                 <div key={id} className="stage-slot">
-                  <PersonTile m={name(id)} state={stateOf(id)} me={id === ready.member.id} speaking={here.speaking.has(id)} onMenu={menu(id)} />
+                  <PersonTile conn={conn} m={name(id)} state={stateOf(id)} me={id === ready.member.id} speaking={here.speaking.has(id)} onMenu={menu(id)} />
                   {moderator && id !== ready.member.id && stateOf(id)?.speaker && (
                     <button className="btn btn-ghost btn-sm" onClick={() => act(conn.api((c) => c.moderateVoice(id, { speaker: false })))}>Renvoyer dans le public</button>
                   )}
@@ -228,11 +228,11 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
   )
 }
 
-function PersonTile({ m, state, me, speaking, onMenu }: { m?: Member; state?: VoiceState; me: boolean; speaking: boolean; onMenu?: (e: React.MouseEvent) => void }) {
+function PersonTile({ conn, m, state, me, speaking, onMenu }: { conn: ServerConn; m?: Member; state?: VoiceState; me: boolean; speaking: boolean; onMenu?: (e: React.MouseEvent) => void }) {
   return (
     <div className="tile" onContextMenu={onMenu}>
       <span className={'ring' + (speaking ? ' speaking' : '')}>
-        {m ? <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={88} /> : <Avatar id="?" name="?" size={88} />}
+        {m ? <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m, conn)} size={88} /> : <Avatar id="?" name="?" size={88} />}
       </span>
       <span className="who">
         {(m?.display_name ?? '…') + (me ? ' (vous)' : '')}

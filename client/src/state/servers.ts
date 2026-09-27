@@ -12,7 +12,7 @@ import { deviceKey, signWithDevice } from '../lib/device'
 import { identityLabel } from '../lib/identityURL'
 import { proofHost, proofMessage } from '../lib/proof'
 import { notifyServerMessage } from './notify'
-import type { NotificationSetting } from '../api/community'
+import type { NotificationSetting, ServerTheme } from '../api/community'
 import type { Invite } from '../lib/invite'
 import { checkServer, forgetServerTLS, pinServer, secrets, tlsMode } from '../platform'
 import { identityClient, serverRules, signOut, type Account } from './account'
@@ -254,6 +254,24 @@ export class ServerConn {
     return c
   }
 
+  private imageURLs = new Map<string, string | null>()
+
+  // An image of this server that needs the session (profiles, theme), as a
+  // blob: URL once downloaded; path carries the version (?v=), so a new
+  // version is a new download.
+  imageURL(path: string): string | undefined {
+    const u = this.imageURLs.get(path)
+    if (u) return u
+    if (!this.imageURLs.has(path)) {
+      this.imageURLs.set(path, null)
+      fetchBlob(this.saved.base + path, this.saved.token).then((b) => {
+        this.imageURLs.set(path, URL.createObjectURL(b))
+        this.set({})
+      }, () => {})
+    }
+    return undefined
+  }
+
   emojiURL(id: string): string | undefined {
     const u = this.emojiURLs.get(id)
     if (u) return u
@@ -351,6 +369,8 @@ export class ServerConn {
         return this.set({ ready: { ...r, roles: d as Role[] } })
       case 'EMOJIS_UPDATE':
         return this.set({ ready: { ...r, emojis: d as Emoji[] } })
+      case 'THEME_UPDATE':
+        return this.set({ ready: { ...r, theme: d as ServerTheme } })
       case 'ROLE_DELETE':
         return this.set({ ready: { ...r, roles: r.roles.filter((x) => x.id !== d.id) } })
       case 'SERVER_UPDATE':

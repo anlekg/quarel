@@ -3,6 +3,7 @@
 // bans, audit log, bots. Each section shows only with its permission; the
 // server checks everything again (hierarchy included).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ServerAppearanceSection } from './Appearance'
 import type { AuditEntry, AutoMod, Ban, Channel, Invite, Member, Ready, Role, Webhook } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { Alert, Dialog, Field, Submit } from '../components/ui'
@@ -15,7 +16,7 @@ import { inviteLink } from '../lib/invite'
 import { useServerState, type ServerConn } from '../state/servers'
 import { confirmAction } from '../components/ConfirmDialog'
 
-type Section = 'overview' | 'roles' | 'channels' | 'members' | 'invites' | 'bans' | 'automod' | 'emojis' | 'audit' | 'bots'
+type Section = 'overview' | 'roles' | 'channels' | 'members' | 'invites' | 'bans' | 'automod' | 'emojis' | 'audit' | 'bots' | 'appearance'
 
 const dateTime = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -49,7 +50,7 @@ export function sectionsFor(r: Ready): Section[] {
   if (['manage_roles', 'kick_members', 'ban_members', 'moderate_members'].some((p) => canServer(r, p))) out.push('members')
   if (canServer(r, 'create_invite') || canServer(r, 'manage_server')) out.push('invites')
   if (canServer(r, 'ban_members')) out.push('bans')
-  if (canServer(r, 'manage_server')) out.push('automod', 'emojis')
+  if (canServer(r, 'manage_server')) out.push('automod', 'emojis', 'appearance')
   if (canServer(r, 'view_audit_log')) out.push('audit')
   if (canServer(r, 'manage_server')) out.push('bots')
   return out
@@ -57,7 +58,7 @@ export function sectionsFor(r: Ready): Section[] {
 
 const labels: Record<Section, string> = {
   overview: 'Vue d’ensemble', roles: 'Rôles', channels: 'Salons', members: 'Membres', invites: 'Invitations', bans: 'Bannissements',
-  automod: 'Modération automatique', emojis: 'Emojis', audit: 'Journal de modération', bots: 'Bots',
+  automod: 'Modération automatique', emojis: 'Emojis', appearance: 'Apparence', audit: 'Journal de modération', bots: 'Bots',
 }
 
 export function ServerSettings({ conn, onClose, initial }: { conn: ServerConn; onClose: () => void; initial?: Section }) {
@@ -90,6 +91,7 @@ export function ServerSettings({ conn, onClose, initial }: { conn: ServerConn; o
         {section === 'bans' && <Bans conn={conn} ready={r} />}
         {section === 'automod' && <AutoModSection conn={conn} />}
         {section === 'emojis' && <EmojisSection conn={conn} ready={r} />}
+        {section === 'appearance' && <ServerAppearanceSection conn={conn} ready={r} />}
         {section === 'audit' && <Audit conn={conn} ready={r} />}
         {section === 'bots' && <Bots conn={conn} ready={r} />}
       </main>
@@ -504,7 +506,7 @@ function Members({ conn, ready }: { conn: ServerConn; ready: Ready }) {
       <div className="card">
         {list.map((m) => (
           <div className="card-row" key={m.id}>
-            <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={32} />
+            <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m, conn)} size={32} />
             <div className="grow">
               <span className="title" style={{ color: memberColor(ready, m) }}>{m.display_name}{m.owner && ' 👑'}{m.bot && <span className="bot-tag">BOT</span>}</span>
               <span className="sub">{m.handle}{m.timeout_until && Date.parse(m.timeout_until) > Date.now() ? ' · exclu jusqu’au ' + dateTime.format(new Date(m.timeout_until)) : ''}</span>
@@ -549,7 +551,7 @@ export function MemberDialog({ conn, ready, member, onClose }: { conn: ServerCon
   return (
     <Dialog title={m.display_name} onClose={onClose}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={48} />
+        <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m, conn)} size={48} />
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <b>{m.handle}</b>
           <span className="muted small">Membre depuis le {dateTime.format(new Date(m.joined_at))}</span>
@@ -759,7 +761,7 @@ function Bans({ conn }: { conn: ServerConn; ready: Ready }) {
         <div className="card" data-testid="bans">
           {list.map((b) => (
             <div className="card-row" key={b.member.id}>
-              <Avatar id={b.member.subject || b.member.id} name={b.member.display_name} src={memberAvatar(b.member)} size={32} />
+              <Avatar id={b.member.subject || b.member.id} name={b.member.display_name} src={memberAvatar(b.member, conn)} size={32} />
               <div className="grow">
                 <span className="title">{b.member.display_name}</span>
                 <span className="sub">{b.member.handle} · le {dateTime.format(new Date(b.created_at))}{b.reason ? ' · ' + b.reason : ''}</span>
@@ -969,7 +971,7 @@ const actions: Record<string, string> = {
   server_update: 'a modifié le serveur', invite_delete: 'a révoqué une invitation', bot_create: 'a créé un bot', bot_delete: 'a supprimé un bot',
   bot_token_reset: 'a renouvelé le jeton d’un bot', voice_mute: 'a coupé le micro de', voice_deafen: 'a mis en sourdine',
   voice_move: 'a déplacé', voice_disconnect: 'a déconnecté du vocal',
-  automod_block: 'a refusé un message de', emoji_create: 'a ajouté un emoji', emoji_delete: 'a supprimé un emoji', webhook_create: 'a créé un webhook', webhook_delete: 'a supprimé un webhook', owner_transfer: 'a transmis la propriété du serveur à', owner_reset: 'a retiré le propriétaire (nouveau lien propriétaire créé)',
+  automod_block: 'a refusé un message de', emoji_create: 'a ajouté un emoji', emoji_delete: 'a supprimé un emoji', member_profile_reset: 'a réinitialisé le profil sur ce serveur de', server_theme: 'a modifié le thème du serveur', webhook_create: 'a créé un webhook', webhook_delete: 'a supprimé un webhook', owner_transfer: 'a transmis la propriété du serveur à', owner_reset: 'a retiré le propriétaire (nouveau lien propriétaire créé)',
 }
 
 function Audit({ conn, ready }: { conn: ServerConn; ready: Ready }) {

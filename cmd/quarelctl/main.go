@@ -143,6 +143,8 @@ Messages
 Membres et invitations
   members                          liste des membres
   nick [surnom]                    changer (ou effacer) son surnom sur le serveur
+  srv-profile bio=… theme=<JSON>   mon profil sur ce serveur (présentation, thème de ma carte ; theme={} le retire)
+  srv-theme [<JSON>|off]           thème du serveur (« Gérer le serveur ») : voir, définir, retirer
   invite [utilisations] [durée]    créer une invitation (ex. : invite 5 24h ; durée 0 = illimitée)
   invites                          lister les invitations
   invite-revoke <code>

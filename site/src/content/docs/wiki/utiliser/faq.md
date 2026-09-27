@@ -2,7 +2,7 @@
 title: Questions fréquentes
 description: Les questions qu’on nous pose le plus souvent.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 ### Quarel est-il gratuit ?

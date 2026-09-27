@@ -175,6 +175,10 @@ func (c *cli) runCommunity(cmd string, args []string) (bool, error) {
 		err = c.notify(args)
 	case "members":
 		err = c.printMembers()
+	case "srv-profile":
+		err = c.srvProfile(args)
+	case "srv-theme":
+		err = c.srvTheme(args)
 	case "nick":
 		err = c.nick(args)
 	case "invite":
@@ -676,6 +680,50 @@ func (c *cli) nick(args []string) error {
 		return err
 	}
 	fmt.Println("Nom affiché :", m.DisplayName)
+	return nil
+}
+
+// srvProfile: my profile on this server, "bio=…" and/or "theme=<JSON>" ({} removes it).
+func (c *cli) srvProfile(args []string) error {
+	body := map[string]any{}
+	for _, a := range args {
+		k, v, ok := strings.Cut(a, "=")
+		switch {
+		case ok && k == "bio":
+			body["bio"] = v
+		case ok && k == "theme":
+			body["theme"] = json.RawMessage(v)
+		default:
+			return fmt.Errorf("usage : srv-profile bio=… theme='{\"colors\":{\"accent\":\"#ff8800\"}}'")
+		}
+	}
+	var m memberInfo
+	if err := c.cdo("PATCH", "/v1/members/@me", body, &m); err != nil {
+		return err
+	}
+	fmt.Println("Profil sur ce serveur enregistré pour", m.DisplayName)
+	return nil
+}
+
+// srvTheme: the server's theme (manage_server), as JSON; "off" removes it.
+func (c *cli) srvTheme(args []string) error {
+	raw := strings.Join(args, " ")
+	if raw == "" {
+		var t map[string]any
+		if err := c.cdo("GET", "/v1/server/theme", nil, &t); err != nil {
+			return err
+		}
+		out, _ := json.MarshalIndent(t, "", "  ")
+		fmt.Println(string(out))
+		return nil
+	}
+	if raw == "off" {
+		raw = "{}"
+	}
+	if err := c.cdo("PUT", "/v1/server/theme", map[string]any{"theme": json.RawMessage(raw)}, nil); err != nil {
+		return err
+	}
+	fmt.Println("Thème du serveur enregistré.")
 	return nil
 }
 

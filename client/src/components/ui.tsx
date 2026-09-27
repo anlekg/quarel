@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Back, Eye, EyeOff } from './icons'
 import { showNav } from '../state/mobile'
 
@@ -60,7 +61,7 @@ export function Alert({ kind, children }: { kind: 'error' | 'info' | 'warn'; chi
   return <div className={'alert alert-' + kind} role={kind === 'error' ? 'alert' : 'status'}>{children}</div>
 }
 
-export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Dialog({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   const close = useRef(onClose)
   close.current = onClose
@@ -81,13 +82,15 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
-  return (
+  // Outside the tree of the page: a server's theme never reaches a dialog.
+  return createPortal(
     <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-label={title} ref={ref}>
+      <div className={'dialog' + (wide ? ' wide' : '')} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <h3>{title}</h3>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

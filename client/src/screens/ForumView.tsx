@@ -65,7 +65,7 @@ export function ForumView({ conn, ready, state, channel, onOpenChannel }: {
                 onOpenChannel(p.channel.id)
               }}
                 onContextMenu={postMenu(ready.channels.find((c) => c.id === p.channel.id) ?? p.channel)}>
-                {m ? <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={36} /> : <Avatar id={p.author_id} name="?" size={36} />}
+                {m ? <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m, conn)} size={36} /> : <Avatar id={p.author_id} name="?" size={36} />}
                 <span className="grow">
                   <b className="forum-title">{p.channel.name}{p.channel.archived_at && <span className="archived-tag">Archivé</span>}</b>
                   <span className="forum-excerpt">{m?.display_name ?? 'Ancien membre'} : {p.excerpt}</span>

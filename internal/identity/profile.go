@@ -3,40 +3,56 @@ package identity
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/anlekg/quarel/internal/theme"
 )
 
-// Public profiles (pseudo, bio, avatar), blocking, and presence between friends.
+// Public profiles (pseudo, bio, avatar, banner, theme of the card), blocking,
+// and presence between friends.
 
 const (
 	maxBioLength    = 500
 	maxAvatarBytes  = 1 << 20
+	maxBannerBytes  = 2 << 20
 	presenceOffline = "offline"
 )
 
 var presenceStates = map[string]bool{"online": true, "idle": true, "dnd": true, "invisible": true}
 
 type profileJSON struct {
-	ID        string  `json:"id"`
-	Handle    string  `json:"handle"`
-	Pseudo    string  `json:"pseudo"`
-	Bio       string  `json:"bio"`
-	AvatarURL *string `json:"avatar_url"` // relative to the Identity service; changes when the avatar does
+	ID        string          `json:"id"`
+	Handle    string          `json:"handle"`
+	Pseudo    string          `json:"pseudo"`
+	Bio       string          `json:"bio"`
+	AvatarURL *string         `json:"avatar_url"` // relative to the Identity service; changes when the avatar does
+	BannerURL *string         `json:"banner_url"` // same
+	Theme     json.RawMessage `json:"theme,omitempty"`
 }
 
 func (s *Server) profile(ctx context.Context, u *user) (profileJSON, error) {
 	p := profileJSON{ID: u.ID, Handle: s.handle(u), Pseudo: u.Pseudo}
-	var updated sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT u.bio, a.updated_at FROM users u LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id = ?`, u.ID).
-		Scan(&p.Bio, &updated)
-	if updated.Valid {
-		url := fmt.Sprintf("/v1/users/%s/avatar?v=%d", u.ID, updated.Int64)
+	var avatar, banner sql.NullInt64
+	var th string
+	err := s.db.QueryRowContext(ctx, `SELECT u.bio, u.profile_theme, a.updated_at, b.updated_at FROM users u
+		LEFT JOIN avatars a ON a.user_id = u.id LEFT JOIN banners b ON b.user_id = u.id WHERE u.id = ?`, u.ID).
+		Scan(&p.Bio, &th, &avatar, &banner)
+	if avatar.Valid {
+		url := fmt.Sprintf("/v1/users/%s/avatar?v=%d", u.ID, avatar.Int64)
 		p.AvatarURL = &url
+	}
+	if banner.Valid {
+		url := fmt.Sprintf("/v1/users/%s/banner?v=%d", u.ID, banner.Int64)
+		p.BannerURL = &url
+	}
+	if th != "" {
+		p.Theme = json.RawMessage(th)
 	}
 	return p, err
 }
@@ -63,10 +79,11 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
-// handleUpdateProfile: PATCH /v1/me/profile {bio}.
+// handleUpdateProfile: PATCH /v1/me/profile {bio?, theme?} (theme absent or null: unchanged; {}: removed).
 func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Bio *string `json:"bio"`
+		Bio   *string         `json:"bio"`
+		Theme json.RawMessage `json:"theme"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, r, err)
@@ -89,40 +106,16 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.userChanged(ctx, u)
-	p, err := s.profile(ctx, u)
-	if err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, p)
-}
-
-var avatarTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
-
-// handleSetAvatar: PUT /v1/me/avatar with the image as body (PNG, JPEG, GIF or WebP, 1 MB max).
-func (s *Server) handleSetAvatar(w http.ResponseWriter, r *http.Request) {
-	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxAvatarBytes))
-	if err != nil {
-		writeErr(w, r, errf(http.StatusRequestEntityTooLarge, "file_too_large", "avatars are limited to 1 MB"))
-		return
-	}
-	ct := http.DetectContentType(data)
-	if !avatarTypes[ct] {
-		writeErr(w, r, errf(http.StatusBadRequest, "invalid_image", "avatars must be PNG, JPEG, GIF or WebP images"))
-		return
-	}
-	u, err := s.currentUser(r)
-	if err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	ctx := r.Context()
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO avatars (user_id, content_type, data, updated_at) VALUES (?, ?, ?, ?)
-		ON CONFLICT (user_id) DO UPDATE SET content_type = excluded.content_type, data = excluded.data, updated_at = excluded.updated_at`,
-		u.ID, ct, data, s.now().UnixNano()); err != nil {
-		writeErr(w, r, err)
-		return
+	if req.Theme != nil {
+		th, err := theme.Normalize(req.Theme)
+		if err != nil {
+			writeErr(w, r, errf(http.StatusBadRequest, "invalid_theme", "%s", strings.TrimPrefix(err.Error(), "invalid theme: ")))
+			return
+		}
+		if _, err := s.db.ExecContext(ctx, `UPDATE users SET profile_theme = ? WHERE id = ?`, th, u.ID); err != nil {
+			writeErr(w, r, err)
+			return
+		}
 	}
 	s.userChanged(ctx, u)
 	p, err := s.profile(ctx, u)
@@ -133,40 +126,91 @@ func (s *Server) handleSetAvatar(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
-func (s *Server) handleDeleteAvatar(w http.ResponseWriter, r *http.Request) {
-	u, err := s.currentUser(r)
-	if err != nil {
-		writeErr(w, r, err)
-		return
+var imageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
+
+// profileImages: the avatar and the banner, each in its own table (same columns).
+var profileImages = map[string]struct {
+	table string
+	max   int64
+}{"avatar": {"avatars", maxAvatarBytes}, "banner": {"banners", maxBannerBytes}}
+
+// handleSetImage: PUT /v1/me/avatar or /v1/me/banner with the image as body
+// (PNG, JPEG, GIF or WebP; avatars 1 MB, banners 2 MB).
+func (s *Server) handleSetImage(kind string) http.HandlerFunc {
+	img := profileImages[kind]
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, img.max))
+		if err != nil {
+			writeErr(w, r, errf(http.StatusRequestEntityTooLarge, "file_too_large", "%ss are limited to %d MB", kind, img.max>>20))
+			return
+		}
+		ct := http.DetectContentType(data)
+		if !imageTypes[ct] {
+			writeErr(w, r, errf(http.StatusBadRequest, "invalid_image", "%ss must be PNG, JPEG, GIF or WebP images", kind))
+			return
+		}
+		u, err := s.currentUser(r)
+		if err != nil {
+			writeErr(w, r, err)
+			return
+		}
+		ctx := r.Context()
+		if _, err := s.db.ExecContext(ctx, `INSERT INTO `+img.table+` (user_id, content_type, data, updated_at) VALUES (?, ?, ?, ?)
+			ON CONFLICT (user_id) DO UPDATE SET content_type = excluded.content_type, data = excluded.data, updated_at = excluded.updated_at`,
+			u.ID, ct, data, s.now().UnixNano()); err != nil {
+			writeErr(w, r, err)
+			return
+		}
+		s.userChanged(ctx, u)
+		p, err := s.profile(ctx, u)
+		if err != nil {
+			writeErr(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, p)
 	}
-	if _, err := s.db.ExecContext(r.Context(), `DELETE FROM avatars WHERE user_id = ?`, u.ID); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	s.userChanged(r.Context(), u)
-	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleAvatar: GET /v1/users/{id}/avatar, public.
-func (s *Server) handleAvatar(w http.ResponseWriter, r *http.Request) {
-	var ct string
-	var data []byte
-	err := s.db.QueryRowContext(r.Context(), `SELECT a.content_type, a.data FROM avatars a JOIN users u ON u.id = a.user_id
-		WHERE a.user_id = ? AND u.disabled_at IS NULL`, r.PathValue("id")).Scan(&ct, &data)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, r, errf(http.StatusNotFound, "not_found", "no avatar"))
-		return
+func (s *Server) handleDeleteImage(kind string) http.HandlerFunc {
+	table := profileImages[kind].table
+	return func(w http.ResponseWriter, r *http.Request) {
+		u, err := s.currentUser(r)
+		if err != nil {
+			writeErr(w, r, err)
+			return
+		}
+		if _, err := s.db.ExecContext(r.Context(), `DELETE FROM `+table+` WHERE user_id = ?`, u.ID); err != nil {
+			writeErr(w, r, err)
+			return
+		}
+		s.userChanged(r.Context(), u)
+		w.WriteHeader(http.StatusNoContent)
 	}
-	if err != nil {
-		writeErr(w, r, err)
-		return
+}
+
+// handleImage: GET /v1/users/{id}/avatar or /banner, public.
+func (s *Server) handleImage(kind string) http.HandlerFunc {
+	table := profileImages[kind].table
+	return func(w http.ResponseWriter, r *http.Request) {
+		var ct string
+		var data []byte
+		err := s.db.QueryRowContext(r.Context(), `SELECT a.content_type, a.data FROM `+table+` a JOIN users u ON u.id = a.user_id
+			WHERE a.user_id = ? AND u.disabled_at IS NULL`, r.PathValue("id")).Scan(&ct, &data)
+		if errors.Is(err, sql.ErrNoRows) {
+			writeErr(w, r, errf(http.StatusNotFound, "not_found", "no %s", kind))
+			return
+		}
+		if err != nil {
+			writeErr(w, r, err)
+			return
+		}
+		h := w.Header()
+		h.Set("Content-Type", ct)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+		h.Set("Cache-Control", "public, max-age=86400") // the URL carries a version
+		w.Write(data)
 	}
-	h := w.Header()
-	h.Set("Content-Type", ct)
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	h.Set("Cache-Control", "public, max-age=86400") // the URL carries a version
-	w.Write(data)
 }
 
 // --- blocking ---

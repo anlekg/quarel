@@ -38,6 +38,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		"member":      view,
 		"member_since": first(x.rows(`SELECT joined_at, rules_accepted_at, phone_hash IS NOT NULL AS phone_verified, timeout_until,
 			voice_mute AS muted_by_moderation, voice_deaf AS deafened_by_moderation FROM members WHERE id = ?`, me.ID)),
+		"profile":               first(x.rows(`SELECT nickname, bio, theme, avatar_at > 0 AS has_avatar, banner_at > 0 AS has_banner FROM members WHERE id = ?`, me.ID)),
 		"roles":                 x.rows(`SELECT r.name, r.color FROM member_roles mr JOIN roles r ON r.id = mr.role_id WHERE mr.member_id = ? ORDER BY r.position DESC`, me.ID),
 		"notification_settings": x.rows(`SELECT channel_id, level, muted_until FROM notification_settings WHERE member_id = ?`, me.ID),
 		"read_states":           x.rows(`SELECT channel_id, last_read AS last_read_message FROM read_states WHERE member_id = ?`, me.ID),

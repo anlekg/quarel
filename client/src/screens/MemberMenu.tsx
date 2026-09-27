@@ -10,8 +10,16 @@ import { currentAccount } from '../state/account'
 import type { ServerConn } from '../state/servers'
 import { addFriend, openDirect, socialState } from '../state/social'
 import { confirmAction } from '../components/ConfirmDialog'
+import { openProfile } from '../components/ProfileCard'
 
 const run = (p: Promise<unknown>, done?: string) => menuRun(p.catch((e) => Promise.reject(new Error(errorMessage(e)))), done)
+
+// Where the last right-click happened: the profile card opens there.
+let pointer = { clientX: innerWidth / 2 - 150, clientY: innerHeight / 3 }
+if (typeof window !== 'undefined') window.addEventListener('contextmenu', (e) => { pointer = { clientX: e.clientX, clientY: e.clientY } }, true)
+
+// My profile on this server (ServerView shows the dialog).
+export const editMyServerProfile = () => window.dispatchEvent(new CustomEvent('quarel:my-server-profile'))
 
 export function memberMenuItems(conn: ServerConn, ready: Ready, m: Member, openDialog: (m: Member) => void): MenuItem[] {
   const me = m.id === ready.member.id
@@ -29,7 +37,8 @@ export function memberMenuItems(conn: ServerConn, ready: Ready, m: Member, openD
       { label: 'Rendre muet pour moi', checked: mutedForMe(key), onClick: () => setMutedForMe(key, !mutedForMe(key)) },
     )
   }
-  items.push({ separator: true }, { label: me ? 'Mon profil sur ce serveur…' : 'Profil et modération…', onClick: () => openDialog(m) })
+  items.push({ separator: true }, { label: 'Voir le profil', onClick: () => openProfile(pointer, m) })
+  items.push(me ? { label: 'Mon profil sur ce serveur…', onClick: editMyServerProfile } : { label: 'Détails et modération…', onClick: () => openDialog(m) })
   if (!me && sameService && !m.bot) {
     if (friend) {
       items.push({ label: 'Envoyer un message privé', onClick: () => run(openDirect(m.subject).then((c) => {
@@ -59,6 +68,11 @@ export function memberMenuItems(conn: ServerConn, ready: Ready, m: Member, openD
         { label: 'Exclure 1 heure', onClick: () => run(conn.api((c) => c.timeout(m.id, 3600)), m.display_name + ' est exclu·e 1 heure.') },
       )
     }
+  }
+  if (!me && above && (m.profile_v || m.avatar_v || m.banner_v) && (ready.permissions.server.includes('moderate_members') || isAdmin(ready))) {
+    mod.push({ label: 'Réinitialiser son profil ici…', danger: true, onClick: async () => {
+      if (await confirmAction({ title: 'Réinitialiser le profil de ' + m.display_name + ' sur ce serveur ?', message: 'Son image, sa bannière, sa présentation et son thème propres à ce serveur seront retirés (le profil de son service d’identité reste affiché).', confirm: 'Réinitialiser', danger: true })) run(conn.api((c) => c.resetProfile(m.id)), 'Profil réinitialisé.')
+    } })
   }
   if (!me && above && (ready.permissions.server.includes('kick_members') || isAdmin(ready))) {
     mod.push({ label: 'Expulser…', danger: true, onClick: async () => {

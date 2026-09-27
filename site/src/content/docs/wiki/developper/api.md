@@ -62,12 +62,15 @@ La connexion est en lecture seule : **toutes les actions passent par l'API REST*
 | `VOICE_MOVE` | `{channel_id, from_channel_id}` | La modération vous déplace : rejoignez ce salon |
 | `READ_STATE_UPDATE` | état de lecture | Vos autres connexions ont lu un salon |
 | `NOTIFICATION_SETTINGS_UPDATE` | liste des réglages | |
+| `THEME_UPDATE` | `{theme, background_v}` | Le thème du serveur a changé (aussi dans READY : `theme`) |
 
 Les événements d'un salon ne sont envoyés qu'à ceux qui le voient. **Fermetures** : `4001` jeton invalide ou expiré (ne pas se reconnecter avec le même jeton) ; `1008` membre parti, client trop lent (plus de 256 événements en attente) ou arrêt du serveur. En cas de coupure, reconnectez-vous avec un délai croissant : le nouveau READY redonne l'état complet.
 
 ## 4. Objets
 
-**Membre** : `{id, handle, issuer, subject, nickname?, display_name, owner, roles: [ids], joined_at, bot, timeout_until, rules_accepted, phone_verified}`. L'identité stable d'une personne est `(issuer, subject)` ; `handle` (`pseudo@service`) peut changer. Profil public et avatar : `GET https://<issuer>/v1/users/<subject>/profile` sur son service Identity (sans session) → `{handle, pseudo, bio, avatar_url}` (`avatar_url` relative à ce service). Les bots n'ont pas de profil Identity. `timeout_until` : lecture seule jusqu'à cette date si elle est future.
+**Membre** : `{id, handle, issuer, subject, nickname?, display_name, owner, roles: [ids], joined_at, bot, timeout_until, rules_accepted, phone_verified}`. L'identité stable d'une personne est `(issuer, subject)` ; `handle` (`pseudo@service`) peut changer. Profil public et avatar : `GET https://<issuer>/v1/users/<subject>/profile` sur son service Identity (sans session) → `{handle, pseudo, bio, avatar_url}` (`avatar_url` relative à ce service). Les bots n'ont pas de profil Identity. `timeout_until` : lecture seule jusqu'à cette date si elle est future. **Profil sur ce serveur** : `profile_v`, `avatar_v`, `banner_v` (versions, absentes = rien) ; présentation et thème par `GET /v1/members/{id}/profile`, images par `GET /v1/members/{id}/avatar` et `/banner` (avec le jeton).
+
+**Thème** (serveur, profils) : `{colors?: {bg, bg_1, bg_2, bg_3, line, text, text_2, text_3, accent, accent_ink, accent_text : "#RRGGBB" ou "#RRGGBBAA"}, gradient?: {angle, stops: [2 à 4 couleurs]}, font?: manrope|space-grotesk|system|serif|mono, css?}` (16 Ko de CSS au plus, sans `url(`, `@import`, `\` ni `<` ; `{}` le retire). Chaque application filtre encore le CSS et l'enferme dans sa zone.
 
 **Salon** : `{id, type, name, topic, parent_id, position, thread_starter?, overrides}`. Types : `text`, `voice`, `category`, `announcement` (écrire exige aussi `manage_messages`), `thread` (fil : `parent_id` = salon textuel, mêmes droits que lui). La liste est plate, triée par `(position, id)` ; l'arbre se reconstruit avec `parent_id`.
 
@@ -86,12 +89,18 @@ Légende : 🔑 = permission requise.
 |---|---|---|
 | `GET /v1/server` | public | `{id, name, access, member_count, rules, require_phone, phone_verification}` |
 | `PATCH /v1/server` | 🔑 `manage_server` | `{name?, access?: private\|public, rules?, require_phone?}` |
+| `GET /v1/server/theme` | | `{theme, background_v}` |
+| `PUT /v1/server/theme` | 🔑 `manage_server` | `{theme}` |
+| `GET/PUT/DELETE /v1/server/theme/background` | — / 🔑 `manage_server` | Image de fond (corps = image PNG, JPEG, GIF ou WebP, 4 Mo) |
 
 ### Membres
 | | | |
 |---|---|---|
 | `GET /v1/members` | | Membres présents |
-| `GET/PATCH/DELETE /v1/members/@me` | | Soi / `{nickname}` / quitter |
+| `GET/PATCH/DELETE /v1/members/@me` | | Soi / `{nickname?, bio?, theme?}` (champ absent : inchangé) / quitter |
+| `PUT/DELETE /v1/members/@me/avatar`, `…/banner` | | Mon image (1 Mo) et ma bannière (2 Mo) sur ce serveur |
+| `GET /v1/members/{id}/profile`, `…/avatar`, `…/banner` | | Profil d'un membre sur ce serveur |
+| `DELETE /v1/members/{id}/profile` | 🔑 `moderate_members` | `{reason?}` : retire son profil sur ce serveur |
 | `GET /v1/members/@me/permissions` | | `{server, channels}` |
 | `POST /v1/members/@me/accept-rules` | | Accepter les règles |
 | `POST /v1/members/@me/phone` | | `{phone}` (format international) → code par SMS |

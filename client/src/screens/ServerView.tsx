@@ -1,6 +1,8 @@
 // One community server: channel list, the open channel, members, and the
 // screens a new member must go through (rules, phone).
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useServerTheme } from '../state/themes'
 import type { Channel, Member, Ready } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { Alert, Dialog, Field } from '../components/ui'
@@ -18,18 +20,21 @@ import { can } from '../lib/community'
 import { showContent } from '../state/mobile'
 import { askDeleteChannel, ChannelDialog, MemberDialog, sectionsFor, ServerSettings } from './ServerSettings'
 import { NotifyMenu } from './NotifyMenu'
-import { memberMenuItems } from './MemberMenu'
+import { editMyServerProfile, memberMenuItems } from './MemberMenu'
+import { CardPopover, MemberCard, openProfile } from '../components/ProfileCard'
+import { ignoreServerThemeItem, ServerProfileDialog } from './Appearance'
 import { menuRun, showMenu } from '../components/ContextMenu'
 import { channelNotify } from '../state/notify'
 import { Gear } from '../components/icons'
 import { saveJSON } from '../lib/download'
 import type { PublicUser } from '../api/identity'
-import { openDirect, sendText, useSocial } from '../state/social'
+import { addFriend, openDirect, sendText, useSocial } from '../state/social'
 import { useAccount } from '../state/account'
 
 export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React.ReactNode }) {
   const state = useServerState(conn)
   const r = state.ready
+  useServerTheme(conn.saved.sid, r?.theme, (p) => conn.imageURL(p))
   const [channelID, setChannelID] = useState<number>(() => prefs.get('channel:' + conn.saved.sid, 0))
   // Phones: the member list covers the channel, so it starts hidden and is not remembered.
   const narrow = typeof matchMedia !== 'undefined' && matchMedia('(max-width: 700px)').matches
@@ -43,6 +48,16 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
     const open = (e: Event) => setMemberDialog((e as CustomEvent<Member>).detail)
     window.addEventListener('quarel:member-dialog', open)
     return () => window.removeEventListener('quarel:member-dialog', open)
+  }, [])
+  // Profile cards (components/ProfileCard.tsx) and my profile on this server.
+  const [card, setCard] = useState<{ member: Member; x: number; y: number } | null>(null)
+  const [myProfile, setMyProfile] = useState(false)
+  useEffect(() => {
+    const open = (e: Event) => setCard((e as CustomEvent<{ member: Member; x: number; y: number }>).detail)
+    const mine = () => { setCard(null); setMyProfile(true) }
+    window.addEventListener('quarel:profile', open)
+    window.addEventListener('quarel:my-server-profile', mine)
+    return () => { window.removeEventListener('quarel:profile', open); window.removeEventListener('quarel:my-server-profile', mine) }
   }, [])
   const openChannel = (id: number, messageId?: number) => {
     setChannelID(id)
@@ -80,10 +95,10 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
   }, [channel, conn.saved.sid])
 
   return (
-    <>
+    <div className="server-zone" data-qscope="server">
       <aside className="sidebar">
         <ServerMenu conn={conn} ready={r} />
-        {state.status === 'offline' && <div className="conn-banner" role="status">{state.problem ?? 'Connexion perdue, nouvelle tentative…'}</div>}
+        {state.status === 'offline' && <div className="conn-banner" role="status" data-qnotheme="">{state.problem ?? 'Connexion perdue, nouvelle tentative…'}</div>}
         <div className="sidebar-body">
           {r && <ChannelList conn={conn} ready={r} state={state} active={channel?.id} onPick={(c) => {
             setChannelID(c.id)
@@ -117,6 +132,35 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
         )}
       </main>
       {memberDialog && r && <MemberDialog conn={conn} ready={r} member={memberDialog} onClose={() => setMemberDialog(null)} />}
+      {card && r && (
+        <CardPopover x={card.x} y={card.y} onClose={() => setCard(null)}>
+          <MemberCard conn={conn} ready={r} member={r.members.find((m) => m.id === card.member.id) ?? card.member}>
+            <CardActions ready={r} member={card.member} onDone={() => setCard(null)} onDetails={(m) => { setCard(null); setMemberDialog(m) }} />
+          </MemberCard>
+        </CardPopover>
+      )}
+      {myProfile && r && <ServerProfileDialog conn={conn} ready={r} onClose={() => setMyProfile(false)} />}
+    </div>
+  )
+}
+
+// The buttons of a member's card: the app's, never the theme's.
+function CardActions({ ready, member, onDone, onDetails }: { ready: Ready; member: Member; onDone: () => void; onDetails: (m: Member) => void }) {
+  const account = useAccount()
+  const social = useSocial()
+  if (member.id === ready.member.id) {
+    return <button className="btn btn-primary btn-sm" onClick={editMyServerProfile}>Modifier mon profil ici</button>
+  }
+  const sameService = !!account && member.issuer === account.issuer && !member.bot
+  const friend = sameService && social.friends.friends.some((f) => f.id === member.subject)
+  return (
+    <>
+      {friend && <button className="btn btn-primary btn-sm" onClick={() => {
+        onDone()
+        menuRun(openDirect(member.subject).then((c) => { window.dispatchEvent(new CustomEvent('quarel:goto-dm', { detail: { dmId: c.id } })) }))
+      }}>Message privé</button>}
+      {sameService && !friend && <button className="btn btn-ghost btn-sm" onClick={() => menuRun(addFriend(member.handle.split('@')[0]), 'Demande d’ami envoyée.')}>Demander en ami</button>}
+      <button className="btn btn-ghost btn-sm" onClick={() => onDetails(member)}>Détails et modération…</button>
     </>
   )
 }
@@ -142,11 +186,16 @@ function ServerMenu({ conn, ready }: { conn: ServerConn; ready?: Ready }) {
         <ChevronDown size={18} />
       </button>
       {open && (
-        <div className="menu" role="menu" style={{ left: 10, right: 10, top: 52 }}>
+        <div className="menu" role="menu" data-qnotheme="" style={{ left: 10, right: 10, top: 52 }}>
           {canInvite && <button role="menuitem" onClick={() => { setOpen(false); setDialog('invite') }}>Inviter des personnes</button>}
           {canAdmin && <button role="menuitem" onClick={() => { setOpen(false); setDialog('settings') }}>Paramètres du serveur</button>}
           {canChannels && <button role="menuitem" onClick={() => { setOpen(false); setDialog('channel') }}>Créer un salon</button>}
           {ready && <button role="menuitem" onClick={() => { setOpen(false); setDialog('notify') }}>Notifications</button>}
+          {ready && <button role="menuitem" onClick={() => { setOpen(false); editMyServerProfile() }}>Mon profil sur ce serveur</button>}
+          {(ready?.theme?.theme || ready?.theme?.background_v) ? (() => {
+            const t = ignoreServerThemeItem(conn.saved.sid)
+            return <button role="menuitem" onClick={() => { setOpen(false); t.run() }}>{t.label}</button>
+          })() : null}
           {ready && <button role="menuitem" onClick={() => {
             setOpen(false)
             menuRun(conn.api((c) => c.exportMine()).then((d) => saveJSON('quarel-' + (ready.server.name || 'serveur') + '-donnees.json', d)), 'Données téléchargées.')
@@ -157,7 +206,7 @@ function ServerMenu({ conn, ready }: { conn: ServerConn; ready?: Ready }) {
       )}
       {dialog === 'invite' && <InviteDialog conn={conn} onClose={() => setDialog(null)} />}
       {dialog === 'leave' && <LeaveDialog conn={conn} onClose={() => setDialog(null)} />}
-      {dialog === 'settings' && <ServerSettings conn={conn} onClose={() => setDialog(null)} />}
+      {dialog === 'settings' && createPortal(<ServerSettings conn={conn} onClose={() => setDialog(null)} />, document.body)}
       {dialog === 'notify' && ready && <div className="server-notify"><NotifyMenu conn={conn} ready={ready} channelId={0} onClose={() => setDialog(null)} /></div>}
       {dialog === 'channel' && ready && <ChannelDialog conn={conn} ready={ready} channel={null} onClose={() => setDialog(null)} />}
     </div>
@@ -365,9 +414,13 @@ export function MemberList({ ready, conn }: { ready: Ready; conn: ServerConn }) 
           <div className="group">{g.title} — {g.members.length}</div>
           {g.members.map((m) => (
             <div className="member" key={m.id} title={m.handle} role="button" tabIndex={0} aria-label={m.display_name}
-              onClick={() => setOpen(m)} onKeyDown={(e) => e.key === 'Enter' && setOpen(m)}
+              onClick={(e) => openProfile(e, m)} onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                const r = e.currentTarget.getBoundingClientRect()
+                openProfile({ clientX: r.left - 320, clientY: r.top }, m)
+              }}
               onContextMenu={(e) => showMenu(e, memberMenuItems(conn, ready, m, setOpen))}>
-              <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={32} />
+              <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m, conn)} size={32} />
               <span className="name" style={{ color: memberColor(ready, m) }}>{m.display_name}</span>
               {m.bot && <span className="bot-tag">BOT</span>}
               {m.owner && <span title="Propriétaire" style={{ color: '#f0b37e', display: 'flex' }}><Crown size={14} /></span>}

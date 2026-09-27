@@ -108,6 +108,8 @@ export interface Profile {
   pseudo: string
   bio: string
   avatar_url: string | null
+  banner_url?: string | null
+  theme?: unknown // cosmetics: see lib/themecss.ts (parseTheme)
 }
 
 export interface Privacy {
@@ -387,12 +389,26 @@ export class IdentityClient {
     return this.call<void>('DELETE', '/v1/me', { password, totp_code })
   }
 
-  profile(userId: string) {
-    return this.call<Profile>('GET', '/v1/users/' + encodeURIComponent(userId) + '/profile')
+  // fresh: past the browser's cache (the service lets it keep a profile 60 s), for my own.
+  profile(userId: string, fresh = false) {
+    return this.call<Profile>('GET', '/v1/users/' + encodeURIComponent(userId) + '/profile' + (fresh ? '?t=' + Date.now() : ''))
   }
 
   updateBio(bio: string) {
     return this.call<Profile>('PATCH', '/v1/me/profile', { bio })
+  }
+
+  // theme {} removes it.
+  updateTheme(theme: object) {
+    return this.call<Profile>('PATCH', '/v1/me/profile', { theme })
+  }
+
+  setBanner(image: Blob) {
+    return this.call<Profile>('PUT', '/v1/me/banner', image)
+  }
+
+  deleteBanner() {
+    return this.call<void>('DELETE', '/v1/me/banner')
   }
 
   setAvatar(image: Blob) {

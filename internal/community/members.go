@@ -26,17 +26,20 @@ type member struct {
 	RulesAcceptedAt             sql.NullInt64
 	PhoneVerified               bool
 	Bot                         bool
+	ProfileAt, AvatarAt         int64 // versions of the profile on this server (see profiles.go)
+	BannerAt                    int64
 }
 
 // deletedName stands for a member whose account was deleted on its identity service.
 const deletedName = "Ancien compte"
 
-const memberCols = `id, issuer, subject, handle, nickname, is_owner, joined_at, left_at, timeout_until, rules_accepted_at, phone_hash IS NOT NULL, bot`
+const memberCols = `id, issuer, subject, handle, nickname, is_owner, joined_at, left_at, timeout_until, rules_accepted_at, phone_hash IS NOT NULL, bot,
+	profile_at, avatar_at, banner_at`
 
 func scanMember(sc interface{ Scan(...any) error }) (*member, error) {
 	var m member
 	err := sc.Scan(&m.ID, &m.Issuer, &m.Subject, &m.Handle, &m.Nickname, &m.IsOwner, &m.JoinedAt, &m.LeftAt,
-		&m.TimeoutUntil, &m.RulesAcceptedAt, &m.PhoneVerified, &m.Bot)
+		&m.TimeoutUntil, &m.RulesAcceptedAt, &m.PhoneVerified, &m.Bot, &m.ProfileAt, &m.AvatarAt, &m.BannerAt)
 	return &m, err
 }
 
@@ -64,11 +67,18 @@ type memberJSON struct {
 	TimeoutUntil  *time.Time `json:"timeout_until"`
 	RulesAccepted bool       `json:"rules_accepted"`
 	PhoneVerified bool       `json:"phone_verified"`
+	// Profile on this server (profiles.go): versions, 0 = none. The bio and
+	// theme come from GET /v1/members/{id}/profile, the images from
+	// GET /v1/members/{id}/avatar|banner.
+	ProfileV int64 `json:"profile_v,omitempty"`
+	AvatarV  int64 `json:"avatar_v,omitempty"`
+	BannerV  int64 `json:"banner_v,omitempty"`
 }
 
 func (m *member) json() memberJSON {
 	j := memberJSON{ID: m.ID, Handle: m.Handle, Issuer: m.Issuer, Subject: m.Subject, Owner: m.IsOwner, Roles: []int64{}, JoinedAt: fromMs(m.JoinedAt),
-		Bot: m.Bot, TimeoutUntil: nullTime(m.TimeoutUntil), RulesAccepted: m.RulesAcceptedAt.Valid, PhoneVerified: m.PhoneVerified}
+		Bot: m.Bot, TimeoutUntil: nullTime(m.TimeoutUntil), RulesAccepted: m.RulesAcceptedAt.Valid, PhoneVerified: m.PhoneVerified,
+		ProfileV: m.ProfileAt, AvatarV: m.AvatarAt, BannerV: m.BannerAt}
 	j.DisplayName, _, _ = strings.Cut(m.Handle, "@")
 	if m.Handle == "" { // account deleted on its identity service (see ApplyDeleted)
 		j.DisplayName = deletedName
@@ -138,47 +148,6 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, view)
-}
-
-func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Nickname *string `json:"nickname"` // "" or null clears it
-	}
-	if err := decode(r, &req); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	m := memberFrom(r)
-	m.Nickname = sql.NullString{}
-	if req.Nickname != nil {
-		if nick := strings.TrimSpace(*req.Nickname); nick != "" {
-			if len([]rune(nick)) > 32 {
-				writeErr(w, r, errf(http.StatusBadRequest, "invalid_nickname", "nickname must be at most 32 characters"))
-				return
-			}
-			ps, err := s.loadPerms(r.Context(), s.db)
-			if err != nil {
-				writeErr(w, r, err)
-				return
-			}
-			if err := s.checkAutoModName(r.Context(), ps, m.ID, 0, nick); err != nil {
-				writeErr(w, r, err)
-				return
-			}
-			m.Nickname = sql.NullString{String: nick, Valid: true}
-		}
-	}
-	if _, err := s.db.ExecContext(r.Context(), `UPDATE members SET nickname = ? WHERE id = ?`, m.Nickname, m.ID); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	view, err := s.memberView(r.Context(), m)
-	if err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	s.hub.Broadcast("MEMBER_UPDATE", view)
 	writeJSON(w, http.StatusOK, view)
 }
 

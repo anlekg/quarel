@@ -34,6 +34,25 @@ export interface Member {
   timeout_until: string | null
   rules_accepted: boolean
   phone_verified: boolean
+  // Profile on this server (cosmetics), versions: absent = none.
+  profile_v?: number
+  avatar_v?: number
+  banner_v?: number
+}
+
+// A member's profile on this server: GET /v1/members/{id}/profile.
+export interface MemberProfile {
+  bio: string
+  theme?: unknown
+  profile_v: number
+  avatar_v: number
+  banner_v: number
+}
+
+// The server's theme (READY, THEME_UPDATE, GET /v1/server/theme).
+export interface ServerTheme {
+  theme: unknown | null
+  background_v: number
 }
 
 export interface Role {
@@ -232,6 +251,7 @@ export interface Ready {
   permissions: Permissions
   notification_settings?: NotificationSetting[]
   emojis?: Emoji[]
+  theme?: ServerTheme
 }
 
 // A custom emoji of the server, written <:name:id> in messages and reactions.
@@ -377,6 +397,31 @@ export class CommunityClient {
   // What the server keeps about me: messages, reactions, roles, settings.
   exportMine() {
     return this.call<Record<string, unknown>>('GET', '/v1/members/@me/export')
+  }
+
+  // My profile on this server: absent fields unchanged, "" clears, theme {} removes it.
+  updateMe(body: { nickname?: string; bio?: string; theme?: object }) {
+    return this.call<Member>('PATCH', '/v1/members/@me', body)
+  }
+
+  memberProfile(id: string) {
+    return this.call<MemberProfile>('GET', '/v1/members/' + id + '/profile')
+  }
+
+  setMyImage(kind: 'avatar' | 'banner', image: Blob | null) {
+    return image ? this.call<Member>('PUT', '/v1/members/@me/' + kind, image) : this.call<void>('DELETE', '/v1/members/@me/' + kind)
+  }
+
+  resetProfile(id: string, reason = '') {
+    return this.call<void>('DELETE', '/v1/members/' + id + '/profile', { reason })
+  }
+
+  setTheme(theme: object) {
+    return this.call<ServerTheme>('PUT', '/v1/server/theme', { theme })
+  }
+
+  setBackground(image: Blob | null) {
+    return image ? this.call<ServerTheme>('PUT', '/v1/server/theme/background', image) : this.call<ServerTheme>('DELETE', '/v1/server/theme/background')
   }
 
   // One channel, also when left out of the lists (an archived thread).

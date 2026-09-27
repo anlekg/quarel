@@ -69,8 +69,9 @@ export function Shell({ account }: { account: Account }) {
   }
   const current = servers.find((s) => s.saved.sid === selected)
 
+  // The app's own bar: a server's theme never reaches it (data-qnotheme).
   const userbar = (
-    <>
+    <div className="userbar-zone" data-qnotheme="">
     <UpdateBanner />
     <CallBar onOpen={(c) => {
       select('home')
@@ -86,7 +87,7 @@ export function Shell({ account }: { account: Account }) {
       <PresenceButton account={account} />
       <button className="icon-btn" aria-label="Paramètres" title="Paramètres" onClick={() => setSettings(true)}><Gear size={18} /></button>
     </div>
-    </>
+    </div>
   )
 
   return (

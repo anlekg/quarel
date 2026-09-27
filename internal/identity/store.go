@@ -339,6 +339,16 @@ CREATE TABLE deleted_accounts (
 	deleted_at INTEGER NOT NULL
 );
 `,
+	// 14 (cosmetics, 2026-09-27): theme of the profile card (internal/theme) and its banner.
+	`
+ALTER TABLE users ADD COLUMN profile_theme TEXT NOT NULL DEFAULT '';
+CREATE TABLE banners (
+	user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	content_type TEXT NOT NULL,
+	data         BLOB NOT NULL,
+	updated_at   INTEGER NOT NULL
+);
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.
