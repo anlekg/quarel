@@ -2,7 +2,9 @@
 
 Quarel est en **version de test** : les versions `0.x` peuvent encore changer en profondeur.
 
-## Prochaine version (non publiée)
+## 0.5.0 — 2026-09-27
+
+Le bloc cosmétique : personnalisez l'application, vos profils et vos serveurs. Et un outil pour venir de Discord.
 
 > **À mettre à jour ensemble.** Serveurs communautaires (schéma 14) et services d'identité (schéma 14) d'abord, application ensuite.
 
