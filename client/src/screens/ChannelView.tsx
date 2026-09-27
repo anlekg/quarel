@@ -11,6 +11,7 @@ import { Alert, BackButton, Dialog } from '../components/ui'
 import { Bell, BellOff, Close, Download, FileIcon, Gear, Hash, Megaphone, Paperclip, Pencil, Pin, Reply, Search, Send, Smile, Thread, Trash, Users } from '../components/icons'
 import { channelNotify, setActive } from '../state/notify'
 import { NotifyMenu } from './NotifyMenu'
+import { InviteCards } from '../components/InviteCard'
 import { ChannelDialog, channelKind } from './ServerSettings'
 import { can, canPost, memberAvatar, memberColor } from '../lib/community'
 import { errorMessage } from '../lib/errors'
@@ -343,6 +344,7 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
             {m.edited_at && <span className="edited" title={formatFull(m.edited_at)}>(modifié)</span>}
           </div>
         ) : null}
+        {!editing && m.content && <InviteCards text={m.content} />}
         {m.attachments.map((a) => <AttachmentView key={a.id} a={a} conn={conn} onImage={onImage} />)}
         {m.pinned_at && <span className="pin-tag" title={'Épinglé le ' + formatFull(m.pinned_at)}><Pin size={12} />Épinglé</span>}
         {m.thread_id && (() => {

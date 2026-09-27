@@ -22,6 +22,9 @@ import { memberMenuItems } from './MemberMenu'
 import { menuRun, showMenu } from '../components/ContextMenu'
 import { channelNotify } from '../state/notify'
 import { Gear } from '../components/icons'
+import type { PublicUser } from '../api/identity'
+import { openDirect, sendText, useSocial } from '../state/social'
+import { useAccount } from '../state/account'
 
 export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React.ReactNode }) {
   const state = useServerState(conn)
@@ -156,19 +159,66 @@ function ServerMenu({ conn, ready }: { conn: ServerConn; ready?: Ready }) {
   )
 }
 
+// "Inviter sur…": friends (same identity service) get a single-use invite in a
+// private message, shown to them as a card; or a link to copy (7 days).
 function InviteDialog({ conn, onClose }: { conn: ServerConn; onClose: () => void }) {
   const [link, setLink] = useState('')
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [q, setQ] = useState('')
+  const [sent, setSent] = useState<Record<string, string>>({}) // friend → "sending", "sent" or an error
+  const st = useServerState(conn)
+  const social = useSocial()
+  const account = useAccount()
   useEffect(() => {
     conn.api((c) => c.createInvite(0)).then(
       (inv) => setLink(inviteLink(conn.saved.base, inv.code, conn.saved.sid)),
       (e) => setError(errorMessage(e)),
     )
   }, [conn])
+  const name = st.ready?.server.name ?? conn.saved.name
+  const member = (userId: string) => !!st.ready?.members.some((m) => m.issuer === account?.issuer && m.subject === userId)
+  const needle = q.trim().toLowerCase()
+  const friends = social.friends.friends.filter((f) => !needle || f.pseudo.toLowerCase().includes(needle))
+  const canDM = social.status === 'ready' && social.validated
+  const invite = async (f: PublicUser) => {
+    setSent((x) => ({ ...x, [f.id]: 'sending' }))
+    try {
+      const inv = await conn.api((c) => c.createInvite(1)) // single use: for this friend only
+      const conv = await openDirect(f.id)
+      await sendText(conv, 'Invitation à rejoindre « ' + name + ' » : ' + inviteLink(conn.saved.base, inv.code, conn.saved.sid))
+      setSent((x) => ({ ...x, [f.id]: 'sent' }))
+    } catch (e) {
+      setSent((x) => ({ ...x, [f.id]: errorMessage(e) }))
+    }
+  }
   return (
-    <Dialog title={'Inviter sur ' + conn.saved.name} onClose={onClose}>
-      <p className="muted small" style={{ lineHeight: 1.5 }}>Envoyez ce lien aux personnes à inviter. Il est valable 7 jours.</p>
+    <Dialog title={'Inviter sur ' + name} onClose={onClose}>
+      {social.friends.friends.length > 0 && (
+        <>
+          {!canDM && <Alert kind="info">Validez d’abord cet appareil (Messages privés) pour inviter vos amis par message. Le lien ci-dessous marche aussi.</Alert>}
+          {social.friends.friends.length > 5 && (
+            <input className="input" type="search" placeholder="Chercher un ami" aria-label="Chercher un ami" value={q} onChange={(e) => setQ(e.target.value)} />
+          )}
+          <ul className="invite-friends" aria-label="Amis à inviter">
+            {friends.map((f) => {
+              const state = sent[f.id]
+              const already = member(f.id)
+              return (
+                <li key={f.id}>
+                  <Avatar id={f.id} name={f.pseudo} src={account ? account.identity + '/v1/users/' + f.id + '/avatar' : undefined} size={32} />
+                  <span className="grow"><b>{f.pseudo}</b>{state && state !== 'sending' && state !== 'sent' && <span className="field-error">{state}</span>}</span>
+                  {already ? <span className="muted small">Déjà membre</span>
+                    : state === 'sent' ? <span className="muted small">Invitation envoyée</span>
+                      : <button className="btn btn-ghost btn-sm" disabled={!canDM || state === 'sending'} aria-label={'Inviter ' + f.pseudo} onClick={() => invite(f)}>Inviter</button>}
+                </li>
+              )
+            })}
+            {friends.length === 0 && <li className="muted small">Aucun ami ne correspond.</li>}
+          </ul>
+        </>
+      )}
+      <p className="muted small" style={{ lineHeight: 1.5 }}>{social.friends.friends.length ? 'Ou envoyez ce lien' : 'Envoyez ce lien aux personnes à inviter'}. Il est valable 7 jours.</p>
       <Alert kind="error">{error}</Alert>
       <div className="copy-row">
         <input className="input" readOnly value={link || 'Création…'} aria-label="Lien d'invitation" onFocus={(e) => e.target.select()} />

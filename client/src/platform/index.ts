@@ -60,7 +60,7 @@ interface DesktopBridge {
   showWindow(): Promise<void>
   screenSources(): Promise<ScreenSource[]>
   chooseScreenSource(id: string): Promise<void>
-  checkServer(host: string, port: number, sid: string): Promise<'authority' | 'binding' | 'mismatch' | 'unreachable'>
+  checkServer(host: string, port: number, sid: string): Promise<'authority' | 'binding' | 'mismatch' | 'taken' | 'unreachable'>
   tlsMode(host: string, sid: string): Promise<'binding' | 'authority' | 'conflict'>
   forgetServer(host: string): Promise<void>
 }

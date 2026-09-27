@@ -81,6 +81,7 @@ const messages: Record<string, string> = {
   not_in_voice: 'Cette personne n\u2019est pas dans un salon vocal.',
   voice_disabled: 'Le vocal est désactivé sur ce serveur.',
   forbidden: 'Action refusée.',
+  host_taken: 'Un autre serveur auto-signé utilise déjà cette adresse dans l\u2019application : Quarel n\u2019en suit qu\u2019un par adresse. Quittez l\u2019autre serveur, ou demandez à l\u2019hébergeur une autre adresse (IP, nom de domaine) ou un certificat Let\u2019s Encrypt.',
   server_mismatch: 'L\u2019identité de ce serveur ne correspond pas au lien d\u2019invitation : lien erroné, ou quelqu\u2019un se fait passer pour le serveur.',
   storage_full: 'Le serveur manque d\u2019espace disque : les fichiers sont refusés pour l\u2019instant.',
   file_quota_exceeded: 'Trop de vos fichiers attendent déjà sur le serveur : ils partent dès qu\u2019ils sont reçus (7 jours au plus).',

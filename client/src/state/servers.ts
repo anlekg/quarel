@@ -96,7 +96,13 @@ export async function previewServer(account: Account, inv: Invite): Promise<Serv
   const rules = await serverRules(account, true)
   if (rules.blocked.has(inv.sid)) throw new ApiError(0, 'server_blocked', rules.blocked.get(inv.sid) ?? '')
   const url = new URL(inv.base)
-  const check = await checkServer(inv.host, Number(url.port || 443), inv.sid)
+  const port = Number(url.port || 443)
+  let check = await checkServer(inv.host, port, inv.sid)
+  if (check === 'taken' && !conns.some((c) => c.saved.host === inv.host)) {
+    await forgetServerTLS(inv.host) // bound to a server this account no longer uses
+    check = await checkServer(inv.host, port, inv.sid)
+  }
+  if (check === 'taken') throw new ApiError(0, 'host_taken', 'another self-signed server uses this host')
   if (check === 'unreachable') throw new ApiError(0, 'network', 'server unreachable')
   if (check === 'mismatch') throw new ApiError(0, 'server_mismatch', 'certificate does not match the invite')
   await pinServer(inv.host, inv.sid)

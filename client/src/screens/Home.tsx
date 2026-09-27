@@ -18,6 +18,7 @@ import type { FileRef, HistMsg } from '../e2e/engine'
 import { E2EError, TIMER_CHOICES } from '../e2e/engine'
 import { FileError, MAX_FILE } from '../e2e/files'
 import { confirmAction } from '../components/ConfirmDialog'
+import { InviteCards } from '../components/InviteCard'
 import {
   acceptFriend, addFriend, addToGroup, blockUser, createGroup, deleteMessage, editText, engine, leaveGroup, markRead, openDirect, openFile, removeFriend, sendFile, sendText,
   setTimer, timerOf, typing, typingIn, unconfirmedMembers, useSocial,
@@ -426,6 +427,7 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
                         <span className="receipt">{readers.length ? (conv.kind === 'direct' ? 'Vu' : 'Vu par ' + readers.join(', ')) : m.delivered ? 'Distribué' : 'Envoyé'}</span>
                       )}
                     </div>
+                    <InviteCards text={m.text} />
                   </div>
                   {mine && (
                     <div className="msg-tools">
