@@ -30,7 +30,10 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
-      - run: make test
+      - run: make test 2>&1 | tee /tmp/go-test.log
+      - name: Failed tests (annotations, readable without signing in)
+        if: failure()
+        run: grep -E -- '--- FAIL|_test\.go:[0-9]+|^FAIL|panic:|timed out' /tmp/go-test.log | head -40 | sed 's/^/::error::/'
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   client:
