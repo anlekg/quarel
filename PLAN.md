@@ -132,7 +132,7 @@
 ### B8. Bots et intégrations
 - [x] **P1** Comptes bot avec jeton propre au serveur
 - [x] **P1** API publique documentée pour les bots *(`site/src/content/docs/wiki/developper/api.md`, bot d'exemple `examples/pingbot`)*
-- [ ] **P2** Webhooks entrants
+- [x] **P2** Webhooks entrants *(2026-09-27 : adresse secrète par salon, gérée avec « gérer les salons »)*
 - [ ] **P2** Commandes slash
 
 ### B9. Notifications

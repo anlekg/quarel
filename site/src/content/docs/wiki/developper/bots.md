@@ -40,3 +40,19 @@ N’importe quel langage fait l’affaire (HTTP + WebSocket). Pour un certificat
 - Respectez les limites de débit (`429` + `Retry-After`).
 - Ignorez les champs et événements inconnus : l’API v1 peut s’enrichir.
 - Ne répondez pas à vos propres messages ni à ceux des autres bots (membres `bot: true`) pour éviter les boucles.
+
+## Plus simple : un webhook entrant
+
+Pour **publier** des messages sans rien écouter (alerte de supervision, fin d’une sauvegarde, intégration continue, formulaire), un webhook suffit : pas de programme qui tourne, une simple requête HTTP.
+
+1. Roue dentée du salon › **Webhooks** › nom › **Créer un webhook** (permission « gérer les salons »). Copiez l’adresse : elle n’est affichée qu’une fois.
+2. Publiez :
+
+```sh
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"content": "Sauvegarde terminée ✅"}' \
+  https://mon-serveur.exemple:8090/v1/webhooks/<id>/<jeton>
+```
+
+Le message apparaît sous le nom du webhook, marqué **WEBHOOK**. Qui connaît l’adresse peut écrire dans le salon : gardez-la secrète, et supprimez le webhook s’il a fuité (l’adresse cesse aussitôt de fonctionner, ses anciens messages restent).
+

@@ -45,6 +45,7 @@ type message struct {
 	ThreadID        *int64           `json:"thread_id"` // thread started from this message
 	CreatedAt       time.Time        `json:"created_at"`
 	EditedAt        *time.Time       `json:"edited_at"`
+	Webhook         *webhookRef      `json:"webhook,omitempty"` // posted by this incoming webhook
 }
 
 type referenced struct {

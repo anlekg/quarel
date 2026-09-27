@@ -3,7 +3,7 @@
 // bans, audit log, bots. Each section shows only with its permission; the
 // server checks everything again (hierarchy included).
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { AuditEntry, AutoMod, Ban, Channel, Invite, Member, Ready, Role } from '../api/community'
+import type { AuditEntry, AutoMod, Ban, Channel, Invite, Member, Ready, Role, Webhook } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { Alert, Dialog, Field, Submit } from '../components/ui'
 import { Close } from '../components/icons'
@@ -305,7 +305,7 @@ function Channels({ conn, ready }: { conn: ServerConn; ready: Ready }) {
 export function ChannelDialog({ conn, ready, channel, onClose, parent }: {
   conn: ServerConn; ready: Ready; channel: Channel | null; onClose: () => void; parent?: number | null
 }) {
-  const [tab, setTab] = useState<'general' | 'perms'>('general')
+  const [tab, setTab] = useState<'general' | 'perms' | 'hooks'>('general')
   const [type, setType] = useState(channel?.type ?? 'text')
   const [name, setName] = useState(channel?.name ?? '')
   const [topic, setTopic] = useState(channel?.topic ?? '')
@@ -314,16 +314,20 @@ export function ChannelDialog({ conn, ready, channel, onClose, parent }: {
   const categories = ready.channels.filter((c) => c.type === 'category')
   const canManage = canServer(ready, 'manage_channels') || (channel ? ready.permissions.channels[String(channel.id)]?.includes('manage_channels') : false)
   const canPerms = canServer(ready, 'manage_roles')
+  const canHooks = !!channel && canManage && (channel.type === 'text' || channel.type === 'announcement')
   return (
     <Dialog title={channel ? (channel.type === 'category' ? 'Catégorie ' : 'Salon ') + channel.name : 'Créer un salon'} onClose={onClose}>
-      {channel && canPerms && (
+      {channel && (canPerms || canHooks) && (
         <div className="tabs" role="tablist">
           <button role="tab" aria-selected={tab === 'general'} className={tab === 'general' ? 'active' : ''} onClick={() => setTab('general')}>Général</button>
-          <button role="tab" aria-selected={tab === 'perms'} className={tab === 'perms' ? 'active' : ''} onClick={() => setTab('perms')}>Permissions</button>
+          {canPerms && <button role="tab" aria-selected={tab === 'perms'} className={tab === 'perms' ? 'active' : ''} onClick={() => setTab('perms')}>Permissions</button>}
+          {canHooks && <button role="tab" aria-selected={tab === 'hooks'} className={tab === 'hooks' ? 'active' : ''} onClick={() => setTab('hooks')}>Webhooks</button>}
         </div>
       )}
       {tab === 'perms' && channel ? (
         <OverridesEditor conn={conn} ready={ready} channel={channel} />
+      ) : tab === 'hooks' && channel ? (
+        <WebhooksEditor conn={conn} channel={channel} />
       ) : (
         <form style={{ display: 'flex', flexDirection: 'column', gap: 14 }} onSubmit={(e) => {
           e.preventDefault()
@@ -740,6 +744,68 @@ function Bans({ conn }: { conn: ServerConn; ready: Ready }) {
   )
 }
 
+// --- incoming webhooks of a channel ---
+
+function WebhooksEditor({ conn, channel }: { conn: ServerConn; channel: Channel }) {
+  const [list, setList] = useState<Webhook[] | null>(null)
+  const [name, setName] = useState('')
+  const [created, setCreated] = useState<{ name: string; url: string } | null>(null)
+  const [copied, setCopied] = useState(false)
+  const a = useAction()
+  const load = useCallback(() => {
+    conn.api((c) => c.webhooks(channel.id)).then(setList, () => setList([]))
+  }, [conn, channel.id])
+  useEffect(load, [load])
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <p className="muted small" style={{ lineHeight: 1.5 }}>
+        Une adresse secrète qui publie des messages dans ce salon (supervision, intégration continue, formulaires…) :
+        <code> POST {'{"content": "…"}'}</code>. Qui connaît l&apos;adresse peut écrire ici.
+      </p>
+      <Alert kind="error">{a.error}</Alert>
+      {created && (
+        <div className="card" data-testid="webhook-created">
+          <div className="card-row">
+            <div className="grow">
+              <span className="title">Adresse de « {created.name} » (affichée une seule fois)</span>
+              <code className="sub" style={{ wordBreak: 'break-all' }}>{created.url}</code>
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={() => navigator.clipboard.writeText(created.url).then(() => setCopied(true))}>{copied ? 'Copiée' : 'Copier'}</button>
+          </div>
+        </div>
+      )}
+      <form className="copy-row" onSubmit={(e) => {
+        e.preventDefault()
+        if (!name.trim()) return
+        a.run(async () => {
+          const h = await conn.api((c) => c.createWebhook(channel.id, name.trim()))
+          setCreated({ name: h.name, url: conn.saved.base + '/v1/webhooks/' + h.id + '/' + h.token })
+          setCopied(false)
+          setName('')
+          load()
+        })
+      }}>
+        <input className="input" aria-label="Nom du webhook" placeholder="Nom (affiché sur ses messages)" maxLength={32} value={name} onChange={(e) => setName(e.target.value)} />
+        <button className="btn btn-ghost btn-sm" style={{ height: 44 }} type="submit" disabled={a.busy}>Créer un webhook</button>
+      </form>
+      {list && list.length > 0 && (
+        <div className="card" data-testid="webhooks">
+          {list.map((h) => (
+            <div className="card-row" key={h.id}>
+              <div className="grow"><span className="title">{h.name}</span><span className="sub">créé le {dateTime.format(new Date(h.created_at))}</span></div>
+              <button className="btn btn-ghost btn-sm" aria-label={'Supprimer ' + h.name} onClick={() => a.run(async () => {
+                await conn.api((c) => c.deleteWebhook(h.id))
+                load()
+              })}>Supprimer</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {list && list.length === 0 && <p className="muted small">Aucun webhook dans ce salon.</p>}
+    </div>
+  )
+}
+
 // --- automatic moderation ---
 
 const ruleLabels: Record<string, string> = { word: 'mot interdit', link: 'lien', mentions: 'trop de mentions', duplicate: 'message répété' }
@@ -817,7 +883,7 @@ const actions: Record<string, string> = {
   server_update: 'a modifié le serveur', invite_delete: 'a révoqué une invitation', bot_create: 'a créé un bot', bot_delete: 'a supprimé un bot',
   bot_token_reset: 'a renouvelé le jeton d’un bot', voice_mute: 'a coupé le micro de', voice_deafen: 'a mis en sourdine',
   voice_move: 'a déplacé', voice_disconnect: 'a déconnecté du vocal',
-  automod_block: 'a refusé un message de', owner_transfer: 'a transmis la propriété du serveur à', owner_reset: 'a retiré le propriétaire (nouveau lien propriétaire créé)',
+  automod_block: 'a refusé un message de', webhook_create: 'a créé un webhook', webhook_delete: 'a supprimé un webhook', owner_transfer: 'a transmis la propriété du serveur à', owner_reset: 'a retiré le propriétaire (nouveau lien propriétaire créé)',
 }
 
 function Audit({ conn, ready }: { conn: ServerConn; ready: Ready }) {
@@ -834,6 +900,7 @@ function Audit({ conn, ready }: { conn: ServerConn; ready: Ready }) {
   const who = (id: string | null, fallback?: string, e?: AuditEntry) => (id ? ready.members.find((m) => m.id === id)?.display_name ?? (fallback || 'ancien membre')
     : e && (e.action === 'automod_block' || e.reason === 'Modération automatique') ? 'Modération automatique' : 'L’hébergeur')
   const target = (e: AuditEntry) => {
+    if (e.action.startsWith('webhook_')) return '« ' + String(e.details?.name ?? '') + ' »'
     if (!e.target_id) return ''
     if (e.action === 'member_role_add' || e.action === 'member_role_remove') return who(e.target_id, e.target_name) + ' (« ' + String(e.details?.role ?? '') + ' »)'
     if (e.action === 'automod_block') return who(e.target_id, e.target_name) + ' (' + (ruleLabels[String(e.details?.rule)] ?? String(e.details?.rule ?? '')) + ')'

@@ -233,6 +233,19 @@ ALTER TABLE members ADD COLUMN voice_deaf INTEGER NOT NULL DEFAULT 0;
 	`
 ALTER TABLE sessions ADD COLUMN device_key TEXT;
 `,
+	// 7 (P2, 2026-09-27): incoming webhooks; each posts as its own hidden member.
+	`
+CREATE TABLE webhooks (
+	id         TEXT PRIMARY KEY,
+	channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+	member_id  TEXT NOT NULL REFERENCES members(id),
+	name       TEXT NOT NULL,
+	token_hash TEXT NOT NULL UNIQUE,
+	created_by TEXT REFERENCES members(id) ON DELETE SET NULL,
+	created_at INTEGER NOT NULL
+);
+CREATE INDEX webhooks_channel ON webhooks (channel_id);
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

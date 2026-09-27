@@ -258,7 +258,7 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
       </div>
     )
   }
-  const name = author?.display_name ?? 'Ancien membre'
+  const name = m.webhook?.name ?? author?.display_name ?? 'Ancien membre'
   const mentioned = conn.mentionsMe(m) && !mine
   const toggle = (emoji: string, on: boolean) =>
     conn.api((c) => c.react(m.channel_id, m.id, emoji, on)).catch((e) => onError(errorMessage(e)))
@@ -271,7 +271,7 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
           ? <span className="t" title={formatFull(m.created_at)}>{formatTime(m.created_at)}</span>
           : author
             ? <Avatar id={author.subject || author.id} name={name} src={memberAvatar(author)} size={40} />
-            : <Avatar id={m.author_id} name="?" size={40} />}
+            : <Avatar id={m.author_id} name={m.webhook?.name ?? '?'} size={40} />}
       </div>
       <div className="body">
         {m.referenced && (
@@ -283,7 +283,7 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
         {!grouped && (
           <div className="meta">
             <span className="author" style={{ color: memberColor(ready, author) }}>{name}</span>
-            {author?.bot && <span className="bot-tag">BOT</span>}
+            {m.webhook ? <span className="bot-tag">WEBHOOK</span> : author?.bot && <span className="bot-tag">BOT</span>}
             <span className="when" title={formatFull(m.created_at)}>{formatStamp(m.created_at)}</span>
           </div>
         )}

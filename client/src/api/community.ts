@@ -133,6 +133,17 @@ export interface Message {
   thread_id: number | null
   created_at: string
   edited_at: string | null
+  webhook?: { id: string; name: string } // posted by this incoming webhook
+}
+
+// Incoming webhook of a channel; token only in the creation answer.
+export interface Webhook {
+  id: string
+  channel_id: number
+  name: string
+  created_by: string | null
+  created_at: string
+  token?: string
 }
 
 export interface ReadState {
@@ -314,6 +325,18 @@ export class CommunityClient {
 
   updateServer(body: Partial<Pick<ServerInfo, 'name' | 'access' | 'rules' | 'require_phone'>>) {
     return this.call<ServerInfo>('PATCH', '/v1/server', body)
+  }
+
+  webhooks(channel: number) {
+    return this.call<Webhook[]>('GET', '/v1/channels/' + channel + '/webhooks')
+  }
+
+  createWebhook(channel: number, name: string) {
+    return this.call<Webhook>('POST', '/v1/channels/' + channel + '/webhooks', { name })
+  }
+
+  deleteWebhook(id: string) {
+    return this.call<void>('DELETE', '/v1/webhooks/' + id)
   }
 
   autoMod() {

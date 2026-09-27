@@ -1,6 +1,7 @@
 // Step 6b of the desktop client: administering a community server from the
 // app. The owner (app) sets the server up, manages roles, channel
 // permissions, invites and bots, and moderates alice (Go test client).
+import { execFileSync } from 'node:child_process'
 import { expect, test, type Page } from '@playwright/test'
 import { Community, Ctl, Identity, launchApp, tempDir } from './fixtures'
 
@@ -93,6 +94,14 @@ test('server administration: overview, invites, roles, channel permissions, mode
   await expect.poll(() => ctl.run('alice', 'send', 'général', 'coucou')).toMatch(/permission/i)
   await dialog.getByRole('button', { name: 'Tout remettre par défaut' }).click()
   await expect.poll(() => ctl.run('alice', 'send', 'général', 'me revoilà')).toContain('me revoilà')
+  // An incoming webhook: its secret address posts in the channel, under its own name.
+  await dialog.getByRole('tab', { name: 'Webhooks' }).click()
+  await dialog.getByLabel('Nom du webhook').fill('Supervision')
+  await dialog.getByRole('button', { name: 'Créer un webhook' }).click()
+  const hookURL = (await dialog.getByTestId('webhook-created').locator('code').textContent())!.trim()
+  expect(hookURL).toMatch(/\/v1\/webhooks\/\w+\/qw_/)
+  execFileSync('curl', ['-skf', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', '{"content":"Sauvegarde terminée"}', hookURL])
+  await expect.poll(() => ctl.run('alice', 'history', 'général')).toContain('Sauvegarde terminée')
   await page.keyboard.press('Escape')
 
   // A new channel.
@@ -136,6 +145,7 @@ test('server administration: overview, invites, roles, channel permissions, mode
   await nav('Journal de modération')
   await expect(settings.getByTestId('audit')).toContainText('bob a banni alice')
   await expect(settings.getByTestId('audit')).toContainText('« flood »')
+  await expect(settings.getByTestId('audit')).toContainText('bob a créé un webhook « Supervision »')
   await expect(settings.getByTestId('audit')).toContainText('Modération automatique a refusé un message de alice (mot interdit)')
 
   // Bots: the token is shown once.

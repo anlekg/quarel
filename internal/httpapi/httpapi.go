@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -40,11 +41,22 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// redactPath hides secrets carried in paths (incoming webhook tokens, "qw_…").
+func redactPath(p string) string {
+	parts := strings.Split(p, "/")
+	for i, seg := range parts {
+		if strings.HasPrefix(seg, "qw_") {
+			parts[i] = "…"
+		}
+	}
+	return strings.Join(parts, "/")
+}
+
 // WriteErr sends err as a JSON error; unexpected errors are logged and hidden.
 func WriteErr(w http.ResponseWriter, r *http.Request, err error) {
 	var ae *Error
 	if !errors.As(err, &ae) {
-		slog.Error("internal error", "method", r.Method, "path", r.URL.Path, "err", err)
+		slog.Error("internal error", "method", r.Method, "path", redactPath(r.URL.Path), "err", err)
 		ae = Errf(http.StatusInternalServerError, "internal", "internal server error")
 	}
 	if ae.RetryAfter > 0 {

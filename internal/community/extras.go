@@ -49,9 +49,12 @@ func (s *Server) enrich(ctx context.Context, viewer string, msgs []*message) err
 	}
 	for _, m := range msgs { // everything below is (re)loaded from the database
 		m.Mentions, m.MentionRoles, m.Attachments, m.Embeds, m.Reactions = []string{}, []int64{}, []attachmentJSON{}, []linkEmbed{}, []reactionCount{}
-		m.Referenced, m.ThreadID = nil, nil
+		m.Referenced, m.ThreadID, m.Webhook = nil, nil, nil
 	}
 	if err := s.loadMentions(ctx, msgs); err != nil {
+		return err
+	}
+	if err := s.loadWebhookAuthors(ctx, msgs); err != nil {
 		return err
 	}
 	in, args, byID := idsArgs(msgs)

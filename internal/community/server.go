@@ -299,6 +299,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/bots", s.authed(s.needPerm(permManageServer, s.handleCreateBot)))
 	mux.HandleFunc("POST /v1/bots/{id}/token", s.authed(s.handleResetBotToken))
 	mux.HandleFunc("DELETE /v1/bots/{id}", s.authed(s.handleDeleteBot))
+	mux.HandleFunc("GET /v1/channels/{id}/webhooks", s.authed(s.handleListWebhooks))
+	mux.HandleFunc("POST /v1/channels/{id}/webhooks", s.authed(s.handleCreateWebhook))
+	mux.HandleFunc("DELETE /v1/webhooks/{id}", s.authed(s.handleDeleteWebhook))
+	mux.HandleFunc("POST /v1/webhooks/{id}/{token}", s.handleWebhookPost)
 
 	mux.HandleFunc("GET /v1/bans", s.authed(s.handleListBans))
 	mux.HandleFunc("PUT /v1/bans/{id}", s.authed(s.handleBan))
