@@ -37,6 +37,9 @@ export function channelNotify(ready: Ready, channelId: number): { level: Exclude
 
 // --- showing ---
 
+// Spoilers stay hidden in notifications (the system keeps them in its history).
+export const hideSpoilers = (text: string) => text.replace(/\|\|[^|\n]+\|\|/g, '▒▒▒▒')
+
 function show(title: string, body: string, onClick: () => void, tag: string) {
   if (!desktopEnabled() || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
   if (socialState().presence_setting === 'dnd') return
@@ -65,7 +68,7 @@ export function notifyServerMessage(sid: string, serverName: string, ready: Read
   const text = (m.content || (m.attachments.length ? '📎 ' + m.attachments[0].filename : ''))
     .replace(/<@&(\d+)>/g, (_, r) => '@' + (ready.roles.find((x) => String(x.id) === r)?.name ?? 'rôle'))
     .replace(/<@([a-z0-9]+)>/g, (_, id) => '@' + (names.get(id) ?? 'membre'))
-  show((author?.display_name ?? 'Quelqu’un') + ' · #' + (channel?.name ?? '') + ' · ' + serverName, text, () => {
+  show((author?.display_name ?? 'Quelqu’un') + ' · #' + (channel?.name ?? '') + ' · ' + serverName, hideSpoilers(text), () => {
     window.dispatchEvent(new CustomEvent('quarel:goto-channel', { detail: { sid, channelId: m.channel_id, messageId: m.id } }))
   }, 'srv-' + sid + '-' + m.channel_id)
 }
@@ -86,7 +89,9 @@ onEngineEvent((ev) => {
   const conv = socialState().conversations.find((c) => c.id === ev.dmId)
   const who = e.name(last.from)
   const title = conv?.kind === 'group' ? who + ' · ' + (conv.name || 'Groupe') : who
-  show(title, last.file ? '📎 ' + last.file.name + (last.text ? ' — ' + last.text : '') : last.text, () => {
+  // An ephemeral message: nothing of it in the system's notification history.
+  const body = last.expires ? 'Nouveau message éphémère' : last.file ? '📎 ' + last.file.name + (last.text ? ' — ' + last.text : '') : last.text
+  show(title, hideSpoilers(body), () => {
     window.dispatchEvent(new CustomEvent('quarel:goto-dm', { detail: { dmId: ev.dmId } }))
   }, 'dm-' + ev.dmId)
 })

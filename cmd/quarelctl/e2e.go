@@ -835,6 +835,22 @@ func expiry(sent time.Time, ttl int64, now time.Time) time.Time {
 	return sent.Add(time.Duration(min(ttl, maxTTL)) * time.Second)
 }
 
+// durableHistory is the history without its ephemeral messages: they never
+// leave this device (encrypted backup, history sent to a new device).
+func durableHistory(h map[string][]histMsg) map[string][]histMsg {
+	out := make(map[string][]histMsg, len(h))
+	for dm, list := range h {
+		kept := make([]histMsg, 0, len(list))
+		for _, m := range list {
+			if m.Expires == nil {
+				kept = append(kept, m)
+			}
+		}
+		out[dm] = kept
+	}
+	return out
+}
+
 // timerOf is the conversation's current lifetime of messages (0: off).
 func (e *e2e) timerOf(dmID string) int64 {
 	list := e.st.History[dmID]
@@ -1189,9 +1205,9 @@ func (e *e2e) approve(target, code string) (*deviceInfo, int, error) {
 	if err := e.sendSecret([]deviceInfo{*d}, "device_approval", map[string]string{"master_seed": e.st.MasterSeed, "backup_key": e.st.BackupKey}); err != nil {
 		return nil, 0, err
 	}
-	h := historyTransfer{History: e.st.History, Inbound: map[string]*inboundState{}, Keys: map[string]string{}, Servers: e.st.Servers}
+	h := historyTransfer{History: durableHistory(e.st.History), Inbound: map[string]*inboundState{}, Keys: map[string]string{}, Servers: e.st.Servers}
 	n := 0
-	for _, msgs := range e.st.History {
+	for _, msgs := range h.History {
 		n += len(msgs)
 	}
 	for sid, info := range e.st.Inbound {
