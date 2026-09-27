@@ -104,6 +104,14 @@ test('server administration: overview, invites, roles, channel permissions, mode
   await expect(settings.getByRole('button', { name: 'Modifier annonces', exact: true })).toBeVisible()
   await expect.poll(() => ctl.run('alice', 'channels'), { timeout: 15_000 }).toContain('annonces')
 
+  // Automatic moderation: a banned word, refused for alice (no manage_messages) and logged.
+  await nav('Modération automatique')
+  await settings.getByLabel('Mots interdits (un par ligne)').fill('arnaq*')
+  await settings.getByRole('button', { name: 'Enregistrer' }).click()
+  await expect(settings).toContainText('Règles enregistrées.')
+  await expect.poll(() => ctl.run('alice', 'send', 'général', 'une Arnaque !')).toMatch(/automod_word|banned/)
+  expect(ctl.run('alice', 'send', 'général', 'tout va bien')).toContain('tout va bien')
+
   // Moderation of alice: timeout, then ban (and unban).
   await nav('Membres')
   await settings.getByRole('button', { name: 'Gérer alice' }).click()
@@ -128,6 +136,7 @@ test('server administration: overview, invites, roles, channel permissions, mode
   await nav('Journal de modération')
   await expect(settings.getByTestId('audit')).toContainText('bob a banni alice')
   await expect(settings.getByTestId('audit')).toContainText('« flood »')
+  await expect(settings.getByTestId('audit')).toContainText('Modération automatique a refusé un message de alice (mot interdit)')
 
   // Bots: the token is shown once.
   await nav('Bots')

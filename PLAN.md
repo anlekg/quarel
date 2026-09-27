@@ -119,7 +119,7 @@
 - [x] **P1** Exclusion temporaire (timeout)
 - [x] **P1** Journal d'audit des actions de modération
 - [x] **P1** Suppression en masse des messages d'un membre
-- [ ] **P2** Filtres automatiques (mots interdits, anti-spam)
+- [x] **P2** Filtres automatiques (mots interdits, anti-spam) *(2026-09-27 : mots interdits, liens, mentions, messages répétés, exclusion automatique)*
 
 ### B7. Voix et vidéo (salons vocaux)
 - [x] **P0** Audio de groupe dans les salons vocaux (SFU LiveKit intégré à l'image)

@@ -11,10 +11,10 @@ Quarel est en **phase de test**. Les fonctions ci-dessous marchent de bout en bo
 
 ## Disponible
 
-- **Serveurs communautaires** : salons textuels, vocaux, catégories, annonces, fils ; rôles et droits par salon ; modération (exclusions temporaires, expulsions, bannissements, suppressions en masse, journal) ; règles à accepter ; vérification par SMS ; bots ; recherche ; épingles ; réactions ; fichiers ; aperçus de liens ; notifications réglables.
+- **Serveurs communautaires** : salons textuels, vocaux, catégories, annonces, fils ; rôles et droits par salon ; modération (exclusions temporaires, expulsions, bannissements, suppressions en masse, journal, modération automatique) ; règles à accepter ; vérification par SMS ; bots ; recherche ; épingles ; réactions ; fichiers ; aperçus de liens ; notifications réglables.
 - **Vocal et vidéo** dans les salons : micro, caméra, partage d’écran, modération du micro et du son, déplacement entre salons.
-- **Amis, messages privés et groupes chiffrés** de bout en bout, fichiers chiffrés, validation des appareils, phrase de récupération.
-- **Appels** entre amis en pair à pair, avec vidéo et relais de secours.
+- **Amis, messages privés et groupes chiffrés** de bout en bout, fichiers chiffrés, messages éphémères, validation des appareils, phrase de récupération ; choix de qui peut vous demander en ami.
+- **Appels** entre amis en pair à pair, avec vidéo, partage d’écran et relais de secours ; appels de groupe jusqu’à 6 personnes.
 - **Application de bureau** Windows et Linux (mises à jour automatiques signées) et **version web** installable, utilisable sur téléphone.
 - **Hébergement** : Docker, installateurs Windows des serveurs, page d’administration, sauvegardes et restauration, UPnP.
 

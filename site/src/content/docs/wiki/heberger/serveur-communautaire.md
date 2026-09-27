@@ -51,6 +51,16 @@ Les réglages sont enregistrés dans `settings.json` (volume de données). Une v
 - **HTTPS** est actif d'office avec un certificat lié à l'identité du serveur : l'application le vérifie sans autorité ni nom de domaine. Avec un nom de domaine, choisissez Let's Encrypt dans les réglages (le port public 443 doit mener au 8090). Le **client web** (navigateur) ne peut joindre que des serveurs avec un nom de domaine et Let's Encrypt.
 - Comptes acceptés : ceux de `identity.quarel.app` par défaut ; ajoutez d'autres services dans les réglages.
 
+## Modération automatique
+
+Dans l’application : menu du serveur › Paramètres du serveur › **Modération automatique** (permission « gérer le serveur »).
+
+- **Mots interdits**, un par ligne : majuscules et accents ignorés, mots entiers ; `arnaq*` couvre tous les mots qui commencent par « arnaq » ; plusieurs mots : cette suite exacte.
+- **Refuser les liens**, **limiter les mentions** par message, **refuser les messages répétés** (le même message une troisième fois en 30 secondes).
+- **Exclusion automatique** après 3 messages refusés en 10 minutes (durée au choix).
+
+Le message refusé n’est pas publié ; son auteur voit pourquoi. Chaque refus est noté dans le journal de modération, sans le texte du message. Les personnes qui peuvent gérer les messages d’un salon (modération, administration, propriétaire) n’y sont pas soumises.
+
 ## Exiger un numéro de téléphone (facultatif)
 
 Pour limiter les faux comptes et les retours de bannis, un serveur peut exiger un numéro vérifié par SMS (`quarelctl srv-set require_phone=true`). Le serveur ne garde jamais le numéro, seulement une empreinte. Choisissez comment les SMS partent (page d'administration, « Réglages », « Vérification du téléphone », ou variables ci-dessous) :

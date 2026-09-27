@@ -53,6 +53,7 @@ type Server struct {
 	phone    PhoneVerifier // nil: phone verification unavailable
 	disabled disabledSet   // accounts disabled by their identity service
 	names    []string      // host names clients may use with an ordinary certificate (see checkProof)
+	automod  autoModState  // recent messages and refusals (automatic moderation)
 }
 
 // ServerID derives the public server identifier from its key.
@@ -271,6 +272,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/server", s.handleServerInfo)
 	mux.HandleFunc("GET /v1/server/network", s.authed(s.needPerm(permManageServer, s.handleNetwork)))
 	mux.HandleFunc("PATCH /v1/server", s.authed(s.needPerm(permManageServer, s.handleServerUpdate)))
+	mux.HandleFunc("GET /v1/server/automod", s.authed(s.needPerm(permManageServer, s.handleAutoMod)))
+	mux.HandleFunc("PUT /v1/server/automod", s.authed(s.needPerm(permManageServer, s.handleAutoMod)))
 
 	mux.Handle("POST /v1/auth/challenge", s.limit.auth.Wrap(s.byIP, http.HandlerFunc(s.handleChallenge)))
 	mux.Handle("POST /v1/auth/login", s.limit.auth.Wrap(s.byIP, http.HandlerFunc(s.handleLogin)))

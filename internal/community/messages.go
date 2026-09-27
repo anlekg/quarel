@@ -315,6 +315,10 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	if err := s.checkAutoMod(ctx, ps, author, c.ID, msg.Content, true); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	var repliedAuthor string
 	if req.ReplyTo != 0 {
 		err := s.db.QueryRowContext(ctx, `SELECT author_id FROM messages WHERE id = ? AND channel_id = ?`, req.ReplyTo, c.ID).Scan(&repliedAuthor)
@@ -424,6 +428,10 @@ func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	var attachments int
 	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM attachments WHERE message_id = ?`, msg.ID).Scan(&attachments)
 	if msg.Content, err = validContent(req.Content, attachments > 0); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if err := s.checkAutoMod(ctx, ps, me, c.ID, msg.Content, false); err != nil {
 		writeErr(w, r, err)
 		return
 	}

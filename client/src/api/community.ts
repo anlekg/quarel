@@ -1,6 +1,15 @@
 // Client for a community server (see site/src/content/docs/wiki/developper/api.md).
 import { request } from './http'
 
+// Automatic moderation rules (manage_server).
+export interface AutoMod {
+  words: string[] // banned words or phrases ("mot*": words starting with "mot")
+  block_links: boolean
+  max_mentions: number // 0: no limit
+  duplicates: boolean // the same message a third time within 30 s
+  timeout: number // seconds of automatic timeout after 3 refusals in 10 min (0: none)
+}
+
 export interface ServerInfo {
   id: string
   name: string
@@ -305,6 +314,14 @@ export class CommunityClient {
 
   updateServer(body: Partial<Pick<ServerInfo, 'name' | 'access' | 'rules' | 'require_phone'>>) {
     return this.call<ServerInfo>('PATCH', '/v1/server', body)
+  }
+
+  autoMod() {
+    return this.call<AutoMod>('GET', '/v1/server/automod')
+  }
+
+  setAutoMod(body: AutoMod) {
+    return this.call<AutoMod>('PUT', '/v1/server/automod', body)
   }
 
   createRole(body: { name: string; color?: number; permissions?: string[]; mentionable?: boolean; hoist?: boolean }) {

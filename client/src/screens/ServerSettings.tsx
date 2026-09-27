@@ -3,7 +3,7 @@
 // bans, audit log, bots. Each section shows only with its permission; the
 // server checks everything again (hierarchy included).
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { AuditEntry, Ban, Channel, Invite, Member, Ready, Role } from '../api/community'
+import type { AuditEntry, AutoMod, Ban, Channel, Invite, Member, Ready, Role } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { Alert, Dialog, Field, Submit } from '../components/ui'
 import { Close } from '../components/icons'
@@ -13,7 +13,7 @@ import { roleColor } from '../lib/format'
 import { inviteLink } from '../lib/invite'
 import { useServerState, type ServerConn } from '../state/servers'
 
-type Section = 'overview' | 'roles' | 'channels' | 'members' | 'invites' | 'bans' | 'audit' | 'bots'
+type Section = 'overview' | 'roles' | 'channels' | 'members' | 'invites' | 'bans' | 'automod' | 'audit' | 'bots'
 
 const dateTime = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -47,6 +47,7 @@ export function sectionsFor(r: Ready): Section[] {
   if (['manage_roles', 'kick_members', 'ban_members', 'moderate_members'].some((p) => canServer(r, p))) out.push('members')
   if (canServer(r, 'create_invite') || canServer(r, 'manage_server')) out.push('invites')
   if (canServer(r, 'ban_members')) out.push('bans')
+  if (canServer(r, 'manage_server')) out.push('automod')
   if (canServer(r, 'view_audit_log')) out.push('audit')
   if (canServer(r, 'manage_server')) out.push('bots')
   return out
@@ -54,7 +55,7 @@ export function sectionsFor(r: Ready): Section[] {
 
 const labels: Record<Section, string> = {
   overview: 'Vue d’ensemble', roles: 'Rôles', channels: 'Salons', members: 'Membres', invites: 'Invitations', bans: 'Bannissements',
-  audit: 'Journal de modération', bots: 'Bots',
+  automod: 'Modération automatique', audit: 'Journal de modération', bots: 'Bots',
 }
 
 export function ServerSettings({ conn, onClose, initial }: { conn: ServerConn; onClose: () => void; initial?: Section }) {
@@ -85,6 +86,7 @@ export function ServerSettings({ conn, onClose, initial }: { conn: ServerConn; o
         {section === 'members' && <Members conn={conn} ready={r} />}
         {section === 'invites' && <Invites conn={conn} ready={r} />}
         {section === 'bans' && <Bans conn={conn} ready={r} />}
+        {section === 'automod' && <AutoModSection conn={conn} />}
         {section === 'audit' && <Audit conn={conn} ready={r} />}
         {section === 'bots' && <Bots conn={conn} ready={r} />}
       </main>
@@ -738,6 +740,72 @@ function Bans({ conn }: { conn: ServerConn; ready: Ready }) {
   )
 }
 
+// --- automatic moderation ---
+
+const ruleLabels: Record<string, string> = { word: 'mot interdit', link: 'lien', mentions: 'trop de mentions', duplicate: 'message répété' }
+
+const timeouts: [number, string][] = [[0, 'Jamais'], [60, '1 minute'], [300, '5 minutes'], [600, '10 minutes'], [3600, '1 heure'], [86400, '1 jour']]
+
+function AutoModSection({ conn }: { conn: ServerConn }) {
+  const [cfg, setCfg] = useState<AutoMod | null>(null)
+  const [words, setWords] = useState('')
+  const a = useAction()
+  useEffect(() => {
+    conn.api((c) => c.autoMod()).then((c) => {
+      setCfg(c)
+      setWords(c.words.join('\n'))
+    }, () => {})
+  }, [conn])
+  if (!cfg) return <><h2>Modération automatique</h2><span className="spinner" /></>
+  const set = (p: Partial<AutoMod>) => setCfg({ ...cfg, ...p })
+  return (
+    <>
+      <h2>Modération automatique</h2>
+      <p className="muted" style={{ lineHeight: 1.5 }}>
+        Les messages qui enfreignent une règle sont refusés et notés dans le journal de modération (sans leur texte).
+        Les personnes qui peuvent gérer les messages d&apos;un salon n&apos;y sont pas soumises.
+      </p>
+      <Alert kind="error">{a.error}</Alert>
+      <Alert kind="info">{a.info}</Alert>
+      <div className="field">
+        <label htmlFor="automod-words">Mots interdits (un par ligne)</label>
+        <textarea id="automod-words" className="input" rows={6} value={words} onChange={(e) => setWords(e.target.value)} />
+        <span className="field-hint">Majuscules et accents ignorés, mots entiers. « arnaq* » : tous les mots qui commencent par « arnaq ». Plusieurs mots : cette suite exacte.</span>
+      </div>
+      <div className="card">
+        <label className="check-line card-row">
+          <input type="checkbox" checked={cfg.block_links} onChange={(e) => set({ block_links: e.target.checked })} />
+          <span className="grow"><span className="title">Refuser les liens</span></span>
+        </label>
+        <label className="check-line card-row">
+          <input type="checkbox" checked={cfg.duplicates} onChange={(e) => set({ duplicates: e.target.checked })} />
+          <span className="grow"><span className="title">Refuser les messages répétés</span><span className="sub">Le même message une troisième fois en 30 secondes.</span></span>
+        </label>
+        <label className="check-line card-row">
+          <span className="grow"><span className="title">Mentions par message</span><span className="sub">0 : pas de limite. @everyone compte pour une.</span></span>
+          <input className="input" type="number" min={0} max={100} aria-label="Mentions par message" style={{ width: 90 }} value={cfg.max_mentions}
+            onChange={(e) => set({ max_mentions: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} />
+        </label>
+        <label className="check-line card-row">
+          <span className="grow"><span className="title">Exclusion automatique</span><span className="sub">Après 3 messages refusés en 10 minutes.</span></span>
+          <select className="input" aria-label="Exclusion automatique" style={{ width: 'auto', height: 34, padding: '0 8px' }} value={cfg.timeout}
+            onChange={(e) => set({ timeout: Number(e.target.value) })}>
+            {timeouts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+      </div>
+      <div>
+        <button className="btn btn-primary btn-sm" disabled={a.busy} onClick={() => a.run(async () => {
+          const saved = await conn.api((c) => c.setAutoMod({ ...cfg, words: words.split('\n').map((w) => w.trim()).filter(Boolean) }))
+          setCfg(saved)
+          setWords(saved.words.join('\n'))
+          return 'Règles enregistrées.'
+        })}>Enregistrer</button>
+      </div>
+    </>
+  )
+}
+
 // --- audit log ---
 
 const actions: Record<string, string> = {
@@ -749,7 +817,7 @@ const actions: Record<string, string> = {
   server_update: 'a modifié le serveur', invite_delete: 'a révoqué une invitation', bot_create: 'a créé un bot', bot_delete: 'a supprimé un bot',
   bot_token_reset: 'a renouvelé le jeton d’un bot', voice_mute: 'a coupé le micro de', voice_deafen: 'a mis en sourdine',
   voice_move: 'a déplacé', voice_disconnect: 'a déconnecté du vocal',
-  owner_transfer: 'a transmis la propriété du serveur à', owner_reset: 'a retiré le propriétaire (nouveau lien propriétaire créé)',
+  automod_block: 'a refusé un message de', owner_transfer: 'a transmis la propriété du serveur à', owner_reset: 'a retiré le propriétaire (nouveau lien propriétaire créé)',
 }
 
 function Audit({ conn, ready }: { conn: ServerConn; ready: Ready }) {
@@ -763,10 +831,12 @@ function Audit({ conn, ready }: { conn: ServerConn; ready: Ready }) {
     }, (e) => setError(errorMessage(e)))
   }, [conn])
   useEffect(() => more(), [more])
-  const who = (id: string | null, fallback?: string) => (id ? ready.members.find((m) => m.id === id)?.display_name ?? (fallback || 'ancien membre') : 'L’hébergeur')
+  const who = (id: string | null, fallback?: string, e?: AuditEntry) => (id ? ready.members.find((m) => m.id === id)?.display_name ?? (fallback || 'ancien membre')
+    : e && (e.action === 'automod_block' || e.reason === 'Modération automatique') ? 'Modération automatique' : 'L’hébergeur')
   const target = (e: AuditEntry) => {
     if (!e.target_id) return ''
     if (e.action === 'member_role_add' || e.action === 'member_role_remove') return who(e.target_id, e.target_name) + ' (« ' + String(e.details?.role ?? '') + ' »)'
+    if (e.action === 'automod_block') return who(e.target_id, e.target_name) + ' (' + (ruleLabels[String(e.details?.rule)] ?? String(e.details?.rule ?? '')) + ')'
     if (e.action.startsWith('member_') || e.action.startsWith('voice_') || e.action === 'messages_delete' || e.action === 'owner_transfer') return who(e.target_id, e.target_name)
     if (e.action.startsWith('role_')) return '« ' + (ready.roles.find((r) => String(r.id) === e.target_id)?.name ?? String(e.details?.name ?? e.target_id)) + ' »'
     if (e.action.startsWith('channel_') || e.action.startsWith('override_')) return '« ' + (ready.channels.find((c) => String(c.id) === e.target_id)?.name ?? String(e.details?.name ?? e.target_id)) + ' »'
@@ -781,7 +851,7 @@ function Audit({ conn, ready }: { conn: ServerConn; ready: Ready }) {
         {list.map((e) => (
           <div className="card-row" key={e.id}>
             <div className="grow">
-              <span className="title"><b>{who(e.actor_id, e.actor_name)}</b> {actions[e.action] ?? e.action} {target(e)}</span>
+              <span className="title"><b>{who(e.actor_id, e.actor_name, e)}</b> {actions[e.action] ?? e.action} {target(e)}</span>
               <span className="sub">{dateTime.format(new Date(e.created_at))}{e.reason ? ' · « ' + e.reason + ' »' : ''}</span>
             </div>
           </div>
