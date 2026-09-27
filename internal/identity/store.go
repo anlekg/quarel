@@ -323,6 +323,14 @@ CREATE TABLE webauthn_credentials (
 );
 CREATE INDEX webauthn_credentials_user ON webauthn_credentials(user_id);
 `,
+	// 12 (P2, 2026-09-27): Web Push subscriptions of devices (empty wake-ups).
+	`
+CREATE TABLE push_subscriptions (
+	session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+	endpoint   TEXT NOT NULL,
+	created_at INTEGER NOT NULL
+);
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

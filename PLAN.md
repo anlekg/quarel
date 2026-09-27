@@ -137,7 +137,7 @@
 
 ### B9. Notifications
 - [x] **P1** Réglages de notification par salon (tout, mentions, rien) *(livré au bloc 1 : réglages stockés et synchronisés, appliqués par le client)*
-- [ ] **P2** Notifications push mobiles (fonctionnement à définir sans fuite de données vers un tiers)
+- [x] **P2** Notifications push mobiles (fonctionnement à définir sans fuite de données vers un tiers) *(2026-09-27 : Web Push pour l'application web installée, « réveil vide » sans contenu ni expéditeur, pour les messages privés et appels ; pas encore pour les mentions sur les serveurs communautaires)*
 
 ---
 
@@ -146,7 +146,7 @@
 - [x] **P0** Client de test en ligne de commande (pour valider l'API pendant le dev backend)
 - [x] **P1** Application desktop (multi-serveurs, multi-services d'identité) *(livrée le 2026-09-25 : étapes 1 à 7 du jalon 7, recherche, épingles, fils, notifications, liste des serveurs partagée entre appareils, installateurs Windows / Linux non signés ; un seul compte connecté à la fois)*
 - [x] **P1** Client web *(livré le 2026-09-25, `docs/tests/client-etape-7.md` : serveurs à certificat reconnu, liens d'invitation web, stockage chiffré, application installable, affichage téléphone)*
-- [ ] **P2** Application mobile
+- [x] **P2** Application mobile *(décision du CP, 2026-09-27 : l'application web installable (PWA) tient lieu d'application mobile, avec les notifications push ; pas d'application des stores)*
 
 ---
 

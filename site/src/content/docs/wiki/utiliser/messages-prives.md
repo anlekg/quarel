@@ -15,6 +15,10 @@ Les messages privés (en tête à tête ou en groupe jusqu’à 10 personnes) so
 - Paramètres › Confidentialité : désactiver « … écrit » et les accusés de lecture.
 - **Messages éphémères** : l’horloge en haut de la conversation règle la durée de vie des **prochains** messages (5 minutes, 1 heure, 1 jour, 7 jours ou désactivés), pour tout le monde. N’importe quel membre peut la changer ; le changement s’affiche dans la conversation. Passé ce délai, chaque appareil efface le message et son fichier. Cela protège si un appareil est perdu ou saisi, pas contre la personne qui les reçoit : elle peut toujours faire une capture d’écran.
 
+## Notifications sur téléphone
+
+L’application web installée (app.quarel.app, « Installer l’application » dans les paramètres) peut vous prévenir même fermée : Paramètres › Notifications › **Même quand l’application est fermée**. Votre service d’identité envoie alors un simple réveil, **sans contenu ni expéditeur**, par le service de notifications de votre navigateur (Google, Mozilla, Apple…), qui ne peut donc rien lire ; la notification dit seulement que du nouveau vous attend. Cela concerne les messages privés et les appels, pas encore les mentions sur les serveurs.
+
 ## Ajouter un appareil
 
 Votre historique n’est **pas** stocké en clair sur un serveur : un nouvel appareil (autre ordinateur, navigateur) doit être **validé**.

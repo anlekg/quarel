@@ -465,6 +465,12 @@ func (s *Server) inboxRoom(ctx context.Context, q interface {
 func (s *Server) push(deviceID string, items []inboxItem) {
 	if len(items) > 0 {
 		s.hub.BroadcastTo("INBOX", items, func(key, _ string) bool { return key == deviceID })
+		for _, it := range items {
+			if it.Kind != "receipt" { // a delivery receipt is no reason to wake a device
+				s.wake(deviceID)
+				break
+			}
+		}
 	}
 }
 

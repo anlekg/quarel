@@ -9,6 +9,7 @@ import { E2E, type BackupStatus, type E2EEvent, type FileRef } from '../e2e/engi
 import { Files, type SendResult } from '../e2e/files'
 import { verificationCode } from '../e2e/keys'
 import { identityClient, signOut, type Account } from './account'
+import { restoreWebPush } from './webpush'
 
 export interface SocialState {
   status: 'starting' | 'ready' | 'offline' | 'error'
@@ -108,6 +109,7 @@ export async function openSocial(a: Account) {
     await Promise.all([refreshFriends(), refreshConversations(), refreshDevices(), refreshBackup(), refreshBlocks()])
     set({ status: 'ready' })
     connect()
+    restoreWebPush(a).catch(() => {}) // web app: this session's wake-ups
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) return signOut({ remote: false })
     set({ status: 'error', error: err instanceof Error ? err.message : String(err) })

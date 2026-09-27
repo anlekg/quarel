@@ -37,3 +37,24 @@ self.addEventListener('fetch', (e) => {
     })())
   }
 })
+
+// Web Push: an EMPTY wake-up from the identity service (nothing to read in
+// it); the notification says only that something new is waiting.
+self.addEventListener('push', (e) => {
+  e.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    if (windows.some((w) => w.visibilityState === 'visible')) return // the app is on screen
+    await self.registration.showNotification('Quarel', {
+      body: 'Du nouveau vous attend (message privé ou appel).', tag: 'quarel-wake', renotify: true, icon: '/icons/icon-192.png',
+    })
+  })())
+})
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close()
+  e.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    if (windows.length) return windows[0].focus()
+    return self.clients.openWindow('/')
+  })())
+})

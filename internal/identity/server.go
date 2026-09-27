@@ -168,6 +168,7 @@ func env(key, def string) string {
 // Server is the Identity HTTP service.
 type Server struct {
 	passkeys passkeyTickets // WebAuthn ceremonies in progress
+	webpush  webPush        // empty wake-ups of the web app
 	cfg      Config
 	db       *sql.DB
 	signer   *idtoken.Signer
@@ -315,6 +316,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/me/2fa/setup", s.authed(s.handle2FASetup))
 	mux.HandleFunc("POST /v1/me/2fa/enable", s.authed(s.handle2FAEnable))
 	mux.HandleFunc("POST /v1/me/2fa/disable", s.authed(s.handle2FADisable))
+	mux.HandleFunc("GET /v1/push/key", s.handlePushKey)
+	mux.HandleFunc("PUT /v1/me/push", s.authed(s.handleSetPush))
+	mux.HandleFunc("DELETE /v1/me/push", s.authed(s.handleSetPush))
 	mux.HandleFunc("GET /v1/me/passkeys", s.authed(s.handleListPasskeys))
 	mux.HandleFunc("POST /v1/me/passkeys", s.authed(s.handleAddPasskey))
 	mux.HandleFunc("DELETE /v1/me/passkeys/{id}", s.authed(s.handleDeletePasskey))

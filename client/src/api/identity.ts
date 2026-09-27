@@ -175,6 +175,18 @@ export class IdentityClient {
     return this.call<LoginResult | { status: 'pending' }>('POST', '/v1/auth/login/passkey', { ticket })
   }
 
+  pushKey() {
+    return this.call<{ key: string }>('GET', '/v1/push/key')
+  }
+
+  setPush(endpoint: string) {
+    return this.call<void>('PUT', '/v1/me/push', { endpoint })
+  }
+
+  deletePush() {
+    return this.call<void>('DELETE', '/v1/me/push')
+  }
+
   passkeys() {
     return this.call<Passkey[]>('GET', '/v1/me/passkeys')
   }

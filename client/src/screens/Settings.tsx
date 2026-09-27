@@ -10,6 +10,7 @@ import { identityLabel } from '../lib/identityURL'
 import { identityClient, signOut, type Account } from '../state/account'
 import { canInstall, install, onInstallChange } from '../platform'
 import { askPermission, desktopEnabled, setDesktopEnabled } from '../state/notify'
+import { disableWebPush, enableWebPush, webPushSupported, webPushWanted } from '../state/webpush'
 import type { OwnDevice } from '../e2e/engine'
 import { listDevices, useSocial } from '../state/social'
 import { ApproveDialog, RecoverySection } from './Security'
@@ -58,7 +59,7 @@ export function Settings({ account, onClose }: { account: Account; onClose: () =
               : section === 'recovery' ? <RecoverySection />
                 : section === 'privacy' ? <PrivacySection account={account} />
                   : section === 'media' ? <MediaSection />
-                    : section === 'notifications' ? <NotificationsSection />
+                    : section === 'notifications' ? <NotificationsSection account={account} />
                       : section === 'about' ? <AboutSection version={__APP_VERSION__} /> : <InvitesSection account={account} />}
       </main>
       <button className="icon-btn settings-close" aria-label="Fermer les paramètres" title="Fermer (Échap)" onClick={onClose}>
@@ -229,7 +230,7 @@ function InstallButton() {
   return <button onClick={() => install()}>Installer l&apos;application</button>
 }
 
-function NotificationsSection() {
+function NotificationsSection({ account }: { account?: Account }) {
   const [on, setOn] = useState(desktopEnabled)
   const [perm, setPerm] = useState(() => (typeof Notification === 'undefined' ? 'unsupported' : Notification.permission))
   return (
@@ -249,6 +250,32 @@ function NotificationsSection() {
       )}
       {on && perm === 'denied' && <Alert kind="warn">Le navigateur bloque les notifications de Quarel : autorisez-les dans les réglages du site (icône à gauche de l&apos;adresse).</Alert>}
       {perm === 'unsupported' && <Alert kind="info">Ce navigateur ne sait pas afficher de notifications.</Alert>}
+      {account && webPushSupported() && <WebPushSetting account={account} />}
+    </>
+  )
+}
+
+// Web app only: an empty wake-up when the app is closed (see state/webpush.ts).
+function WebPushSetting({ account }: { account: Account }) {
+  const [on, setOn] = useState(webPushWanted)
+  const [error, setError] = useState('')
+  return (
+    <>
+      <label className="check-line card" style={{ padding: '14px 16px', marginTop: 12 }}>
+        <input type="checkbox" checked={on} onChange={(e) => {
+          const want = e.target.checked
+          setError('')
+          ;(want ? enableWebPush(account) : disableWebPush(account)).then(() => setOn(want), (err) => {
+            setOn(false)
+            setError(err instanceof Error && err.message === 'permission_denied' ? 'Le navigateur refuse les notifications de Quarel.' : errorMessage(err))
+          })
+        }} />
+        <span className="grow">
+          <span className="title">Même quand l&apos;application est fermée</span>
+          <span className="sub">Votre service d&apos;identité envoie un simple réveil, sans contenu ni expéditeur, par le service de notifications de votre navigateur : la notification dit seulement que du nouveau vous attend.</span>
+        </span>
+      </label>
+      <Alert kind="error">{error}</Alert>
     </>
   )
 }
