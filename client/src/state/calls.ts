@@ -8,7 +8,12 @@
 //
 // Between two apps, the caller adds a video transceiver (camera switched on
 // and off without renegotiation) and a "quarel-call" data channel carrying
-// {muted, camera}.
+// {muted, camera, screen, caps}. Screen sharing (apps from 0.4.0, announced by
+// caps: "screen") adds its transceivers once the call runs: the offer and the
+// answer then travel over that data channel (DTLS between the two devices the
+// Olm-signalled SDP authenticated), in "perfect negotiation" (the callee
+// yields on collision). The first video and audio transceivers carry the
+// camera and the microphone, the later ones the screen and its sound.
 import { useSyncExternalStore } from 'react'
 import type { DeviceInfo, PublicUser } from '../api/identity'
 import type { CallSignal } from '../e2e/engine'
@@ -34,12 +39,17 @@ export interface CallSnapshot {
   muted: boolean
   camera: boolean
   canVideo: boolean // the other side negotiated video (another app)
+  screen: boolean // sharing my screen
+  canScreen: boolean // the other app can receive a shared screen (0.4.0+)
   remoteMuted: boolean
   remoteCamera: boolean
+  remoteScreen: boolean
   path?: CallPath
   received: number // audio bytes received (diagnostics, tests)
   localStream: MediaStream | null
-  remoteStream: MediaStream | null
+  remoteStream: MediaStream | null // their microphone and camera
+  screenStream: MediaStream | null // my shared screen (preview)
+  remoteScreenStream: MediaStream | null // theirs
 }
 
 interface Call {
@@ -50,7 +60,12 @@ interface Call {
   invite?: CallSignal // incoming: the offer
   mic: MediaStreamTrack | null
   cam: MediaStreamTrack | null
+  screen: MediaStream | null // shared screen (video, maybe sound)
   dc: RTCDataChannel | null
+  // Renegotiation over the data channel.
+  makingOffer: boolean
+  needOffer: boolean
+  screenAudio: HTMLAudioElement
   timers: ReturnType<typeof setTimeout>[]
   stats?: ReturnType<typeof setInterval>
   audio: HTMLAudioElement
@@ -150,12 +165,16 @@ function newCall(id: string, peer: PublicUser, direction: 'out' | 'in', status: 
   const audio = new Audio()
   audio.autoplay = true
   applyOutput(audio)
+  const screenAudio = new Audio()
+  screenAudio.autoplay = true
+  applyOutput(screenAudio)
   return {
     snap: {
-      id, peer, direction, status, muted: prefs.get('call-muted', false), camera: false, canVideo: false, remoteMuted: false, remoteCamera: false,
-      received: 0, localStream: null, remoteStream: null,
+      id, peer, direction, status, muted: prefs.get('call-muted', false), camera: false, canVideo: false, screen: false, canScreen: false,
+      remoteMuted: false, remoteCamera: false, remoteScreen: false,
+      received: 0, localStream: null, remoteStream: null, screenStream: null, remoteScreenStream: null,
     },
-    pc: null, mic: null, cam: null, dc: null, timers: [], audio,
+    pc: null, mic: null, cam: null, screen: null, dc: null, timers: [], audio, makingOffer: false, needOffer: false, screenAudio,
   }
 }
 
@@ -168,8 +187,10 @@ function end(reason: string) {
   c.pc?.close()
   c.mic?.stop()
   c.cam?.stop()
+  c.screen?.getTracks().forEach((t) => t.stop())
   c.audio.srcObject = null
-  c.snap = { ...c.snap, status: 'ended', ended: reason, localStream: null, remoteStream: null }
+  c.screenAudio.srcObject = null
+  c.snap = { ...c.snap, status: 'ended', ended: reason, screen: false, localStream: null, remoteStream: null, screenStream: null, remoteScreenStream: null }
   publish()
   setTimeout(() => {
     if (call === c) {
@@ -183,14 +204,21 @@ async function newPeer(c: Call) {
   const pc = new RTCPeerConnection(await rtcConfig())
   c.pc = pc
   const remote = new MediaStream()
+  const remoteScreen = new MediaStream()
   c.snap.remoteStream = remote
   pc.ontrack = (ev) => {
-    remote.addTrack(ev.track)
+    const screen = isScreen(pc, ev.transceiver)
+    const into = screen ? remoteScreen : remote
+    for (const t of into.getTracks()) if (t.kind === ev.track.kind) into.removeTrack(t)
+    into.addTrack(ev.track)
     if (ev.track.kind === 'audio') {
-      c.audio.srcObject = new MediaStream([ev.track])
-      c.audio.play().catch(() => {})
+      const el = screen ? c.screenAudio : c.audio
+      el.srcObject = new MediaStream([ev.track])
+      el.play().catch(() => {})
     }
-    c.snap.remoteStream = new MediaStream(remote.getTracks()) // new object: React sees the change
+    // New objects: React sees the change.
+    c.snap.remoteStream = new MediaStream(remote.getTracks())
+    c.snap.remoteScreenStream = new MediaStream(remoteScreen.getTracks())
     publish()
   }
   pc.onconnectionstatechange = () => {
@@ -209,23 +237,81 @@ async function newPeer(c: Call) {
   return pc
 }
 
+// Transceivers after the first of their kind carry the shared screen.
+function isScreen(pc: RTCPeerConnection, t: RTCRtpTransceiver) {
+  return pc.getTransceivers().find((x) => x.receiver.track.kind === t.receiver.track.kind) !== t
+}
+
+interface ChannelMessage {
+  muted?: boolean
+  camera?: boolean
+  screen?: boolean
+  caps?: string[]
+  sdp?: RTCSessionDescriptionInit // renegotiation (both sides announced "screen")
+}
+
 function useChannel(c: Call, dc: RTCDataChannel) {
   c.dc = dc
   dc.onopen = () => sendState(c)
   dc.onmessage = (m) => {
+    let msg: ChannelMessage
     try {
-      const st = JSON.parse(m.data as string) as { muted?: boolean; camera?: boolean }
-      c.snap.remoteMuted = !!st.muted
-      c.snap.remoteCamera = !!st.camera
-      publish()
+      msg = JSON.parse(m.data as string) as ChannelMessage
     } catch {
-      /* ignore */
+      return
     }
+    if (msg.sdp) {
+      if (c.snap.canScreen) onRemoteDescription(c, msg.sdp).catch(() => {})
+      return
+    }
+    c.snap.remoteMuted = !!msg.muted
+    c.snap.remoteCamera = !!msg.camera
+    c.snap.remoteScreen = !!msg.screen
+    c.snap.canScreen = !!msg.caps?.includes('screen')
+    publish()
   }
 }
 
+function send(c: Call, msg: ChannelMessage) {
+  if (c.dc?.readyState === 'open') c.dc.send(JSON.stringify(msg))
+}
+
 function sendState(c: Call) {
-  if (c.dc?.readyState === 'open') c.dc.send(JSON.stringify({ muted: c.snap.muted, camera: c.snap.camera }))
+  send(c, { muted: c.snap.muted, camera: c.snap.camera, screen: c.snap.screen, caps: ['screen'] })
+}
+
+// --- renegotiation (screen sharing) ---
+
+async function offer(c: Call) {
+  const pc = c.pc
+  if (!pc || call !== c) return
+  if (c.makingOffer || pc.signalingState !== 'stable') {
+    c.needOffer = true // once the current exchange is over
+    return
+  }
+  c.needOffer = false
+  c.makingOffer = true
+  try {
+    await pc.setLocalDescription()
+    send(c, { sdp: pc.localDescription!.toJSON() })
+  } finally {
+    c.makingOffer = false
+  }
+}
+
+async function onRemoteDescription(c: Call, desc: RTCSessionDescriptionInit) {
+  const pc = c.pc
+  if (!pc || (desc.type !== 'offer' && desc.type !== 'answer')) return
+  const collision = desc.type === 'offer' && (c.makingOffer || pc.signalingState !== 'stable')
+  if (collision && c.snap.direction === 'out') return // the caller's offer wins; the callee answers it, then offers again
+  if (collision) c.needOffer = true // our offer is rolled back
+  if (desc.type === 'answer' && pc.signalingState !== 'have-local-offer') return
+  await pc.setRemoteDescription(desc)
+  if (desc.type === 'offer') {
+    await pc.setLocalDescription()
+    send(c, { sdp: pc.localDescription!.toJSON() })
+  }
+  if (c.needOffer && pc.signalingState === 'stable') await offer(c)
 }
 
 // Path in use and audio received, from the connection statistics.
@@ -430,6 +516,65 @@ export function toggleCallMute() {
   publish()
 }
 
+export const canShareScreen = () => typeof navigator.mediaDevices?.getDisplayMedia === 'function'
+
+// Shares the screen (the desktop app asks which one first, see ScreenPicker)
+// with its sound when the system gives it (Windows), or stops sharing.
+export async function toggleCallScreen() {
+  const c = call
+  if (!c?.pc || c.snap.status !== 'active' || !c.snap.canScreen) return
+  const pc = c.pc
+  const slot = (kind: 'audio' | 'video') => pc.getTransceivers().find((t) => t.receiver.track.kind === kind && isScreen(pc, t) && t.currentDirection !== 'stopped')
+  if (c.screen) {
+    const s = c.screen
+    c.screen = null
+    for (const kind of ['video', 'audio'] as const) await slot(kind)?.sender.replaceTrack(null)
+    s.getTracks().forEach((t) => t.stop())
+    c.snap.screen = false
+    c.snap.screenStream = null
+    sendState(c)
+    publish()
+    return
+  }
+  let s: MediaStream
+  try {
+    s = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: 30 } },
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      // Not the call's own sound (the friend would hear their voice again), where supported.
+      restrictOwnAudio: true,
+      systemAudio: 'include',
+    } as DisplayMediaStreamOptions)
+  } catch (e) {
+    if ((e as Error)?.name === 'NotAllowedError') return // cancelled
+    throw new UserError('Partage d’écran impossible sur cet appareil.')
+  }
+  if (call !== c || c.snap.status !== 'active') return s.getTracks().forEach((t) => t.stop())
+  c.screen = s
+  let renegotiate = false
+  for (const track of s.getTracks()) {
+    const kind = track.kind as 'audio' | 'video'
+    const t = slot(kind)
+    if (!t) {
+      pc.addTransceiver(track, { direction: 'sendrecv', streams: [s] })
+      renegotiate = true
+      continue
+    }
+    await t.sender.replaceTrack(track)
+    t.sender.setStreams(s)
+    if (t.direction !== 'sendrecv') {
+      t.direction = 'sendrecv'
+      renegotiate = true
+    }
+  }
+  s.getVideoTracks()[0]?.addEventListener('ended', () => call === c && c.screen === s && toggleCallScreen().catch(() => {})) // stopped from the system
+  c.snap.screen = true
+  c.snap.screenStream = new MediaStream(s.getVideoTracks())
+  sendState(c)
+  publish()
+  if (renegotiate) await offer(c)
+}
+
 export async function toggleCallCamera() {
   const c = call
   if (!c?.pc || !c.snap.canVideo) return
@@ -461,7 +606,10 @@ export function closeCalls() {
 onDeviceChange(async (kind) => {
   const c = call
   if (!c || c.snap.status === 'ended') return
-  if (kind === 'audiooutput') return void applyOutput(c.audio)
+  if (kind === 'audiooutput') {
+    applyOutput(c.audio)
+    return void applyOutput(c.screenAudio)
+  }
   const t = c.pc?.getTransceivers().find((x) => x.receiver.track.kind === (kind === 'audioinput' ? 'audio' : 'video'))
   if (!t) return
   try {

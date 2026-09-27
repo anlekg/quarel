@@ -155,4 +155,4 @@ e2e-web: build     # the web client only, in Chromium (invite links, encrypted s
 
 e2e-client: build
 	cd client && [ -d node_modules ] || npm ci
-	cd client && npx vite build && node scripts/build-electron.mjs && xvfb-run -a npx playwright test
+	cd client && npx vite build && node scripts/build-electron.mjs && xvfb-run -a -s '-screen 0 1280x720x24' npx playwright test # 24 bits: screen capture

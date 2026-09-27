@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Channel, Member, Ready, VoiceState } from '../api/community'
 import { Avatar } from '../components/Avatar'
-import { Alert, BackButton, Dialog } from '../components/ui'
+import { Alert, BackButton } from '../components/ui'
 import { Camera, Hangup, Headphones, HeadphonesOff, Mic, MicOff, Monitor, Speaker } from '../components/icons'
 import { can, memberAvatar } from '../lib/community'
 import { errorMessage } from '../lib/errors'
 import { ApiError } from '../api/http'
-import { isDesktop, screenSources, chooseScreenSource, type ScreenSource } from '../platform'
+import { isDesktop, chooseScreenSource } from '../platform'
+import { ScreenPicker } from '../components/ScreenPicker'
 import type { ServerConn } from '../state/servers'
 import {
   joinVoice, leaveVoice, toggleCamera, toggleDeafen, toggleMute, toggleScreen, useVoice, type VideoTile,
@@ -181,28 +182,5 @@ function PersonTile({ m, state, me, speaking }: { m?: Member; state?: VoiceState
       {state?.server_mute && <span className="mod-note">Micro coupé par la modération</span>}
       {state?.server_deaf && <span className="mod-note">Son coupé par la modération</span>}
     </div>
-  )
-}
-
-// Desktop app: choose the screen or window to share (browsers show their own picker).
-function ScreenPicker({ onPick, onClose }: { onPick: (id: string) => void; onClose: () => void }) {
-  const [list, setList] = useState<ScreenSource[] | null>(null)
-  useEffect(() => {
-    screenSources().then(setList, () => setList([]))
-  }, [])
-  return (
-    <Dialog title="Partager l'écran" onClose={onClose}>
-      {!list ? <span className="spinner" /> : list.length === 0 ? <p className="muted">Aucun écran disponible.</p> : (
-        <div className="picker-grid">
-          {list.map((s) => (
-            <button key={s.id} onClick={() => onPick(s.id)}>
-              <img src={s.thumbnail} alt="" />
-              <span>{s.name}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="dialog-actions"><button className="btn btn-ghost btn-sm" onClick={onClose}>Annuler</button></div>
-    </Dialog>
   )
 }

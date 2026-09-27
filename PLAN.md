@@ -55,7 +55,7 @@
 - [x] **P1** Signalisation WebRTC via le service central (échange d'offres, sans transit du média)
 - [x] **P1** Appels audio 1-à-1 en P2P
 - [x] **P1** Relais TURN de secours, désactivable par l'utilisateur
-- [ ] **P2** Vidéo et partage d'écran en P2P
+- [x] **P2** Vidéo et partage d'écran en P2P *(2026-09-27 : caméra depuis l'étape 5 du client ; partage d'écran entre applications 0.4.0+, renégocié sur le canal de données de l'appel)*
 - [ ] **P2** Appels de groupe entre amis
 
 ### A7. Administration du service central

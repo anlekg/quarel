@@ -3,8 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Account } from '../state/account'
 import { Avatar } from '../components/Avatar'
-import { Camera, Hangup, Mic, MicOff, Phone } from '../components/icons'
-import { acceptCall, declineCall, hangUp, toggleCallCamera, toggleCallMute, useCall, type CallPath, type CallSnapshot } from '../state/calls'
+import { Camera, Hangup, Mic, MicOff, Monitor, Phone } from '../components/icons'
+import { ScreenPicker } from '../components/ScreenPicker'
+import { errorMessage } from '../lib/errors'
+import { chooseScreenSource, isDesktop } from '../platform'
+import {
+  acceptCall, canShareScreen, declineCall, hangUp, toggleCallCamera, toggleCallMute, toggleCallScreen, useCall, type CallPath, type CallSnapshot,
+} from '../state/calls'
 
 const pathLabel: Record<CallPath, string> = { local: 'en direct (réseau local)', direct: 'en direct', relay: 'via le relais (chiffré)' }
 
@@ -33,7 +38,13 @@ function statusText(c: CallSnapshot, elapsed: string) {
 export function CallBar({ onOpen }: { onOpen: (userId: string) => void }) {
   const c = useCall()
   const elapsed = useElapsed(c?.startedAt)
+  const [picking, setPicking] = useState(false)
+  const [error, setError] = useState('')
   if (!c || c.status === 'incoming') return null
+  const share = (fn: () => Promise<void>) => {
+    setError('')
+    fn().catch((e) => setError(errorMessage(e)))
+  }
   const cls = c.status === 'active' ? '' : c.status === 'ended' ? 'err' : 'warn'
   return (
     <div className="voicebar" role="region" aria-label="Appel" data-testid="callbar" data-status={c.status} data-path={c.path ?? ''} data-received={c.received}>
@@ -58,8 +69,21 @@ export function CallBar({ onOpen }: { onOpen: (userId: string) => void }) {
             <button className={'icon-btn' + (c.camera ? ' on' : '')} aria-pressed={c.camera} aria-label={c.camera ? 'Couper la caméra' : 'Activer la caméra'}
               title={c.camera ? 'Couper la caméra' : 'Activer la caméra'} onClick={() => toggleCallCamera().catch(() => {})}><Camera size={18} /></button>
           )}
+          {c.canScreen && c.status === 'active' && canShareScreen() && (
+            <button className={'icon-btn' + (c.screen ? ' on' : '')} aria-pressed={c.screen} aria-label={c.screen ? 'Arrêter le partage d’écran' : 'Partager l’écran'}
+              title={c.screen ? 'Arrêter le partage d’écran' : 'Partager l’écran'}
+              onClick={() => (c.screen || !isDesktop ? share(toggleCallScreen) : setPicking(true))}><Monitor size={18} /></button>
+          )}
         </div>
       )}
+      {error && <p className="err small">{error}</p>}
+      {picking && <ScreenPicker onClose={() => setPicking(false)} onPick={(id) => {
+        setPicking(false)
+        share(async () => {
+          await chooseScreenSource(id)
+          await toggleCallScreen()
+        })
+      }} />}
     </div>
   )
 }
@@ -93,9 +117,26 @@ export function CallPanel({ account, userId }: { account: Account; userId: strin
   const elapsed = useElapsed(c?.startedAt)
   if (!c || c.peer.id !== userId || c.status === 'incoming') return null
   const remoteVideo = c.remoteCamera && c.remoteStream && c.remoteStream.getVideoTracks().length > 0
+  const remoteScreen = c.remoteScreen && c.remoteScreenStream && c.remoteScreenStream.getVideoTracks().length > 0
   const me = account.user
   return (
     <div className="call-panel" data-testid="call-panel">
+      {(remoteScreen || (c.screen && c.screenStream)) && (
+        <div className="call-screens">
+          {remoteScreen && (
+            <div className="call-screen" data-testid="call-remote-screen">
+              <Video stream={c.remoteScreenStream!} muted />
+              <span className="call-name">Écran de {c.peer.pseudo}</span>
+            </div>
+          )}
+          {c.screen && c.screenStream && (
+            <div className="call-screen mine" data-testid="call-my-screen">
+              <Video stream={c.screenStream} muted />
+              <span className="call-name">Votre écran</span>
+            </div>
+          )}
+        </div>
+      )}
       <div className="call-stage">
         <div className="call-tile">
           {remoteVideo ? <Video stream={c.remoteStream!} muted /> : <Avatar id={c.peer.id} name={c.peer.pseudo} src={account.identity + '/v1/users/' + c.peer.id + '/avatar'} size={72} />}
