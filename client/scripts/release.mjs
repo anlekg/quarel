@@ -19,7 +19,10 @@ rmSync('release', { recursive: true, force: true })
 run('npm run build')
 // Published builds also refuse --inspect (the fuse is left on in electron-builder.yml
 // so that test builds can be driven by Playwright, which needs it).
-run('npx electron-builder --linux --win --publish never -c.electronFuses.enableNodeCliInspectArguments=false')
+run('npx electron-builder --linux --publish never -c.electronFuses.enableNodeCliInspectArguments=false')
+// Windows also checks app.asar against the hash embedded in Quarel.exe (the app refuses to start
+// if its code was changed after install). Electron supports it on Windows and macOS only.
+run('npx electron-builder --win --publish never -c.electronFuses.enableNodeCliInspectArguments=false -c.electronFuses.enableEmbeddedAsarIntegrityValidation=true')
 run('node scripts/sign-release.mjs release')
 
 mkdirSync(dest, { recursive: true })

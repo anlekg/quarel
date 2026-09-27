@@ -24,8 +24,8 @@ asar: true
 # (ELECTRON_RUN_AS_NODE), no NODE_OPTIONS, code only from app.asar, no extra
 # file:// privileges (the UI is served from app://). --inspect is refused by
 # published builds only (scripts/release.mjs): Playwright needs it to drive a
-# test build. Embedded asar integrity validation is left off until tested on
-# Windows.
+# test build. Published Windows builds also validate app.asar against the hash
+# embedded in Quarel.exe (release.mjs; Electron supports it on Windows and macOS).
 electronFuses:
   runAsNode: false
   enableNodeOptionsEnvironmentVariable: false
