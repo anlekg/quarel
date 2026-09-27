@@ -4,6 +4,7 @@ import './styles/app.css'
 import { App } from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ContextMenuHost } from './components/ContextMenu'
+import { ConfirmHost } from './components/ConfirmDialog'
 import { isDesktop } from './platform'
 
 createRoot(document.getElementById('root')!).render(
@@ -11,6 +12,7 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <App />
       <ContextMenuHost />
+      <ConfirmHost />
     </ErrorBoundary>
   </StrictMode>,
 )

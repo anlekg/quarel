@@ -17,6 +17,7 @@ import type { Account } from '../state/account'
 import type { FileRef, HistMsg } from '../e2e/engine'
 import { E2EError, TIMER_CHOICES } from '../e2e/engine'
 import { FileError, MAX_FILE } from '../e2e/files'
+import { confirmAction } from '../components/ConfirmDialog'
 import {
   acceptFriend, addFriend, addToGroup, blockUser, createGroup, deleteMessage, editText, engine, leaveGroup, markRead, openDirect, openFile, removeFriend, sendFile, sendText,
   setTimer, timerOf, typing, typingIn, unconfirmedMembers, useSocial,
@@ -190,8 +191,8 @@ function FriendsView({ account, onOpen }: { account: Account; onOpen: (c: Conver
                 <div className="n"><b>{u.pseudo}</b><span className="sub">{presenceLabel[s.presence[u.id] ?? 'offline']} · {u.handle}</span></div>
                 <div className="acts">
                   <button className="icon-btn" aria-label={'Écrire à ' + u.pseudo} title="Message" onClick={() => message(u)}><Chat size={18} /></button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => { if (confirm('Retirer ' + u.pseudo + ' de vos amis ?')) act(() => removeFriend(u)) }}>Retirer</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => { if (confirm('Bloquer ' + u.pseudo + ' ? Cette personne sera retirée de vos amis et ne pourra plus vous écrire.')) act(() => blockUser(u)) }}>Bloquer</button>
+                  <button className="btn btn-ghost btn-sm" onClick={async () => { if (await confirmAction({ title: 'Retirer ' + u.pseudo + ' de vos amis ?', confirm: 'Retirer', danger: true })) act(() => removeFriend(u)) }}>Retirer</button>
+                  <button className="btn btn-ghost btn-sm" onClick={async () => { if (await confirmAction({ title: 'Bloquer ' + u.pseudo + ' ?', message: 'Cette personne sera retirée de vos amis et ne pourra plus vous écrire.', confirm: 'Bloquer', danger: true })) act(() => blockUser(u)) }}>Bloquer</button>
                 </div>
               </div>
             ))}
@@ -362,7 +363,7 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
             <GroupCallButton conv={conv} validated={s.validated} busy={!!activeCall && activeCall.status !== 'ended'} run={run} />
           )}
           {conv.kind === 'group' && (
-            <button className="btn btn-ghost btn-sm" onClick={() => { if (confirm('Quitter le groupe « ' + title + ' » ?')) run(leaveGroup(conv).then(onLeft)) }}>Quitter le groupe</button>
+            <button className="btn btn-ghost btn-sm" onClick={async () => { if (await confirmAction({ title: 'Quitter le groupe « ' + title + ' » ?', message: 'Vous ne recevrez plus ses messages. Un membre pourra vous y ajouter de nouveau.', confirm: 'Quitter', danger: true })) run(leaveGroup(conv).then(onLeft)) }}>Quitter le groupe</button>
           )}
         </header>
         <CallPanel account={account} userId={other?.id} convId={conv.kind === 'group' ? conv.id : undefined} />

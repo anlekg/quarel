@@ -16,7 +16,7 @@ import { VoiceMembers, VoiceView } from './Voice'
 import { joinVoice, useVoice } from '../state/voice'
 import { can } from '../lib/community'
 import { showContent } from '../state/mobile'
-import { ChannelDialog, MemberDialog, sectionsFor, ServerSettings } from './ServerSettings'
+import { askDeleteChannel, ChannelDialog, MemberDialog, sectionsFor, ServerSettings } from './ServerSettings'
 import { NotifyMenu } from './NotifyMenu'
 import { memberMenuItems } from './MemberMenu'
 import { menuRun, showMenu } from '../components/ContextMenu'
@@ -58,9 +58,16 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
     window.addEventListener('quarel:open-channel', open)
     return () => window.removeEventListener('quarel:open-channel', open)
   }, [conn.saved.sid])
+  // The open channel is gone (deleted, no longer visible): back to its parent
+  // when it was a thread or a forum post, else to the first text channel.
+  const parentOf = useRef<number | null>(null)
+  useEffect(() => {
+    if (channel) parentOf.current = channel.type === 'thread' ? channel.parent_id : null
+  }, [channel])
   useEffect(() => {
     if (r && !channel) {
-      const first = firstTextChannel(r.channels)
+      const back = r.channels.find((c) => c.id === parentOf.current && c.type !== 'category')
+      const first = back ?? firstTextChannel(r.channels)
       if (first) setChannelID(first.id)
     }
   }, [r, channel])
@@ -242,9 +249,11 @@ function ChannelList({ conn, ready, state, active, onPick }: {
     )
   }
   // Editing a channel: a gear next to it, for whoever manages channels or their permissions.
-  const editable = (c: Channel) => can(ready, c.id, 'manage_channels') || canServer(ready, 'manage_roles')
+  // A thread: its channel's manage_channels (overrides do not apply to threads).
+  const editable = (c: Channel) => can(ready, c.id, 'manage_channels') || (c.type !== 'thread' && canServer(ready, 'manage_roles'))
   const gear = (c: Channel) => editable(c) && (
-    <button className="ch-edit" aria-label={'Modifier ' + c.name} title="Modifier le salon" onClick={() => setEditing(c)}><Gear size={14} /></button>
+    <button className="ch-edit" aria-label={'Modifier ' + c.name} title={'Modifier ' + (c.type === 'thread' ? 'le fil' : c.type === 'category' ? 'la catégorie' : 'le salon')}
+      onClick={() => setEditing(c)}><Gear size={14} /></button>
   )
   const [editing, setEditing] = useState<Channel | null>(null)
   const channelMenu = (c: Channel) => (e: React.MouseEvent) => {
@@ -255,6 +264,9 @@ function ChannelList({ conn, ready, state, active, onPick }: {
       c.type !== 'voice' && c.type !== 'category' && { label: 'Ouvrir', onClick: () => onPick(c) },
       !!rs && rs.last_message_id > rs.last_read && { label: 'Marquer comme lu', onClick: () => menuRun(conn.api((cl) => cl.ack(c.id))) },
       editable(c) && c.type !== 'thread' && { label: c.type === 'category' ? 'Modifier la catégorie' : 'Modifier le salon', onClick: () => setEditing(c) },
+      editable(c) && c.type === 'thread' && { label: 'Renommer le fil', onClick: () => setEditing(c) },
+      can(ready, c.id, 'manage_channels') && { separator: true },
+      can(ready, c.id, 'manage_channels') && { label: 'Supprimer ' + (c.type === 'thread' ? 'le fil' : c.type === 'category' ? 'la catégorie' : 'le salon') + '…', danger: true, onClick: () => menuRun(askDeleteChannel(conn, ready, c)) },
     ])
   }
   return (
@@ -265,7 +277,7 @@ function ChannelList({ conn, ready, state, active, onPick }: {
           {g.items.map((n) => (
             <div key={n.channel.id}>
               <div className="ch-wrap" onContextMenu={channelMenu(n.channel)}>{button(n.channel)}{n.channel.type !== 'thread' && gear(n.channel)}</div>
-              {n.threads.map((t) => <div key={t.id} onContextMenu={channelMenu(t)}>{button(t)}</div>)}
+              {n.threads.map((t) => <div key={t.id} className="ch-wrap" onContextMenu={channelMenu(t)}>{button(t)}{gear(t)}</div>)}
             </div>
           ))}
         </div>

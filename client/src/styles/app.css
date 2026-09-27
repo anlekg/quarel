@@ -166,6 +166,8 @@ p { margin: 0; }
 }
 .dialog h3 { font-size: 20px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.confirm-dialog { display: flex; flex-direction: column; gap: 16px; }
+.confirm-text { color: var(--text-2); line-height: 1.5; }
 
 /* --- signed-in shell --- */
 .shell { height: 100%; display: flex; background: var(--bg-2); }
