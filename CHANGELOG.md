@@ -2,6 +2,11 @@
 
 Quarel est en **version de test** : les versions `0.x` peuvent encore changer en profondeur.
 
+## Prochaine version (non publiée)
+
+### Outils
+- **Migrer depuis Discord** : `tools/discord-import` recrée sur un serveur Quarel les rôles (permissions comprises), catégories, salons, droits des salons et emojis d'un serveur Discord, avec un rapport de ce qui n'a pas d'équivalent. Essai sans rien modifier, relançable sans doublon.
+
 ## 0.4.5 — 2026-09-27
 
 Corrections du deuxième audit (sécurité et vie privée) et demandes de test. Première mise à jour **invisible** de l'application de bureau : depuis la 0.4.0, « Redémarrer » installe sans fenêtre et rouvre Quarel.

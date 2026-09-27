@@ -7,6 +7,7 @@
 - Site et documentation : **[quarel.app](https://quarel.app)**
 - Application web : [app.quarel.app](https://app.quarel.app) — application de bureau Windows et Linux : [téléchargements](https://quarel.app/#telecharger) ou [releases GitHub](https://github.com/anlekg/quarel/releases)
 - Héberger un serveur : [guide de l'hébergeur](https://quarel.app/wiki/heberger/serveur-communautaire/)
+- Venir de Discord : [outil d'import](tools/discord-import/) des rôles, salons, droits et emojis ([mode d'emploi](https://quarel.app/wiki/heberger/migrer-depuis-discord/))
 - Écrire un bot : [API des serveurs communautaires](https://quarel.app/wiki/developper/api/)
 - Assistants IA : serveur MCP de la documentation sur `https://quarel.app/mcp` ([détails](https://quarel.app/wiki/developper/mcp/))
 
@@ -16,7 +17,7 @@
 
 ## Dans ce dépôt
 
-Serveurs en Go (`cmd/`, `internal/`), application Electron + React (`client/`), site et wiki (`site/`), déploiements Docker (`deploy/`). Voir [CONTRIBUTING.md](CONTRIBUTING.md). Faille de sécurité : [SECURITY.md](SECURITY.md).
+Serveurs en Go (`cmd/`, `internal/`), application Electron + React (`client/`), site et wiki (`site/`), déploiements Docker (`deploy/`), outil d'import Discord (`tools/discord-import/`, Python). Voir [CONTRIBUTING.md](CONTRIBUTING.md). Faille de sécurité : [SECURITY.md](SECURITY.md).
 
 ## Licence
 

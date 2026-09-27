@@ -51,6 +51,10 @@ Les réglages sont enregistrés dans `settings.json` (volume de données). Une v
 - **HTTPS** est actif d'office avec un certificat lié à l'identité du serveur : l'application le vérifie sans autorité ni nom de domaine. Avec un nom de domaine, choisissez Let's Encrypt dans les réglages (le port public 443 doit mener au 8090). Le **client web** (navigateur) ne peut joindre que des serveurs avec un nom de domaine et Let's Encrypt.
 - Comptes acceptés : ceux de `identity.quarel.app` par défaut ; ajoutez d'autres services dans les réglages.
 
+## Venir de Discord
+
+Votre communauté est déjà sur Discord ? L’outil d’import recrée ses rôles, salons, droits et emojis sur votre serveur Quarel : voir [Migrer depuis Discord](/wiki/heberger/migrer-depuis-discord/).
+
 ## Modération automatique
 
 Dans l’application : menu du serveur › Paramètres du serveur › **Modération automatique** (permission « gérer le serveur »).

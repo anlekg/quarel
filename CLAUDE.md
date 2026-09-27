@@ -86,6 +86,7 @@ client/                 client graphique (Electron + React), voir « Client grap
 docs/tests/             guides de test par jalon, destinés au CP
 test/e2e/               tests de bout en bout : vocal (Playwright), MP chiffrés, sécurité (récupération, HTTPS,
                         limites), messages P1 (messages.sh), modération P1 (moderation.sh), ACME contre Pebble (acmeshim : corrige une différence de Pebble avec Let's Encrypt)
+tools/discord-import/   outil d'import d'un serveur Discord (Python, `cryptography` seule dépendance ; voir « Import depuis Discord »)
 examples/pingbot/       bot d'exemple (répond « pong » à « !ping », commandes /ping et /echo) : jeton de bot, passerelle, REST
 deploy/identity/        déploiement Docker Compose du service Identity (Let's Encrypt ou derrière un proxy)
 deploy/server/          déploiement Docker Compose du serveur communautaire (réseau hôte, tout se règle dans la page d'administration)
@@ -522,6 +523,14 @@ make client-release VERSION=x.y.z` (= `scripts/release.mjs`, dossier `QUAREL_UPD
   - Test : `e2e/channels.spec.ts` (recherche d'un message au-delà de la première page, épingle, fil, notifications : mention, message ordinaire, serveur « tous les messages », salon « rien ») ; `e2e/dm.spec.ts` vérifie aussi la notification d'un message privé.
   - Test : `e2e/serversync.spec.ts` (serveur rejoint sur A → B validé par A le reçoit, C restauré avec la phrase aussi ; le quitter sur B le retire de A et C).
 
+## Import depuis Discord (`tools/discord-import`)
+
+- **Décision du CP (2026-09-27)** : outil annexe dans ce dépôt, page wiki « Migrer depuis Discord » (`heberger/migrer-depuis-discord.md`).
+- `quarel_discord_import.py` (un seul fichier, Python 3.10+, `cryptography`) : lit le serveur Discord par l'API REST (`/guilds/{id}`, `/guilds/{id}/channels`, images des emojis sur le CDN ; bot Discord **sans permission**), écrit avec un **bot Quarel** qui a un rôle Administrateur tout en haut (vérifié : `GET /v1/members/@me/permissions`). Rôles créés du plus haut au plus bas (un nouveau rôle Quarel va en bas), `@everyone` = rôle 1, rôles gérés par Discord ignorés ; salons dans l'ordre d'affichage de Discord (sans catégorie d'abord, texte avant vocal), scène → `voice` + `stage`, média → `forum`, fils ignorés ; droits de salon **pour les rôles** seulement (permissions réglables par salon), un salon synchronisé avec sa catégorie n'en reçoit pas (il hérite) ; emojis (nom ramené à `[a-z0-9_]`, 256 Ko, 100 au plus). Table des bits Discord → noms Quarel (`PERMS`) ; le **rapport** liste ce qui se perd (permissions sans équivalent, restrictions qui disparaissent, réglages de salon, exceptions pour des membres, salons non synchronisés dont le résultat diffère : Quarel applique la catégorie puis le salon, Discord ignore la catégorie).
+- **Relançable** : fichier d'état `discord-import-<guilde>.json` (ID Discord → ID Quarel, écrit après chaque création) ; existant mis à jour, manquant recréé. `--dry-run` (rien d'écrit, pas de fichier d'état), `--rename`, `--replace-defaults` (seulement si le serveur n'a que ses 4 salons d'origine et aucun message), `--no-emojis`, `--guild`.
+- **Certificat** (`QuarelConnection.connect`, avant tout envoi) : autorité reconnue, sinon certificat auto-signé dont la liaison (`pkg/tlsbind` refait en Python) prouve le `sid` du lien d'invitation (`--sid` ou `QUAREL_SERVER_ID`) ; `http://` seulement en boucle locale. Jetons : `DISCORD_BOT_TOKEN`, `QUAREL_BOT_TOKEN` ou saisie sans écho, jamais en argument. Pause de 0,12 s entre écritures, `429` respectés.
+- Tests : `make discord-import-test` (unitaires + intégration : vrais `quarel-identity` et `quarel-server` auto-signé sur 28380/28390, propriétaire et bot préparés par `quarelctl`, fausse API Discord sur 28395 via `QUAREL_IMPORT_DISCORD_API` / `QUAREL_IMPORT_DISCORD_CDN`) ; lancé par la CI (tâche e2e-servers).
+
 ## Site quarel.app, wiki et MCP de la documentation
 
 - **Choix du CP (2026-09-26)** : Astro + Starlight (MIT), français d'abord (locale `root` = `fr`, anglais à ajouter plus tard dans `astro.config.mjs` + `src/content/docs/en/`), mention « version de test ».
@@ -595,6 +604,7 @@ make client-dist-win  # installateur Windows de l'application de bureau (NSIS, c
 make e2e-web          # client web seul dans Chromium : liens d'invitation, stockage chiffré, application installable, affichage téléphone
 make e2e-client       # application Electron réelle (et client web dans Chromium) contre de vrais services (xvfb-run ; QUAREL_APP_EXECUTABLE=… pour tester un paquet) : comptes, serveurs et messages, lien propriétaire, invitations et serveurs approuvés/bloqués, vocal (LiveKit), MP chiffrés face à quarelctl
 make client-interop   # chiffrement du client (vodozemac, WebAssembly) face à celui de quarelctl (goolm)
+make discord-import-test  # outil d'import Discord (tools/discord-import) face à de vrais services Quarel et une fausse API Discord
 make windows          # installateurs Windows des deux serveurs (NSIS requis) → dist/windows/
 ./bin/quarel-server backup f.tar.gz   # sauvegarde à chaud (idem quarel-identity), restore f.tar.gz [--force], version
 ./bin/quarelctl help  # client de test

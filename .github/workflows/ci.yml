@@ -82,7 +82,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - run: sudo apt-get install -y --no-install-recommends sqlite3
+      - run: sudo apt-get install -y --no-install-recommends sqlite3 python3-cryptography
       - run: make build
       - run: test/e2e/dm.sh
       - run: test/e2e/dm-groups.sh
@@ -92,6 +92,7 @@ jobs:
       - run: test/e2e/security.sh
       - run: test/e2e/ops.sh
       - run: test/e2e/calls.sh
+      - run: make discord-import-test
 
   e2e-client:
     name: End-to-end (desktop app, web client, voice)
