@@ -57,6 +57,10 @@ func (s *Server) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	if err := s.allowThread(ps, me, forum); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	if err := s.limit.messages.Check(me); err != nil {
 		writeErr(w, r, err)
 		return

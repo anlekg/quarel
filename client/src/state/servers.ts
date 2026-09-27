@@ -52,6 +52,7 @@ export interface ServerState {
   typing: Record<number, Record<string, number>> // channel → member → shown until (ms)
   commands: BotCommand[] // slash commands of the server's bots
   ephemeral: Record<number, EphemeralReply[]> // channel → command replies only this member sees (this session)
+  archived: Record<number, Channel> // archived threads opened in this session (not in ready.channels)
 }
 
 const PAGE = 50
@@ -112,7 +113,7 @@ export async function previewServer(account: Account, inv: Invite): Promise<Serv
 }
 
 export class ServerConn {
-  state: ServerState = { status: 'connecting', reads: {}, messages: {}, typing: {}, commands: [], ephemeral: {} }
+  state: ServerState = { status: 'connecting', reads: {}, messages: {}, typing: {}, commands: [], ephemeral: {}, archived: {} }
   private listeners = new Set<() => void>()
   private ws: WebSocket | null = null
   private retry = 0
@@ -242,6 +243,17 @@ export class ServerConn {
   // undefined until loaded (the state changes then).
   private emojiURLs = new Map<string, string | null>()
 
+  // An archived thread (from a message's thread link or a forum): known for this session.
+  keepArchived(c: Channel) {
+    if (!this.state.ready?.channels.some((x) => x.id === c.id)) this.set({ archived: { ...this.state.archived, [c.id]: c } })
+  }
+
+  async openArchived(id: number): Promise<Channel> {
+    const c = this.state.ready?.channels.find((x) => x.id === id) ?? this.state.archived[id] ?? await this.api((cl) => cl.channel(id))
+    this.keepArchived(c)
+    return c
+  }
+
   emojiURL(id: string): string | undefined {
     const u = this.emojiURLs.get(id)
     if (u) return u
@@ -315,8 +327,12 @@ export class ServerConn {
       case 'CHANNEL_CREATE':
       case 'CHANNEL_UPDATE': {
         const c = d as Channel
+        const { [c.id]: _, ...archived } = this.state.archived
+        if (c.archived_at) { // an inactive thread leaves the lists (still openable, see openArchived)
+          return this.set({ ready: { ...r, channels: r.channels.filter((x) => x.id !== c.id) }, archived: { ...archived, [c.id]: c } })
+        }
         const channels = r.channels.some((x) => x.id === c.id) ? r.channels.map((x) => (x.id === c.id ? c : x)) : [...r.channels, c]
-        return this.set({ ready: { ...r, channels } })
+        return this.set({ ready: { ...r, channels }, archived })
       }
       case 'CHANNEL_DELETE':
         return this.set({ ready: { ...r, channels: r.channels.filter((x) => x.id !== d.id) } })

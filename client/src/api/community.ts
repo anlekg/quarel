@@ -58,6 +58,7 @@ export interface Channel {
   thread_starter?: number
   overrides?: Override[]
   stage?: boolean // voice: only speakers talk
+  archived_at?: string // a thread without messages for a week: out of the lists until a message reopens it
 }
 
 export interface Override {
@@ -371,6 +372,11 @@ export class CommunityClient {
 
   updateServer(body: Partial<Pick<ServerInfo, 'name' | 'access' | 'rules' | 'require_phone'>>) {
     return this.call<ServerInfo>('PATCH', '/v1/server', body)
+  }
+
+  // One channel, also when left out of the lists (an archived thread).
+  channel(id: number) {
+    return this.call<Channel>('GET', '/v1/channels/' + id)
   }
 
   posts(forum: number) {

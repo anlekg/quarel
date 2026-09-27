@@ -330,6 +330,7 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		}
 		msg.ReplyTo = &req.ReplyTo
 	}
+	s.revive(ctx, c) // an archived thread comes back
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		writeErr(w, r, err)

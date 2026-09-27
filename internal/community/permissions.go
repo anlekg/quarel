@@ -281,11 +281,16 @@ func (ps *permSnapshot) deny(memberID string, p perm) error {
 	return missing(p)
 }
 
-// visibleChannels lists the channels a member can see, in display order.
+// visibleChannels lists the channels a member can see, in display order;
+// archived threads are left out (see threads.go).
 func (ps *permSnapshot) visibleChannels(memberID string) []*channel {
+	return ps.channelsSeen(memberID, false)
+}
+
+func (ps *permSnapshot) channelsSeen(memberID string, archived bool) []*channel {
 	out := []*channel{}
 	for _, c := range ps.channels {
-		if ps.inChannel(memberID, c.ID)&permViewChannel != 0 {
+		if (archived || c.ArchivedAt == nil) && ps.inChannel(memberID, c.ID)&permViewChannel != 0 {
 			out = append(out, c)
 		}
 	}

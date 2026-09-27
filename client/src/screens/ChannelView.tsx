@@ -90,6 +90,7 @@ export function ChannelView({ conn, ready, state, channel, members, showMembers,
         <MessageList conn={conn} ready={ready} channel={channel} messages={cm?.list ?? []} hasMore={cm?.hasMore ?? true}
           loading={cm?.loading ?? true} names={names} onReply={setReplyTo} onError={setError}
           jump={jump ?? null} onJumped={onJumped} onOpenChannel={onOpenChannel} />
+        {channel.archived_at && <div className="archived-note" role="status">Fil archivé (plus de message depuis une semaine) : écrire un message le rouvre.</div>}
         <Composer conn={conn} ready={ready} channel={channel} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} names={names} />
         <div className="typing-line" aria-live="polite">
           {typing.length === 1 && <><b>{typing[0]}</b> écrit…</>}
@@ -349,7 +350,12 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
         {m.pinned_at && <span className="pin-tag" title={'Épinglé le ' + formatFull(m.pinned_at)}><Pin size={12} />Épinglé</span>}
         {m.thread_id && (() => {
           const th = ready.channels.find((c) => c.id === m.thread_id)
-          return th ? <button className="thread-link" onClick={() => onOpenChannel(th.id)}><Thread size={14} />{th.name}<span className="muted small">Ouvrir le fil</span></button> : null
+          if (!th) { // archived (no message for a week): fetched when opened
+            const id = m.thread_id
+            return <button className="thread-link" onClick={() => conn.openArchived(id).then((c) => onOpenChannel(c.id), (e) => onError(errorMessage(e)))}>
+              <Thread size={14} />{conn.state.archived[id]?.name ?? 'Fil archivé'}<span className="muted small">Ouvrir le fil</span></button>
+          }
+          return <button className="thread-link" onClick={() => onOpenChannel(th.id)}><Thread size={14} />{th.name}<span className="muted small">Ouvrir le fil</span></button>
         })()}
         {threading && <ThreadDialog conn={conn} m={m} onClose={() => setThreading(false)} onCreated={(id) => { setThreading(false); onOpenChannel(id) }} />}
         {m.embeds.map((e) => (

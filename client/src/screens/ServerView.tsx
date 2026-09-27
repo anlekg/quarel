@@ -34,7 +34,7 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
   const narrow = typeof matchMedia !== 'undefined' && matchMedia('(max-width: 700px)').matches
   const [showMembers, setShowMembers] = useState(() => !narrow && prefs.get('show-members', true))
 
-  const channel = r?.channels.find((c) => c.id === channelID && c.type !== 'category')
+  const channel = r?.channels.find((c) => c.id === channelID && c.type !== 'category') ?? (channelID != null ? state.archived[channelID] : undefined)
   const [jump, setJump] = useState<number | null>(null) // message to show once the channel is open
   // "Profil et modération…" from a message author's right-click menu.
   const [memberDialog, setMemberDialog] = useState<Member | null>(null)

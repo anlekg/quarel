@@ -48,7 +48,7 @@ type Server struct {
 	enc      *ecdh.PrivateKey                            // tokens sealed for this server (Identity services that approve servers)
 	network  func(ctx context.Context) netdiag.Diagnosis // nil: no diagnosis available
 	proxies  ratelimit.Proxies
-	limit    struct{ global, auth, messages, uploads, typing, phone *ratelimit.Limiter }
+	limit    struct{ global, auth, messages, uploads, typing, phone, threads *ratelimit.Limiter }
 	previews *previewer    // nil: link previews disabled
 	phone    PhoneVerifier // nil: phone verification unavailable
 	disabled disabledSet   // accounts disabled by their identity service
@@ -103,6 +103,7 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, keys KeySource) *Server
 	s.limit.uploads = ratelimit.New(cfg.Limits.Uploads, time.Minute)
 	s.limit.typing = ratelimit.New(1, 3*time.Second)
 	s.limit.phone = ratelimit.New(cfg.Limits.Phone, time.Hour)
+	s.limit.threads = ratelimit.New(cfg.Limits.Threads, 10*time.Minute)
 	s.phone = newPhoneVerifier(cfg)
 	if s.cfg.MaxUploadBytes <= 0 {
 		s.cfg.MaxUploadBytes = 25 << 20
@@ -300,6 +301,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/bots", s.authed(s.needPerm(permManageServer, s.handleCreateBot)))
 	mux.HandleFunc("POST /v1/bots/{id}/token", s.authed(s.handleResetBotToken))
 	mux.HandleFunc("DELETE /v1/bots/{id}", s.authed(s.handleDeleteBot))
+	mux.HandleFunc("GET /v1/channels/{id}", s.authed(s.handleGetChannel))
 	mux.HandleFunc("GET /v1/channels/{id}/posts", s.authed(s.handleListPosts))
 	mux.HandleFunc("POST /v1/channels/{id}/posts", s.authed(s.handleCreatePost))
 	mux.HandleFunc("GET /v1/emojis", s.authed(s.handleListEmojis))

@@ -289,6 +289,11 @@ UPDATE roles SET permissions = permissions | 1048576 WHERE permissions & 32 != 0
 UPDATE channel_overrides SET allow = allow | 1048576 WHERE allow & 32 != 0;
 UPDATE channel_overrides SET deny = deny | 1048576 WHERE deny & 32 != 0;
 `,
+	// 13 (2026-09-27): archived threads and forum posts (no message for
+	// threadArchiveAfter): left out of READY and channel lists, reopened by a message.
+	`
+ALTER TABLE channels ADD COLUMN archived_at INTEGER;
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

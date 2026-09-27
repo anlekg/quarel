@@ -184,5 +184,8 @@ func (s *Server) Housekeeping(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, s.nowMs()); err != nil {
 		return err
 	}
+	if err := s.ArchiveThreads(ctx); err != nil {
+		return err
+	}
 	return s.CleanupAttachments(ctx)
 }

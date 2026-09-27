@@ -242,6 +242,7 @@ func (s *Server) handleWebhookPost(w http.ResponseWriter, r *http.Request) {
 // extra runs inside the transaction, with the new message's ID.
 func (s *Server) storeMessage(ctx context.Context, ps *permSnapshot, c *channel, author, content string, p perm, extra func(tx *sql.Tx, id int64) error) (*message, error) {
 	msg := &message{ChannelID: c.ID, AuthorID: author, Content: content}
+	s.revive(ctx, c)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err

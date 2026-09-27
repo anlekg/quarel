@@ -742,3 +742,7 @@ code.secret { font-family: ui-monospace, monospace; letter-spacing: .06em; word-
 .invite-friends li { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; }
 .invite-friends li:hover { background: var(--bg-2); }
 .invite-friends .grow { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+/* --- archived threads --- */
+.archived-note { margin: 0 16px 8px; padding: 8px 12px; border-radius: 8px; background: var(--bg-2); color: var(--text-3); font-size: 13px; }
+.archived-tag { margin-left: 8px; padding: 1px 6px; border-radius: 6px; background: var(--bg-3); color: var(--text-3); font-size: 11px; font-weight: 600; vertical-align: middle; }
