@@ -49,7 +49,7 @@
 - [x] **P1** Pièces jointes chiffrées
 - [x] **P1** Édition / suppression de ses messages
 - [x] **P1** Indicateur « en train d'écrire », accusés de lecture (désactivables)
-- [ ] **P2** Messages éphémères
+- [x] **P2** Messages éphémères *(2026-09-27 : durée par conversation réglée par n'importe quel membre — 5 min, 1 h, 1 jour, 7 jours —, annoncée dans l'historique, chaque appareil efface lui-même)*
 
 ### A6. Appels entre amis (P2P)
 - [x] **P1** Signalisation WebRTC via le service central (échange d'offres, sans transit du média)

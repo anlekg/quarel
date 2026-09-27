@@ -36,6 +36,7 @@ const empty: SocialState = {
 }
 
 let state: SocialState = empty
+let purgeTimer: ReturnType<typeof setInterval> | undefined
 let e2e: E2E | null = null
 let files: Files | null = null
 let account: Account | null = null
@@ -99,6 +100,10 @@ export async function openSocial(a: Account) {
     e2e.on(onEngine)
     for (const l of engineListeners) l({ kind: 'servers' }) // the engine is ready: servers can sync
     files = new Files(e2e, api(), (convId) => state.conversations.find((c) => c.id === convId)?.members.map((m) => m.id))
+    // Ephemeral messages whose time is up, after Files listens (their files go too).
+    const engine = e2e
+    await engine.purgeExpired()
+    purgeTimer = setInterval(() => engine.purgeExpired().catch(() => {}), 5000)
     set({ validated: e2e.validated, code: verificationCode(e2e.ed25519) })
     await Promise.all([refreshFriends(), refreshConversations(), refreshDevices(), refreshBackup(), refreshBlocks()])
     set({ status: 'ready' })
@@ -112,6 +117,7 @@ export async function openSocial(a: Account) {
 export function closeSocial() {
   closed = true
   clearTimeout(retryTimer)
+  clearInterval(purgeTimer)
   ws?.close()
   ws = null
   files?.close()
@@ -349,6 +355,13 @@ export async function resetKeys(password: string, totp?: string) {
 export async function sendText(c: Conversation, text: string) {
   return e2e!.send(c.id, othersOf(c), { text })
 }
+
+// Lifetime of the conversation's next messages, for every member (0: off).
+export async function setTimer(c: Conversation, ttl: number) {
+  return e2e!.send(c.id, othersOf(c), { type: 'timer', ttl, text: '' })
+}
+
+export const timerOf = (c: Conversation) => e2e?.timerOf(c.id) ?? 0
 
 export async function editText(c: Conversation, target: number, text: string) {
   return e2e!.send(c.id, othersOf(c), { type: 'edit', target, text })

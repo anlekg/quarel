@@ -118,6 +118,12 @@ sleep 0.5
 expect "dave le récupère plus tard, en direct depuis un autre membre en ligne" "$(Q dave dm-download Tarot $V video-dave.bin)" "en direct depuis un autre appareil"
 cmp -s $D/video.bin $D/video-dave.bin && echo "✔ gros fichier identique" || { echo "✘ gros fichier différent"; FAIL=1; }
 [ "$(ls $D/id/dm-files | wc -l)" = 0 ] && echo "✔ le gros fichier n'est jamais passé par le serveur" || { echo "✘ gros fichier stocké"; FAIL=1; }
+echo "## Messages éphémères"
+expect "dave règle 1 heure pour tout le groupe" "$(Q dave dm-timer Tarot 1h)" "messages éphémères : 1 heure"
+expect "bob voit le réglage" "$(Q bob dm-history Tarot)" "dave : ⏱ messages éphémères : 1 heure"
+Q bob dm Tarot 'Ceci disparaîtra' >/dev/null
+expect "le message de bob suit le réglage" "$(Q alice dm-history Tarot)" "bob : Ceci disparaîtra ⏱"
+expect "alice les désactive" "$(Q alice dm-timer Tarot off)" "a désactivé les messages éphémères"
 for w in "Rendez-vous jeudi" "Bienvenue dave" "21 h"; do
   if cat $D/id/identity.db* | grep -aqF "$w"; then echo "✘ « $w » en clair dans la base"; FAIL=1; fi
 done

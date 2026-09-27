@@ -40,6 +40,20 @@ export interface HistMsg {
   edited?: boolean
   file?: FileRef
   added?: string[] // "members" event: users `from` added to the group
+  timer?: number // "timer" event: the new lifetime of messages (seconds, 0 = off)
+  expires?: string // ephemeral message: deleted from this device then (RFC 3339)
+}
+
+// Ephemeral messages (as cmd/quarelctl/e2e.go): a "timer" event (any member)
+// sets how long the conversation's next messages last; each text or file
+// message carries its sender's setting (ttl) and every device deletes it that
+// long after it was sent (a sending date in the future counts as now). Timer
+// events stay in the history: the last one is the conversation's setting.
+export const TIMER_CHOICES = [0, 300, 3600, 86400, 604800]
+const MAX_TTL = 604800
+
+export function expiry(sentAt: string, ttl: number, now = Date.now()) {
+  return new Date(Math.min(Date.parse(sentAt) || now, now) + Math.min(ttl, MAX_TTL) * 1000).toISOString()
 }
 
 interface OutboundState {
@@ -154,8 +168,9 @@ interface OlmPlain {
 
 export interface MegolmPlain {
   dm_id: string
-  type?: '' | 'file' | 'edit' | 'delete' | 'members'
+  type?: '' | 'file' | 'edit' | 'delete' | 'members' | 'timer'
   target?: number
+  ttl?: number // "timer": the new setting; text and file: the sender's setting (seconds)
   members?: string[] // "members": users the sender added to the group
   text: string
   file?: FileRef
@@ -309,6 +324,33 @@ export class E2E {
 
   history(dmId: string): HistMsg[] {
     return this.st.history[dmId] ?? []
+  }
+
+  // The conversation's current lifetime of messages (seconds, 0: off).
+  timerOf(dmId: string) {
+    const list = this.st.history[dmId] ?? []
+    for (let i = list.length - 1; i >= 0; i--) if (list[i].timer !== undefined) return list[i].timer!
+    return 0
+  }
+
+  // Deletes the ephemeral messages whose time is up (their files too).
+  purgeExpired() {
+    return this.run(async () => {
+      const now = Date.now()
+      let changed = false
+      for (const [dm, list] of Object.entries(this.st.history)) {
+        const gone = list.filter((h) => h.expires && Date.parse(h.expires) <= now)
+        if (!gone.length) continue
+        this.st.history[dm] = list.filter((h) => !gone.includes(h))
+        for (const h of gone) if (h.file) this.emit({ kind: 'file_gone', dmId: dm, ref: h.file })
+        this.emit({ kind: 'history', dmId: dm })
+        changed = true
+      }
+      if (changed) {
+        await this.save()
+        await this.backupQuietly()
+      }
+    })
   }
 
   name(userId: string) {
@@ -619,6 +661,10 @@ export class E2E {
       const key: RoomKey = { dm_id: dmId, session_id: og.sessionId, session_key: og.sessionKey }
       await this.sendSecret(missing, 'room_key', key)
       for (const d of missing) ob.shared_with[d.device_id] = true
+      if (!content.type || content.type === 'file') {
+        const ttl = this.timerOf(dmId)
+        content = { ...content, ...(ttl ? { ttl } : {}) }
+      }
       const plain: MegolmPlain = { ...content, dm_id: dmId, sender_user: this.st.user_id, sender_device: this.st.device_id, sent_at: new Date().toISOString() }
       const ct = og.encrypt(JSON.stringify(plain))
       ob.sent++
@@ -651,6 +697,17 @@ export class E2E {
       this.st.history[p.dm_id] = list
       return true
     }
+    if (p.type === 'timer') {
+      if (!TIMER_CHOICES.includes(p.ttl ?? 0)) {
+        this.emit({ kind: 'warning', text: this.name(p.sender_user) + ' a choisi une durée de messages éphémères inconnue : ignoré.' })
+        return false
+      }
+      if (list.some((h) => h.event_id === eventId)) return false
+      list.push({ event_id: eventId, from: p.sender_user, text: '', at: p.sent_at, timer: p.ttl ?? 0 })
+      list.sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+      this.st.history[p.dm_id] = list
+      return true
+    }
     if (p.type === 'edit' || p.type === 'delete') {
       const i = list.findIndex((h) => h.event_id === p.target)
       if (i < 0) return false
@@ -667,7 +724,9 @@ export class E2E {
       return true
     }
     if (list.some((h) => h.event_id === eventId)) return false
-    list.push({ event_id: eventId, from: p.sender_user, text: p.text, at: p.sent_at, ...(p.file ? { file: p.file } : {}) })
+    const expires = p.ttl && p.ttl > 0 ? expiry(p.sent_at, p.ttl) : undefined
+    if (expires && Date.parse(expires) <= Date.now()) return false // already gone
+    list.push({ event_id: eventId, from: p.sender_user, text: p.text, at: p.sent_at, ...(p.file ? { file: p.file } : {}), ...(expires ? { expires } : {}) })
     if (p.file && p.sender_device !== this.st.device_id) this.emit({ kind: 'file_received', dmId: p.dm_id, ref: p.file })
     list.sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
     this.st.history[p.dm_id] = list

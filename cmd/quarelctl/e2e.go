@@ -39,14 +39,16 @@ const (
 )
 
 type histMsg struct {
-	EventID   int64     `json:"event_id"`
-	From      string    `json:"from"` // user id
-	Text      string    `json:"text"`
-	At        time.Time `json:"at"`
-	Delivered bool      `json:"delivered,omitempty"`
-	Edited    bool      `json:"edited,omitempty"`
-	File      *fileRef  `json:"file,omitempty"`
-	Added     []string  `json:"added,omitempty"` // "members" event: users From added to the group
+	EventID   int64      `json:"event_id"`
+	From      string     `json:"from"` // user id
+	Text      string     `json:"text"`
+	At        time.Time  `json:"at"`
+	Delivered bool       `json:"delivered,omitempty"`
+	Edited    bool       `json:"edited,omitempty"`
+	File      *fileRef   `json:"file,omitempty"`
+	Added     []string   `json:"added,omitempty"`   // "members" event: users From added to the group
+	Timer     *int64     `json:"timer,omitempty"`   // "timer" event: the new lifetime of messages (seconds, 0 = off)
+	Expires   *time.Time `json:"expires,omitempty"` // ephemeral message: deleted from this device then
 }
 
 type outboundState struct {
@@ -147,6 +149,7 @@ func (c *cli) withE2E(fn func(e *e2e) error) error {
 	if err != nil {
 		return err
 	}
+	e.purgeExpired(time.Now())
 	if err := fn(e); err != nil {
 		e.save()
 		return err
@@ -593,9 +596,10 @@ type megolmEnvelope struct {
 // deletions are events too: the server cannot tell them from messages.
 type megolmPlain struct {
 	DMID         string    `json:"dm_id"`
-	Type         string    `json:"type,omitempty"`    // "" (text), "file", "edit", "delete", "members"
+	Type         string    `json:"type,omitempty"`    // "" (text), "file", "edit", "delete", "members", "timer"
 	Target       int64     `json:"target,omitempty"`  // edit/delete: event id of the message
 	Members      []string  `json:"members,omitempty"` // "members": users the sender added to the group
+	TTL          int64     `json:"ttl,omitempty"`     // "timer": the new setting; text and file: the sender's setting (seconds)
 	Text         string    `json:"text"`
 	File         *fileRef  `json:"file,omitempty"`
 	SenderUser   string    `json:"sender_user"`
@@ -682,6 +686,9 @@ func (e *e2e) sendDM(dmID string, members []string, content megolmPlain) (*histM
 	for _, d := range missing {
 		ob.SharedWith[d.DeviceID] = true
 	}
+	if content.Type == "" || content.Type == "file" {
+		content.TTL = e.timerOf(dmID)
+	}
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	content.DMID, content.SenderUser, content.SenderDevice, content.SentAt = dmID, e.st.UserID, e.st.DeviceID, now
 	plain, _ := json.Marshal(content)
@@ -730,6 +737,16 @@ func (e *e2e) apply(eventID int64, p megolmPlain) (*histMsg, string) {
 			return &m, e.format(m)
 		}
 		return &m, ""
+	case "timer":
+		if !timerChoices[p.TTL] {
+			return nil, fmt.Sprintf("⚠ %s a choisi une durée de messages éphémères inconnue : ignoré", e.name(p.SenderUser))
+		}
+		ttl := p.TTL
+		m := histMsg{EventID: eventID, From: p.SenderUser, At: p.SentAt, Timer: &ttl}
+		if e.addHistory(p.DMID, m) {
+			return &m, e.format(m)
+		}
+		return &m, ""
 	case "edit", "delete":
 		list := e.st.History[p.DMID]
 		for i, h := range list {
@@ -749,6 +766,13 @@ func (e *e2e) apply(eventID int64, p megolmPlain) (*histMsg, string) {
 		return nil, ""
 	}
 	m := histMsg{EventID: eventID, From: p.SenderUser, Text: p.Text, At: p.SentAt, File: p.File}
+	if p.TTL > 0 {
+		exp := expiry(p.SentAt, p.TTL, time.Now())
+		if !exp.After(time.Now()) {
+			return nil, "" // already gone
+		}
+		m.Expires = &exp
+	}
 	if e.addHistory(p.DMID, m) {
 		return &m, e.format(m)
 	}
@@ -790,6 +814,71 @@ func (e *e2e) openDM(it inboxItem) (*megolmPlain, error) {
 	}
 	e.st.Seen[seen] = true
 	return &plain, nil
+}
+
+// --- ephemeral messages ---
+//
+// A "timer" event (any member) sets how long the conversation's next
+// messages last; each text or file message then carries its sender's
+// setting (ttl) and every device deletes it that long after it was sent (a
+// sending date in the future counts as now). Timer events stay in the
+// history: the last one is the conversation's setting.
+
+var timerChoices = map[int64]bool{0: true, 300: true, 3600: true, 86400: true, 604800: true}
+
+const maxTTL = 604800
+
+func expiry(sent time.Time, ttl int64, now time.Time) time.Time {
+	if sent.After(now) {
+		sent = now
+	}
+	return sent.Add(time.Duration(min(ttl, maxTTL)) * time.Second)
+}
+
+// timerOf is the conversation's current lifetime of messages (0: off).
+func (e *e2e) timerOf(dmID string) int64 {
+	list := e.st.History[dmID]
+	for i := len(list) - 1; i >= 0; i-- {
+		if list[i].Timer != nil {
+			return *list[i].Timer
+		}
+	}
+	return 0
+}
+
+// purgeExpired deletes the ephemeral messages whose time is up, and their files.
+func (e *e2e) purgeExpired(now time.Time) {
+	for dm, list := range e.st.History {
+		kept := list[:0:0]
+		for _, h := range list {
+			if h.Expires != nil && !h.Expires.After(now) {
+				if h.File != nil {
+					if p, ok := e.c.localFile(h.File.ID); ok {
+						os.Remove(p)
+					}
+				}
+				continue
+			}
+			kept = append(kept, h)
+		}
+		if len(kept) != len(list) {
+			e.st.History[dm] = kept
+		}
+	}
+}
+
+func timerLabel(ttl int64) string {
+	switch ttl {
+	case 300:
+		return "5 minutes"
+	case 3600:
+		return "1 heure"
+	case 86400:
+		return "1 jour"
+	case 604800:
+		return "7 jours"
+	}
+	return "désactivés"
 }
 
 func (e *e2e) addHistory(dmID string, m histMsg) bool {
@@ -1035,6 +1124,16 @@ func (e *e2e) format(m histMsg) string {
 	text := m.Text
 	if m.File != nil {
 		text = strings.TrimSpace(fmt.Sprintf("📎 %s (%s) %s", m.File.Name, humanSize(m.File.Size), m.Text))
+	}
+	if m.Expires != nil {
+		mark += " ⏱"
+	}
+	if m.Timer != nil {
+		if *m.Timer == 0 {
+			text = "⏱ a désactivé les messages éphémères"
+		} else {
+			text = "⏱ messages éphémères : " + timerLabel(*m.Timer)
+		}
 	}
 	if m.Added != nil {
 		names := make([]string, len(m.Added))

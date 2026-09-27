@@ -132,6 +132,10 @@ func (c *cli) runDMs(cmd string, args []string) (bool, error) {
 				return nil
 			})
 		}
+	case "dm-timer":
+		if err = need(args, 2, "<cible> <off|5m|1h|1j|7j>"); err == nil {
+			err = c.setTimer(args[0], args[1])
+		}
 	case "dm-edit":
 		if err = need(args, 3, "<cible> <n° de message> <nouveau texte…>"); err == nil {
 			err = c.editOrDelete(args[0], args[1], strings.Join(args[2:], " "), "edit")
@@ -259,6 +263,24 @@ func (c *cli) groupMember(add bool, group, pseudo string) error {
 		}
 		fmt.Printf("Retrait de %s de %s : les prochains messages utiliseront une nouvelle clé.\n", pseudo, conv.label())
 		return nil
+	})
+}
+
+// setTimer sets how long the conversation's next messages last, for all members.
+func (c *cli) setTimer(target, value string) error {
+	ttl, ok := map[string]int64{"off": 0, "0": 0, "5m": 300, "1h": 3600, "1j": 86400, "1d": 86400, "7j": 604800, "7d": 604800}[value]
+	if !ok {
+		return fmt.Errorf("durée inconnue : %s (off, 5m, 1h, 1j ou 7j)", value)
+	}
+	return c.withE2E(func(e *e2e) error {
+		if err := e.sync(printLine); err != nil {
+			return err
+		}
+		conv, err := c.resolveConv(e, target)
+		if err != nil {
+			return err
+		}
+		return c.sendEvent(e, conv, megolmPlain{Type: "timer", TTL: ttl})
 	})
 }
 

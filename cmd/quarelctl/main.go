@@ -83,6 +83,7 @@ Messages privés (chiffrés de bout en bout, entre amis)
   keys-reset                       tout perdu (appareils et phrase) : repartir avec une nouvelle clé de compte
   dm-sync                          récupérer les messages en attente
   dm-listen                        messages privés en direct (Ctrl+C pour quitter)
+  dm-timer <cible> <off|5m|1h|1j|7j>   messages éphémères : durée de vie des prochains messages (pour tout le monde)
   dm-edit <cible> <n°> <texte…>    modifier un de ses messages (chez tout le monde)
   dm-delete <cible> <n°>           supprimer un de ses messages (chez tout le monde)
   dm-file <cible> <fichier> [texte…]   envoyer un fichier chiffré de bout en bout

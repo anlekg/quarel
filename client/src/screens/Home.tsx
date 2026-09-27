@@ -4,7 +4,7 @@ import type { Conversation, PublicUser } from '../api/identity'
 import { Avatar } from '../components/Avatar'
 import { MessageContent, type MentionNames } from '../components/MessageContent'
 import { Alert, BackButton, Dialog, Field } from '../components/ui'
-import { Chat, Download, FileIcon, Lock, Paperclip, Pencil, Phone, Plus, Send, Shield, Trash, Users } from '../components/icons'
+import { Chat, Clock, Download, FileIcon, Lock, Paperclip, Pencil, Phone, Plus, Send, Shield, Trash, Users } from '../components/icons'
 import { errorMessage } from '../lib/errors'
 import { formatDay, formatFull, formatSize, formatStamp, formatTime, sameDay } from '../lib/format'
 import { prefs } from '../platform'
@@ -15,14 +15,16 @@ import { CallPanel } from './Call'
 import { GROUP_CALL_MAX, startCall, startGroupCall, useCall, useGroupCall } from '../state/calls'
 import type { Account } from '../state/account'
 import type { FileRef, HistMsg } from '../e2e/engine'
-import { E2EError } from '../e2e/engine'
+import { E2EError, TIMER_CHOICES } from '../e2e/engine'
 import { FileError, MAX_FILE } from '../e2e/files'
 import {
   acceptFriend, addFriend, addToGroup, blockUser, createGroup, deleteMessage, editText, engine, leaveGroup, markRead, openDirect, openFile, removeFriend, sendFile, sendText,
-  typing, typingIn, unconfirmedMembers, useSocial,
+  setTimer, timerOf, typing, typingIn, unconfirmedMembers, useSocial,
 } from '../state/social'
 
 const presenceLabel: Record<string, string> = { online: 'En ligne', idle: 'Absent', dnd: 'Ne pas déranger', offline: 'Hors ligne' }
+
+const timerLabel = (ttl: number) => ({ 0: 'Désactivés', 300: '5 minutes', 3600: '1 heure', 86400: '1 jour', 604800: '7 jours' } as Record<number, string>)[ttl] ?? ttl + ' s'
 
 function convName(c: Conversation, me: string) {
   if (c.kind === 'direct') return c.user?.pseudo ?? c.members.find((m) => m.id !== me)?.pseudo ?? 'Conversation'
@@ -322,7 +324,8 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
   }
 
   const reads = s.reads[conv.id] ?? {}
-  const lastMine = [...history].reverse().find((m) => m.from === me)
+  const lastMine = [...history].reverse().find((m) => m.from === me && !m.added && m.timer === undefined)
+  const timer = timerOf(conv)
   const readers = lastMine ? Object.entries(reads).filter(([u, ev]) => u !== me && ev >= lastMine.event_id).map(([u]) => name(u)) : []
   const typers = typingIn(conv.id).filter((u) => u !== me).map(name)
   const title = convName(conv, me)
@@ -337,6 +340,14 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
           <span className="e2e-badge" title="Seuls les appareils validés des participants peuvent lire ces messages. Le serveur ne voit que du chiffré."><Lock size={13} />Chiffré de bout en bout</span>
           {verified && <span className="e2e-badge" data-testid="verified" title="Vous avez comparé votre code de sécurité avec cette personne."><Shield size={13} />Vérifié</span>}
           <span style={{ flex: 1 }} />
+          {s.validated && (
+            <label className={'timer-select' + (timer ? ' on' : '')} title="Messages éphémères : les prochains messages disparaissent de tous les appareils après ce délai">
+              <Clock size={16} />
+              <select aria-label="Messages éphémères" value={timer} onChange={(ev) => run(setTimer(conv, Number(ev.target.value)))}>
+                {TIMER_CHOICES.map((t) => <option key={t} value={t}>{timerLabel(t)}</option>)}
+              </select>
+            </label>
+          )}
           {other && s.validated && (
             <button className="icon-btn" aria-label="Code de sécurité" title="Code de sécurité : vérifier que personne ne s’interpose" onClick={() => setSafety({ id: other.id, name: other.pseudo })}><Shield size={18} /></button>
           )}
@@ -380,6 +391,13 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
             <p className="muted">Début de votre conversation. Les messages sont chiffrés de bout en bout et gardés sur vos appareils.</p>
           </div>
           {history.map((m, i) => {
+            if (m.timer !== undefined) {
+              return (
+                <div className="day-sep" key={m.event_id} data-testid="timer-event">
+                  {name(m.from)} {m.timer ? 'a activé les messages éphémères : ' + timerLabel(m.timer).toLowerCase() : 'a désactivé les messages éphémères'}
+                </div>
+              )
+            }
             if (m.added) {
               return <div className="day-sep" key={m.event_id} data-testid="members-event">{name(m.from)} a ajouté {m.added.map(name).join(', ')} au groupe</div>
             }
@@ -402,6 +420,7 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
                     <div className="text">
                       <MessageContent text={m.text} names={names} />
                       {m.edited && <span className="edited">(modifié)</span>}
+                      {m.expires && <span className="edited" data-testid="ephemeral" title={'Disparaît ' + formatFull(m.expires)}><Clock size={12} /></span>}
                       {mine && m === lastMine && (
                         <span className="receipt">{readers.length ? (conv.kind === 'direct' ? 'Vu' : 'Vu par ' + readers.join(', ')) : m.delivered ? 'Distribué' : 'Envoyé'}</span>
                       )}

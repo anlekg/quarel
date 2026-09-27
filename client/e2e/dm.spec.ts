@@ -141,5 +141,25 @@ test('private messages: friends, encrypted with the Go client both ways', async 
   await expect(page.getByRole('log')).toContainText('Oui, de bout en bout !')
   ctl.run('alice', 'dm', 'bob', 'Toujours là ?')
   await expect(page.getByRole('log')).toContainText('Toujours là ?')
+
+  // Ephemeral messages: alice (Go client) turns them on, both sides follow the setting.
+  ctl.run('alice', 'dm-timer', 'bob', '5m')
+  await expect(page.getByTestId('timer-event').last()).toHaveText('alice a activé les messages éphémères : 5 minutes')
+  await expect(page.getByLabel('Messages éphémères')).toHaveValue('300')
+  const box = page.getByLabel('Message pour alice')
+  await box.fill('Ce message va disparaître')
+  await box.press('Enter')
+  await expect.poll(() => ctl.run('alice', 'dm-history', 'bob'), { timeout: 15_000 }).toMatch(/bob : Ce message va disparaître.*⏱/)
+  ctl.run('alice', 'dm', 'bob', 'Moi aussi')
+  const ephemeral = page.locator('.msg', { hasText: 'Moi aussi' })
+  await expect(ephemeral.getByTestId('ephemeral')).toBeVisible()
+  // Six minutes later (the page's clock only), both are gone; older messages stay.
+  await page.clock.install({ time: new Date(Date.now() + 6 * 60_000) })
+  await expect(page.getByRole('log')).not.toContainText('Moi aussi', { timeout: 15_000 })
+  await expect(page.getByRole('log')).not.toContainText('Ce message va disparaître')
+  await expect(page.getByRole('log')).toContainText('Toujours là ?')
+  // bob turns them off, for alice too.
+  await page.getByLabel('Messages éphémères').selectOption('0')
+  await expect.poll(() => ctl.run('alice', 'dm-history', 'bob'), { timeout: 15_000 }).toContain('bob : ⏱ a désactivé les messages éphémères')
   await app.close()
 })
