@@ -17,7 +17,7 @@
 - [x] **P1** Suppression de compte par l'utilisateur (effacement réel des données)
 - [x] **P1** Anti-bruteforce : blocage du compte après 15 échecs de connexion par heure *(avancé au jalon 1 à la demande du CP)*
 - [x] **P1** Limitation de débit par IP (anti-spam d'inscriptions, anti-blocage malveillant de comptes)
-- [ ] **P2** 2FA par clé matérielle / passkey (WebAuthn)
+- [x] **P2** 2FA par clé matérielle / passkey (WebAuthn) *(2026-09-27 : second facteur à côté du TOTP, vérifié sur une page du service d'identité ouverte dans le navigateur)*
 
 ### A2. Identité portable
 - [x] **P0** Identifiant unique au format `pseudo@domaine-du-service`

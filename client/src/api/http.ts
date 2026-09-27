@@ -36,7 +36,7 @@ export async function request<T>(base: string, method: string, path: string, opt
     if ((e as Error).name === 'AbortError') throw e
     throw new ApiError(0, 'network', 'service unreachable')
   }
-  if (res.status === 204 || res.status === 202) return undefined as T
+  if (res.status === 204) return undefined as T
   const text = await res.text()
   let data: unknown = undefined
   try {

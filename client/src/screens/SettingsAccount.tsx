@@ -2,7 +2,7 @@
 // authentication, deletion) and privacy (typing, read receipts, blocked people).
 import { useEffect, useRef, useState } from 'react'
 import qrcode from 'qrcode-generator'
-import type { Privacy, Profile, PublicUser } from '../api/identity'
+import type { Passkey, Privacy, Profile, PublicUser } from '../api/identity'
 import { ApiError } from '../api/http'
 import { Avatar, bumpAvatar } from '../components/Avatar'
 import { Alert, Dialog, Field, PasswordField, Submit } from '../components/ui'
@@ -179,6 +179,7 @@ export function SecuritySection({ account }: { account: Account }) {
             : <button className="btn btn-primary btn-sm" onClick={() => setDialog('2fa-on')}>Activer</button>}
         </div>
       </div>
+      {u.totp_enabled && <Passkeys account={account} />}
       <h3 className="settings-sub danger">Zone sensible</h3>
       <div className="card">
         <div className="card-row">
@@ -325,6 +326,91 @@ function Enable2FADialog({ account, onClose }: { account: Account; onClose: (msg
         <div className="dialog-actions">
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => onClose()}>Annuler</button>
           <Submit busy={a.busy} className="btn btn-primary btn-sm">{setup ? 'Activer' : 'Continuer'}</Submit>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
+// Passkeys (security keys, Windows Hello, phone…): a second factor next to
+// TOTP, added on the identity service's page in the browser.
+function Passkeys({ account }: { account: Account }) {
+  const [list, setList] = useState<Passkey[] | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [waiting, setWaiting] = useState(false)
+  const a = useAction()
+  const load = () => api(account).passkeys().then(setList, () => setList([]))
+  useEffect(() => {
+    load()
+  }, [account]) // eslint-disable-line react-hooks/exhaustive-deps
+  // After opening the page: check every 2 s (5 min) until the new key shows up.
+  useEffect(() => {
+    if (!waiting || !list) return
+    const before = list.length
+    const until = Date.now() + 5 * 60_000
+    const t = setInterval(() => {
+      if (Date.now() > until) return setWaiting(false)
+      api(account).passkeys().then((l) => {
+        if (l.length > before) {
+          setList(l)
+          setWaiting(false)
+        }
+      }, () => {})
+    }, 2000)
+    return () => clearInterval(t)
+  }, [waiting]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <>
+      <h3 className="settings-sub">Clés d&apos;accès</h3>
+      <p className="muted small" style={{ lineHeight: 1.5 }}>
+        À la connexion, une clé de sécurité, Windows Hello ou votre téléphone peuvent remplacer le code à 6 chiffres. Les codes de secours restent valables.
+      </p>
+      <Alert kind="error">{a.error}</Alert>
+      {waiting && <Alert kind="info">Terminez dans la page qui s&apos;est ouverte dans votre navigateur…</Alert>}
+      <div className="card" data-testid="passkeys">
+        {list?.map((p) => (
+          <div className="card-row" key={p.id}>
+            <div className="grow">
+              <span className="title">{p.name}</span>
+              <span className="sub">Ajoutée le {new Date(p.created_at * 1000).toLocaleDateString('fr-FR')}{p.last_used_at ? ' · utilisée le ' + new Date(p.last_used_at * 1000).toLocaleDateString('fr-FR') : ''}</span>
+            </div>
+            <button className="btn btn-ghost btn-sm" aria-label={'Supprimer ' + p.name} onClick={() => a.run(async () => {
+              await api(account).deletePasskey(p.id)
+              await load()
+            })}>Supprimer</button>
+          </div>
+        ))}
+        <div className="card-row">
+          <span className="grow muted small">{list?.length ? '' : 'Aucune clé pour l’instant.'}</span>
+          <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}>Ajouter une clé</button>
+        </div>
+      </div>
+      {adding && <AddPasskeyDialog account={account} onClose={() => setAdding(false)} onOpened={() => { setAdding(false); setWaiting(true) }} />}
+    </>
+  )
+}
+
+function AddPasskeyDialog({ account, onClose, onOpened }: { account: Account; onClose: () => void; onOpened: () => void }) {
+  const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
+  const a = useAction()
+  return (
+    <Dialog title="Ajouter une clé d'accès" onClose={onClose}>
+      <form style={{ display: 'flex', flexDirection: 'column', gap: 14 }} onSubmit={(e) => {
+        e.preventDefault()
+        a.run(async () => {
+          const { url } = await api(account).addPasskey(password, name.trim())
+          window.open(url, '_blank', 'noopener')
+          onOpened()
+        })
+      }}>
+        <Field label="Nom de la clé" placeholder="Clé USB, téléphone…" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} autoFocus />
+        <PasswordField label="Mot de passe actuel" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+        <p className="muted small" style={{ lineHeight: 1.5 }}>Une page de votre service d&apos;identité va s&apos;ouvrir dans le navigateur pour enregistrer la clé.</p>
+        <Alert kind="error">{a.error}</Alert>
+        <div className="dialog-actions">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Annuler</button>
+          <Submit busy={a.busy} className="btn btn-primary btn-sm">Continuer</Submit>
         </div>
       </form>
     </Dialog>

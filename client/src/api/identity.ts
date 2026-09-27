@@ -19,6 +19,14 @@ export interface SessionInfo {
   current: boolean
 }
 
+// A passkey (WebAuthn), second factor next to TOTP.
+export interface Passkey {
+  id: string
+  name: string
+  created_at: number
+  last_used_at: number | null
+}
+
 export interface LoginResult {
   session_id: string
   session_token: string
@@ -155,6 +163,28 @@ export class IdentityClient {
 
   login(req: { login: string; password: string; totp_code?: string; device_name: string; device_key: string }) {
     return this.call<LoginResult>('POST', '/v1/auth/login', req)
+  }
+
+  // Second factor by passkey: the password is checked, then the key on the
+  // identity service's page (url, opened in the browser); poll until done.
+  loginWithPasskey(req: { login: string; password: string; device_name: string; device_key: string }) {
+    return this.call<{ passkey_ticket: string; url: string }>('POST', '/v1/auth/login', { ...req, passkey: true })
+  }
+
+  pollPasskeyLogin(ticket: string) {
+    return this.call<LoginResult | { status: 'pending' }>('POST', '/v1/auth/login/passkey', { ticket })
+  }
+
+  passkeys() {
+    return this.call<Passkey[]>('GET', '/v1/me/passkeys')
+  }
+
+  addPasskey(password: string, name: string) {
+    return this.call<{ ticket: string; url: string }>('POST', '/v1/me/passkeys', { password, name })
+  }
+
+  deletePasskey(id: string) {
+    return this.call<void>('DELETE', '/v1/me/passkeys/' + encodeURIComponent(id))
   }
 
   forgotPassword(email: string) {

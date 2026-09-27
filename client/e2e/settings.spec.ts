@@ -1,7 +1,7 @@
 // Step 6a of the desktop client: the person's own settings — profile, pseudo,
 // email, password, two-factor authentication, presence, privacy and blocked
 // people, microphone/camera choice, account deletion.
-import { expect, test, type Page } from '@playwright/test'
+import { chromium, expect, test, type Page } from '@playwright/test'
 import { Ctl, Identity, launchApp, tempDir, totp } from './fixtures'
 
 const id = new Identity(19480)
@@ -99,6 +99,55 @@ test('settings: profile, security, presence, privacy, devices, deletion', async 
   const backup = (await codes.first().textContent())!
   await page.getByRole('button', { name: 'Terminer' }).click()
   await expect(settings).toContainText('Activée')
+
+  // A passkey: added on the identity service's page (in Chromium with a
+  // virtual authenticator), then used to sign in from another app.
+  const browser = await chromium.launch()
+  const keyPage = await (await browser.newContext()).newPage()
+  const cdp = await keyPage.context().newCDPSession(keyPage)
+  await cdp.send('WebAuthn.enable')
+  await cdp.send('WebAuthn.addVirtualAuthenticator', { options: {
+    protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true,
+  } })
+  const captureOpen = (p: Page) => p.evaluate(() => {
+    const w = window as unknown as { __opened?: string; open: (u: string) => null }
+    w.__opened = ''
+    w.open = (u: string) => { w.__opened = u; return null }
+  })
+  const opened = (p: Page) => p.evaluate(() => (window as unknown as { __opened: string }).__opened)
+  await captureOpen(page)
+  await settings.getByRole('button', { name: 'Ajouter une clé' }).click()
+  dialog = page.getByRole('dialog', { name: "Ajouter une clé d'accès" })
+  await dialog.getByLabel('Nom de la clé').fill('Clé de test')
+  await dialog.getByLabel('Mot de passe actuel').fill(newPassword)
+  await dialog.getByRole('button', { name: 'Continuer' }).click()
+  await expect.poll(() => opened(page)).toMatch(/\/passkey\/#/)
+  await keyPage.goto(await opened(page))
+  await keyPage.getByRole('button', { name: 'Utiliser ma clé' }).click()
+  await expect(keyPage.getByRole('status')).toContainText('Clé ajoutée')
+  await expect(settings.getByTestId('passkeys')).toContainText('Clé de test', { timeout: 10_000 })
+
+  const other = await launchApp(tempDir('quarel-app-'))
+  await other.page.getByRole('button', { name: 'Changer' }).click()
+  await other.page.getByLabel('Adresse du service').fill('localhost:' + id.port)
+  await other.page.getByRole('button', { name: 'Utiliser ce service' }).click()
+  await other.page.getByLabel('Email ou pseudo').fill('bobby')
+  await other.page.getByLabel('Mot de passe', { exact: true }).fill(newPassword)
+  await other.page.getByRole('button', { name: 'Se connecter' }).click()
+  await expect(other.page.getByText('Double authentification')).toBeVisible()
+  await captureOpen(other.page)
+  await other.page.getByRole('button', { name: 'Utiliser une clé d’accès' }).click()
+  await expect(other.page.getByTestId('passkey-wait')).toBeVisible()
+  await expect.poll(() => opened(other.page)).toMatch(/\/passkey\/#/)
+  await keyPage.goto(await opened(other.page))
+  await keyPage.getByRole('button', { name: 'Utiliser ma clé' }).click()
+  await expect(keyPage.getByRole('status')).toContainText('C’est fait')
+  await expect(other.page.getByRole('button', { name: 'Ajouter un ami' })).toBeVisible({ timeout: 15_000 }) // signed in
+  await other.app.close()
+  await browser.close()
+  await settings.getByRole('button', { name: 'Profil' }).click()
+  await settings.getByRole('button', { name: 'Sécurité' }).click()
+  await expect(settings.getByTestId('passkeys')).toContainText('utilisée le')
   await settings.getByRole('button', { name: 'Désactiver' }).click()
   dialog = page.getByRole('dialog', { name: 'Désactiver la double authentification' })
   await dialog.getByLabel('Mot de passe actuel').fill(newPassword)

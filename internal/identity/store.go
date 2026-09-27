@@ -311,6 +311,18 @@ CREATE INDEX inbox_created ON inbox(created_at);
 ALTER TABLE users ADD COLUMN friend_requests TEXT NOT NULL DEFAULT 'everyone'
 	CHECK (friend_requests IN ('everyone', 'friends_of_friends', 'nobody'));
 `,
+	// 11 (P2, 2026-09-27): passkeys (WebAuthn credentials), a second factor next to TOTP.
+	`
+CREATE TABLE webauthn_credentials (
+	id           TEXT PRIMARY KEY,
+	user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	name         TEXT NOT NULL,
+	data         TEXT NOT NULL,
+	created_at   INTEGER NOT NULL,
+	last_used_at INTEGER
+);
+CREATE INDEX webauthn_credentials_user ON webauthn_credentials(user_id);
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

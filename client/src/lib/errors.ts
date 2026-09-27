@@ -31,6 +31,10 @@ const messages: Record<string, string> = {
   self_block: 'Vous ne pouvez pas vous bloquer vous-même.',
   mfa_required: 'Entrez aussi un code de double authentification.',
   not_found: 'Introuvable.',
+  no_passkey: 'Aucune clé d\u2019accès sur ce compte : utilisez un code.',
+  ticket_expired: 'La vérification de la clé a expiré ou échoué : recommencez.',
+  '2fa_not_enabled': 'Activez d\u2019abord la double authentification : ses codes de secours restent votre porte de sortie.',
+  too_many_passkeys: '10 clés d\u2019accès au plus.',
   friend_requests_closed: 'Cette personne n\u2019accepte pas de demande d\u2019ami de votre part.',
   // Community servers.
   invalid_invite: 'Invitation inconnue, expirée, épuisée ou révoquée. Demandez-en une nouvelle.',

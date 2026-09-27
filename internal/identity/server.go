@@ -167,12 +167,13 @@ func env(key, def string) string {
 
 // Server is the Identity HTTP service.
 type Server struct {
-	cfg    Config
-	db     *sql.DB
-	signer *idtoken.Signer
-	mailer Mailer
-	hub    *realtime.Hub
-	now    func() time.Time
+	passkeys passkeyTickets // WebAuthn ceremonies in progress
+	cfg      Config
+	db       *sql.DB
+	signer   *idtoken.Signer
+	mailer   Mailer
+	hub      *realtime.Hub
+	now      func() time.Time
 
 	proxies ratelimit.Proxies
 	limit   struct{ global, register, login, email, friends, files, sends, typing, turn, notice *ratelimit.Limiter }
@@ -314,6 +315,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/me/2fa/setup", s.authed(s.handle2FASetup))
 	mux.HandleFunc("POST /v1/me/2fa/enable", s.authed(s.handle2FAEnable))
 	mux.HandleFunc("POST /v1/me/2fa/disable", s.authed(s.handle2FADisable))
+	mux.HandleFunc("GET /v1/me/passkeys", s.authed(s.handleListPasskeys))
+	mux.HandleFunc("POST /v1/me/passkeys", s.authed(s.handleAddPasskey))
+	mux.HandleFunc("DELETE /v1/me/passkeys/{id}", s.authed(s.handleDeletePasskey))
+	mux.HandleFunc("POST /v1/passkeys/options", s.limited(s.limit.login, s.handlePasskeyOptions))
+	mux.HandleFunc("POST /v1/passkeys/finish", s.limited(s.limit.login, s.handlePasskeyFinish))
+	mux.HandleFunc("POST /v1/auth/login/passkey", s.handlePasskeyLogin)
+	mux.Handle("GET /passkey/", servePasskeyPage())
 
 	mux.HandleFunc("POST /v1/identity/token", s.authed(s.handleIssueToken))
 

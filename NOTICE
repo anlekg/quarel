@@ -18,6 +18,9 @@ This product includes or bundles third-party software:
   Copyright (c) 2013, John Beisley — BSD 2-Clause License
 - Pion TURN (call relay, used by quarel-identity) and Pion WebRTC (calls in
   the quarelctl test client) — Copyright The Pion community — MIT License
+- go-webauthn (passkeys, used by quarel-identity) — BSD 3-Clause License, with
+  fxamacker/cbor, x448/float16, go-viper/mapstructure, tinylib/msgp,
+  philhofer/fwd (MIT), google/go-tpm (Apache License 2.0), google/uuid (BSD 3-Clause)
 
 - Windows builds of the servers: fyne.io/systray (tray icon) — Apache License 2.0;
   the community server installer bundles the official livekit-server.exe

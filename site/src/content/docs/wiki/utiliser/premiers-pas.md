@@ -18,6 +18,10 @@ Votre identifiant complet est `pseudo@identity.quarel.app`. Le pseudo peut chang
 Dans **Paramètres › Sécurité**, activez la **double authentification** et gardez les codes de secours. Puis créez votre **phrase de récupération** (bandeau de Messages privés ou Paramètres › Récupération) : c’est elle qui vous rendra vos messages privés si vous perdez vos appareils.
 :::
 
+### Clé d’accès (facultatif)
+
+Une fois la double authentification activée, Paramètres › Sécurité › **Clés d’accès** › **Ajouter une clé** : une page de votre service d’identité s’ouvre dans le navigateur pour enregistrer une clé de sécurité, Windows Hello ou votre téléphone. À la connexion, **Utiliser une clé d’accès** remplace alors le code à 6 chiffres. Les codes de secours restent valables.
+
 ## Rejoindre un serveur
 
 1. On vous envoie un **lien d’invitation** (`https://app.quarel.app/join#…` ou `quarel://…`).

@@ -51,7 +51,7 @@ cmd/quarelctl/          client de test en ligne de commande (sorties en françai
                         voice.go (vocal), social.go (amis, MP), dms.go (groupes, fichiers, lecture), calls.go (appels WebRTC), e2e.go (chiffrement Olm/Megolm côté client),
                         recovery.go (phrase de récupération, sauvegarde), network.go (diagnostic réseau)
 internal/identity/      service Identity : HTTP (server.go), endpoints (handlers.go), SQLite (store.go),
-                        argon2id (crypto.go), TOTP (totp.go), emails (mail.go), anti-bruteforce (lockout.go),
+                        argon2id (crypto.go), TOTP (totp.go), clés d'accès WebAuthn (passkeys.go, page passkeypage/), emails (mail.go), anti-bruteforce (lockout.go),
                         amis et conversations (social.go), clés E2E et boîtes aux lettres (e2e.go), temps réel (gateway.go),
                         gestion du compte (account.go), profil/blocage/présence (profile.go), opérateur et rotation de clé (admin.go), tâches périodiques (housekeeping.go),
                         conversations et groupes (conversations.go), fichiers chiffrés, frappe, lecture (convextras.go),
@@ -209,6 +209,7 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 - **Sessions** : jeton porteur aléatoire 256 bits, seul le SHA-256 est stocké ; une session par appareil (`device_name`, `device_key`). **Inactive depuis `QUAREL_SESSION_IDLE` (90 jours)** : refusée, puis supprimée par `Housekeeping` (toutes les heures, `housekeeping.go`). Toute fin de session (déconnexion, révocation, changement ou réinitialisation du mot de passe, inactivité, suppression du compte par cascade) passe par le déclencheur SQLite `sessions_ended` → table `revoked_devices` (horloge de SQLite), publiée (voir « Liste publique »).
 - **Email** : code à 6 chiffres, 15 min, 5 essais, renvoi limité à 1/min ; `resend-verification` répond toujours 202. La connexion exige un email vérifié.
 - **2FA** : TOTP RFC 6238 (SHA1, 30 s, 6 chiffres, ±1 pas), chaque code utilisable une seule fois (`totp_last_step`) ; 10 codes de secours de 80 bits (SHA-256 stocké), usage unique.
+- **Clés d'accès / passkeys** (P2, `passkeys.go`, migration 11, `go-webauthn` BSD-3 ; décision du CP) : **second facteur à côté du TOTP** (exigé : ses codes de secours restent la porte de sortie ; désactiver le TOTP supprime les clés). Une passkey est liée au domaine du service (`RPID` = hôte de `QUAREL_ISSUER`, origine `https://` sauf boucle locale) : la cérémonie a lieu sur **la page du service** `/passkey/` (HTML/JS embarqués, CSP stricte), ouverte **dans le navigateur** avec un **ticket à usage unique dans le fragment** (5 min, en mémoire, `s.passkeys`). Ajout : `POST /v1/me/passkeys {password, name}` → `{ticket, url}` ; connexion : `POST /v1/auth/login {…, passkey: true}` → mot de passe vérifié puis `202 {passkey_ticket, url}` (`400 no_passkey`), l'application interroge `POST /v1/auth/login/passkey {ticket}` (`202` en attente, puis la session une fois ; `404 ticket_expired`). La page : `POST /v1/passkeys/options {ticket}` puis `/v1/passkeys/finish {ticket, credential}` (un seul essai par ticket ; `401 invalid_passkey`). `GET /v1/me/passkeys`, `DELETE /v1/me/passkeys/{id}` ; 10 clés au plus. Client : « Utiliser une clé d'accès » à l'étape de double authentification, section « Clés d'accès » de Paramètres › Sécurité (`window.open` → navigateur du système ; la liste se rafraîchit toute seule). Test Go : authentificateur logiciel (P-256, attestation « none ») ; test de l'application : Chromium avec un authentificateur virtuel (CDP `WebAuthn.addVirtualAuthenticator`). `request()` du client lit désormais le corps des réponses `202`.
 - **Anti-bruteforce** (`lockout.go`) : 15 échecs (mauvais mot de passe ou mauvais code 2FA) en 1 h glissante → `429 account_locked` + `Retry-After`, même avec le bon mot de passe. Compté par compte (email et pseudo partagent le compteur), ou par identifiant tapé si le compte n'existe pas (pas d'énumération). Les re-vérifications de mot de passe/2FA (`2fa/setup`, `2fa/disable`) passent par le même compteur (`s.guarded`, qui prend l'appareil de la session : appareil connu). Remise à zéro après une connexion réussie complète. Tables `auth_failures`, `known_devices` (migration 9).
 - **Compte désactivé** (`users.disabled_at`, réquisition judiciaire) : login, sessions, jetons et profil public refusés ; appareils et données **conservés** (réactivation = retour à l'identique). Posé uniquement par l'outil de l'opérateur (voir « Comptes »).
 
@@ -246,7 +247,11 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | DELETE | `/v1/me/sessions/{id}` | session | Ferme une session |
 | POST | `/v1/me/2fa/setup` | session | `{password}` → secret + URI otpauth |
 | POST | `/v1/me/2fa/enable` | session | `{code}` → codes de secours |
-| POST | `/v1/me/2fa/disable` | session | `{password, code}` |
+| POST | `/v1/me/2fa/disable` | session | `{password, code}` (supprime aussi les clés d'accès) |
+| GET/POST | `/v1/me/passkeys` | session | Clés d'accès / `{password, name}` → `{ticket, url}` |
+| DELETE | `/v1/me/passkeys/{id}` | session | Retirer une clé |
+| POST | `/v1/auth/login/passkey` | — (ticket) | Attendre la vérification de la clé → session |
+| POST | `/v1/passkeys/options`, `/v1/passkeys/finish` | — (ticket) | Cérémonie WebAuthn de la page `/passkey/` |
 | POST | `/v1/identity/token` | session | Jeton d'identité portable ; `{audience}` = serveur visé (mode « serveurs approuvés » : jeton chiffré pour lui) |
 | GET | `/v1/policy` | — | Règles d'inscription et politique des serveurs |
 | GET | `/v1/servers/blocked` | — | Liste noire des serveurs communautaires |

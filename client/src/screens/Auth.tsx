@@ -1,8 +1,8 @@
 // Signed-out screens: sign in (with 2FA), create an account, verify the email
 // address, reset a forgotten password, choose the identity service.
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ApiError } from '../api/http'
-import { IdentityClient, type Policy } from '../api/identity'
+import { IdentityClient, type LoginResult, type Policy } from '../api/identity'
 import { Alert, Dialog, Field, PasswordField, Submit, useCooldown } from '../components/ui'
 import { Home, Lock, Phone } from '../components/icons'
 import { deviceKey } from '../lib/device'
@@ -40,17 +40,32 @@ export function Auth({ notice }: { notice?: string }) {
     }
   }, [identity])
 
-  async function finishLogin(login: string, password: string, totp?: string) {
-    const [dk, app, keys] = await Promise.all([deviceKey(identityLabel(identity)), appInfo(), client.keySet()])
-    const res = await client.login({
-      login,
-      password,
-      totp_code: totp,
-      device_name: app.platform === 'web' ? 'Web (' + app.deviceName + ')' : app.deviceName,
-      device_key: dk.publicKeyB64,
-    })
+  async function device() {
+    const [dk, app] = await Promise.all([deviceKey(identityLabel(identity)), appInfo()])
+    return { device_name: app.platform === 'web' ? 'Web (' + app.deviceName + ')' : app.deviceName, device_key: dk.publicKeyB64 }
+  }
+
+  async function complete(login: string, res: LoginResult) {
+    const keys = await client.keySet()
     prefs.set('last-login', login)
     await signIn({ identity, issuer: keys.issuer, sessionId: res.session_id, token: res.session_token, user: res.user })
+  }
+
+  async function finishLogin(login: string, password: string, totp?: string) {
+    const res = await client.login({ login, password, totp_code: totp, ...(await device()) })
+    await complete(login, res)
+  }
+
+  // Passkey: the identity service's page opens in the browser; wait for it (5 min).
+  async function passkeyLogin(login: string, password: string, cancelled: () => boolean) {
+    const { passkey_ticket, url } = await client.loginWithPasskey({ login, password, ...(await device()) })
+    window.open(url, '_blank', 'noopener')
+    const until = Date.now() + 5 * 60_000
+    while (Date.now() < until && !cancelled()) {
+      await new Promise((r) => setTimeout(r, 1500))
+      const res = await client.pollPasskeyLogin(passkey_ticket)
+      if ('session_token' in res) return complete(login, res)
+    }
   }
 
   function go(v: View, message = '') {
@@ -87,6 +102,7 @@ export function Auth({ notice }: { notice?: string }) {
       body = (
         <MfaForm
           onSubmit={(code) => finishLogin(creds.login, creds.password, code)}
+          onPasskey={(cancelled) => passkeyLogin(creds.login, creds.password, cancelled)}
           onBack={() => go('login')}
         />
       )
@@ -263,10 +279,26 @@ function LoginForm({ initial, info, onSubmit, onForgot, onRegister }: {
   )
 }
 
-function MfaForm({ onSubmit, onBack }: { onSubmit: (code: string) => Promise<void>; onBack: () => void }) {
+function MfaForm({ onSubmit, onPasskey, onBack }: {
+  onSubmit: (code: string) => Promise<void>
+  onPasskey: (cancelled: () => boolean) => Promise<void>
+  onBack: () => void
+}) {
   const [code, setCode] = useState('')
   const [backup, setBackup] = useState(false)
+  const [waiting, setWaiting] = useState(false)
+  const cancel = useRef(false)
   const s = useSubmit()
+  if (waiting) {
+    return (
+      <div className="auth-form" data-testid="passkey-wait">
+        <Head title="Clé d’accès" sub="Une page de votre service d’identité s’est ouverte dans le navigateur : utilisez-y votre clé. Cette fenêtre continue ensuite toute seule." />
+        <span className="spinner" />
+        <Alert kind="error">{s.error}</Alert>
+        <button type="button" className="link small" style={{ alignSelf: 'flex-start' }} onClick={() => { cancel.current = true; setWaiting(false) }}>Utiliser un code à la place</button>
+      </div>
+    )
+  }
   return (
     <form className="auth-form" noValidate onSubmit={(e) => {
       e.preventDefault()
@@ -284,6 +316,17 @@ function MfaForm({ onSubmit, onBack }: { onSubmit: (code: string) => Promise<voi
       </button>
       <Alert kind="error">{s.error}</Alert>
       <Submit busy={s.busy}>Valider</Submit>
+      <button type="button" className="btn btn-ghost" onClick={() => {
+        cancel.current = false
+        setWaiting(true)
+        s.run(async () => {
+          try {
+            await onPasskey(() => cancel.current)
+          } finally {
+            setWaiting(false)
+          }
+        })
+      }}>Utiliser une clé d’accès</button>
       <button type="button" className="link small" style={{ alignSelf: 'flex-start' }} onClick={onBack}>Retour</button>
     </form>
   )
