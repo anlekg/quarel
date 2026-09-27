@@ -331,6 +331,14 @@ CREATE TABLE push_subscriptions (
 	created_at INTEGER NOT NULL
 );
 `,
+	// 13 (2026-09-27): deleted accounts, published hashed (idtoken.AccountHash)
+	// for deletedAccountsKept so community servers anonymise their members.
+	`
+CREATE TABLE deleted_accounts (
+	hash       TEXT PRIMARY KEY,
+	deleted_at INTEGER NOT NULL
+);
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

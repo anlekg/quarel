@@ -78,8 +78,27 @@ func (s *Server) handleDisabledAccounts(w http.ResponseWriter, r *http.Request) 
 		devices = append(devices, device{idtoken.DeviceHash(key), time.Unix(at, 0).UTC()})
 	}
 	rows.Close()
+	// Deleted accounts: servers replace their name with "Ancien compte".
+	deleted := []device{}
+	rows, err = s.db.QueryContext(ctx, `SELECT hash, deleted_at FROM deleted_accounts ORDER BY deleted_at`)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	for rows.Next() {
+		var d device
+		var at int64
+		if err := rows.Scan(&d.Hash, &at); err != nil {
+			rows.Close()
+			writeErr(w, r, err)
+			return
+		}
+		d.At = time.Unix(at, 0).UTC()
+		deleted = append(deleted, d)
+	}
+	rows.Close()
 	w.Header().Set("Cache-Control", "public, max-age=60")
-	writeJSON(w, http.StatusOK, map[string]any{"issuer": s.cfg.Issuer, "accounts": accounts, "ended_devices": devices})
+	writeJSON(w, http.StatusOK, map[string]any{"issuer": s.cfg.Issuer, "accounts": accounts, "ended_devices": devices, "deleted_accounts": deleted})
 }
 
 // WatchDisabled closes the live connections of accounts disabled by the

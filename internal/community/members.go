@@ -28,6 +28,9 @@ type member struct {
 	Bot                         bool
 }
 
+// deletedName stands for a member whose account was deleted on its identity service.
+const deletedName = "Ancien compte"
+
 const memberCols = `id, issuer, subject, handle, nickname, is_owner, joined_at, left_at, timeout_until, rules_accepted_at, phone_hash IS NOT NULL, bot`
 
 func scanMember(sc interface{ Scan(...any) error }) (*member, error) {
@@ -67,6 +70,9 @@ func (m *member) json() memberJSON {
 	j := memberJSON{ID: m.ID, Handle: m.Handle, Issuer: m.Issuer, Subject: m.Subject, Owner: m.IsOwner, Roles: []int64{}, JoinedAt: fromMs(m.JoinedAt),
 		Bot: m.Bot, TimeoutUntil: nullTime(m.TimeoutUntil), RulesAccepted: m.RulesAcceptedAt.Valid, PhoneVerified: m.PhoneVerified}
 	j.DisplayName, _, _ = strings.Cut(m.Handle, "@")
+	if m.Handle == "" { // account deleted on its identity service (see ApplyDeleted)
+		j.DisplayName = deletedName
+	}
 	if m.Nickname.Valid {
 		j.Nickname = &m.Nickname.String
 		j.DisplayName = m.Nickname.String

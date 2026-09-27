@@ -52,6 +52,7 @@ type issuerList struct {
 		Hash string `json:"h"`
 	} `json:"accounts"`
 	Devices []endedDevice `json:"ended_devices"`
+	Deleted []endedDevice `json:"deleted_accounts"` // {h: account hash, at}
 }
 
 type endedDevice struct {
@@ -176,6 +177,9 @@ func (s *Server) WatchDisabled(ctx context.Context, every time.Duration) {
 			if err := s.ApplyEnded(ctx, issuer, list.Devices); err != nil {
 				s.logErr("applying ended sessions", err)
 			}
+			if err := s.ApplyDeleted(ctx, issuer, list.Deleted); err != nil {
+				s.logErr("applying deleted accounts", err)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -206,4 +210,65 @@ func fetchDisabled(ctx context.Context, client *http.Client, issuer string) (*is
 		return nil, fmt.Errorf("list of %s claims issuer %q", issuer, doc.Issuer)
 	}
 	return &doc, nil
+}
+
+// ApplyDeleted anonymises the members whose account was deleted on their
+// identity service: their name becomes "Ancien compte" (their messages stay,
+// like any former member's), nickname and roles go, and they leave. A
+// verified phone number goes too, unless they are banned (it keeps their
+// number out). A deleted owner leaves the server without one: a new claim
+// code is issued (see ResetOwnership).
+func (s *Server) ApplyDeleted(ctx context.Context, issuer string, accounts []endedDevice) error {
+	if len(accounts) == 0 {
+		return nil
+	}
+	gone := map[string]bool{}
+	for _, a := range accounts {
+		gone[a.Hash] = true
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, subject, is_owner, left_at IS NULL FROM members WHERE issuer = ? AND handle != ''`, issuer)
+	if err != nil {
+		return err
+	}
+	type hit struct {
+		id            string
+		owner, active bool
+	}
+	var hits []hit
+	for rows.Next() {
+		var h hit
+		var sub string
+		if rows.Scan(&h.id, &sub, &h.owner, &h.active) == nil && gone[idtoken.AccountHash(sub)] {
+			hits = append(hits, h)
+		}
+	}
+	rows.Close()
+	for _, h := range hits {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		if err := s.removeMember(ctx, tx, h.id); err != nil {
+			tx.Rollback()
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE members SET handle = '', nickname = NULL, is_owner = 0,
+			phone_hash = CASE WHEN EXISTS (SELECT 1 FROM bans WHERE member_id = members.id) THEN phone_hash END WHERE id = ?`, h.id); err != nil {
+			tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		if h.active {
+			s.afterRemoval(h.id, "deleted")
+		}
+		slog.Info("member's account deleted on its identity service: anonymised", "member", h.id, "issuer", issuer)
+		if h.owner {
+			if _, err := s.ResetOwnership(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

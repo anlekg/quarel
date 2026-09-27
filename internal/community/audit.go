@@ -160,6 +160,9 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 		var nick sql.NullString
 		if s.db.QueryRowContext(r.Context(), `SELECT handle, nickname FROM members WHERE id = ?`, *id).Scan(&handle, &nick) == nil {
 			names[*id], _, _ = strings.Cut(handle, "@")
+			if handle == "" {
+				names[*id] = deletedName
+			}
 			if nick.Valid && nick.String != "" {
 				names[*id] = nick.String
 			}
