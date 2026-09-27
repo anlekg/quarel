@@ -116,6 +116,28 @@ test('server administration: overview, invites, roles, channel permissions, mode
   await expect(settings.getByRole('button', { name: 'Modifier annonces', exact: true })).toBeVisible()
   await expect.poll(() => ctl.run('alice', 'channels'), { timeout: 15_000 }).toContain('annonces')
 
+  // A forum: a post from the app, an answer from alice, the forum lists it.
+  await settings.getByRole('button', { name: 'Créer un salon' }).click()
+  dialog = page.getByRole('dialog', { name: 'Créer un salon' })
+  await dialog.getByLabel('Type').selectOption('forum')
+  await dialog.getByLabel('Nom').fill('entraide')
+  await dialog.getByRole('button', { name: 'Créer' }).click()
+  await settings.getByRole('button', { name: 'Fermer les paramètres du serveur' }).click()
+  await page.getByRole('navigation', { name: 'Salons' }).getByRole('button', { name: 'entraide', exact: true }).click()
+  await expect(page.getByRole('list', { name: 'Posts de entraide' })).toContainText('Aucun post')
+  await page.getByRole('button', { name: 'Nouveau post' }).click()
+  await page.getByLabel('Titre du post').fill('Première question')
+  await page.getByLabel('Message du post').fill('Comment ça marche ?')
+  await page.getByRole('button', { name: 'Publier' }).click()
+  await expect(page.getByLabel('Message pour #Première question')).toBeVisible() // the post opens like a thread
+  await expect(page.getByRole('log')).toContainText('Comment ça marche ?')
+  await expect.poll(() => ctl.run('alice', 'send', 'Première question', 'Comme ça !')).toContain('Comme ça !')
+  await expect(page.getByRole('log')).toContainText('Comme ça !')
+  await page.getByRole('navigation', { name: 'Salons' }).getByRole('button', { name: 'entraide', exact: true }).click()
+  await expect(page.getByRole('list', { name: 'Posts de entraide' }).getByRole('listitem')).toContainText(['Première question'])
+  await expect(page.getByRole('list', { name: 'Posts de entraide' })).toContainText('1 réponse')
+  await open()
+
   // Automatic moderation: a banned word, refused for alice (no manage_messages) and logged.
   await nav('Modération automatique')
   await settings.getByLabel('Mots interdits (un par ligne)').fill('arnaq*')

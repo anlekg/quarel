@@ -295,8 +295,9 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 
 ### Messages et salons (P1 bloc 1)
 
-- **Types de salon côté API** : `text`, `voice`, `category`, `announcement`, `thread`. En base, annonces et fils sont des salons `text` marqués (`announcement`, `thread`, `thread_starter`) : la contrainte CHECK du type ne peut pas changer sans reconstruire la table (ce qui supprimerait les messages en cascade). `channel.messaging()` = text/announcement/thread.
+- **Types de salon côté API** : `text`, `voice`, `category`, `announcement`, `thread`, `forum`. En base, annonces, fils et forums sont des salons `text` marqués (`announcement`, `thread`, `thread_starter`, `forum` — migration 10) : la contrainte CHECK du type ne peut pas changer sans reconstruire la table (ce qui supprimerait les messages en cascade). `channel.messaging()` = text/announcement/thread.
 - **Fils** : créés depuis un message (`thread_starter`, unique), `parent_id` = salon textuel, pas de fil dans un fil, pas de changement de parent. **Droits = ceux du salon parent** (`inChannel` redirige). Supprimer un salon supprime ses fils. Le message de départ porte `thread_id`.
+- **Forums** (P2, `forum.go`) : pas de messages propres (`messaging()` faux), seulement des **posts** = fils (`thread = 1`, `parent_id` = le forum, sans `thread_starter`) créés par `POST /v1/channels/{id}/posts {title, content}` (droits du forum : `send_messages` ; modération automatique sur titre et texte) ; `GET /v1/channels/{id}/posts?limit=&before=<ms>` → `[{channel, author_id, excerpt, message_count, last_message_at}]`, **dernière activité d'abord**. Droits, non-lus et suppression suivent les fils. Client : `ForumView` (liste, « Nouveau post »), les posts ne sont pas listés dans la barre latérale (le forum est « non lu » si un de ses posts l'est). **Création d'un salon → `syncPermissions`** (sinon l'application n'avait aucun droit dans le nouveau salon avant de se reconnecter).
 - **Annonces** : écrire exige `send_messages` **et** `manage_messages` (`requirePost`).
 - **Message** enrichi par `enrich()` (qui remet d'abord à zéro les champs calculés) : `reply_to` + `referenced {id, author_id, content (200 caractères)}` (réponse dans le même salon ; l'auteur cité est mentionné sauf `mention_reply: false`), `attachments`, `embeds`, `reactions [{emoji, count, me}]` (ordre de première réaction), `pinned_at`, `thread_id`.
 - **Réactions** : `add_reactions`, 20 emojis différents max par message, emoji = 32 octets max, au moins un symbole Unicode (≥ U+2000), ni lettre latine, ni espace ; retirer celle d'un autre exige `manage_messages`. Événements `REACTION_ADD|REMOVE {channel_id, message_id, emoji, member_id}`.
@@ -409,6 +410,7 @@ Makefile                commandes de dev (build, test, run-identity, run-server�
 | GET | `/v1/channels/{id}/pins` | `view_channel` | Messages épinglés |
 | PUT/DELETE | `/v1/channels/{id}/pins/{mid}` | `manage_messages` | Épingler / désépingler |
 | POST | `/v1/channels/{id}/messages/{mid}/threads` | `send_messages` | `{name?}` → fil |
+| GET/POST | `/v1/channels/{id}/posts` | `view_channel` / `send_messages` | Posts d'un forum / `{title, content}` |
 | POST | `/v1/channels/{id}/typing` | `send_messages` | « En train d'écrire » |
 | POST | `/v1/channels/{id}/ack` | `view_channel` | `{message_id?}` → état de lecture |
 | GET | `/v1/read-states` | session | Non-lus et mentions par salon visible |

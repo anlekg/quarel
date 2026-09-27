@@ -46,7 +46,7 @@ export interface Role {
   hoist: boolean
 }
 
-export type ChannelType = 'text' | 'voice' | 'category' | 'announcement' | 'thread'
+export type ChannelType = 'text' | 'voice' | 'category' | 'announcement' | 'thread' | 'forum'
 
 export interface Channel {
   id: number
@@ -160,6 +160,15 @@ export interface EphemeralReply {
   name: string
   content: string
   at: number // received (ms)
+}
+
+// A post of a forum channel: a thread with a title, started by its first message.
+export interface ForumPost {
+  channel: Channel
+  author_id: string
+  excerpt: string
+  message_count: number
+  last_message_at: string
 }
 
 // Incoming webhook of a channel; token only in the creation answer.
@@ -358,6 +367,14 @@ export class CommunityClient {
 
   updateServer(body: Partial<Pick<ServerInfo, 'name' | 'access' | 'rules' | 'require_phone'>>) {
     return this.call<ServerInfo>('PATCH', '/v1/server', body)
+  }
+
+  posts(forum: number) {
+    return this.call<ForumPost[]>('GET', '/v1/channels/' + forum + '/posts')
+  }
+
+  createPost(forum: number, title: string, content: string) {
+    return this.call<ForumPost>('POST', '/v1/channels/' + forum + '/posts', { title, content })
   }
 
   emojis() {

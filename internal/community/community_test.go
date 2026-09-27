@@ -387,7 +387,7 @@ func TestChannels(t *testing.T) {
 	}
 	e.expect(400, "invalid_parent", e.call("POST", "/v1/channels", owner, map[string]any{"type": "category", "name": "sub", "parent_id": cat.ID}, nil))
 	e.expect(400, "invalid_parent", e.call("POST", "/v1/channels", owner, map[string]any{"name": "x", "parent_id": general.ID}, nil))
-	e.expect(400, "invalid_type", e.call("POST", "/v1/channels", owner, map[string]any{"type": "forum", "name": "x"}, nil))
+	e.expect(400, "invalid_type", e.call("POST", "/v1/channels", owner, map[string]any{"type": "stage", "name": "x"}, nil))
 	e.expect(400, "invalid_name", e.call("POST", "/v1/channels", owner, map[string]any{"name": "  "}, nil))
 
 	e.expect(200, "", e.call("PATCH", fmt.Sprint("/v1/channels/", dev.ID), owner, map[string]any{"name": "développement", "parent_id": 0}, &dev))

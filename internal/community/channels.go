@@ -18,6 +18,7 @@ const (
 	chanCategory     = "category"
 	chanAnnouncement = "announcement" // text channel where posting also needs manage_messages
 	chanThread       = "thread"       // text channel attached to a message; parent_id is the text channel
+	chanForum        = "forum"        // holds no messages, only posts: threads with a title (parent_id = the forum)
 
 	targetRole   = "role"
 	targetMember = "member"
@@ -57,8 +58,8 @@ func (c *channel) messaging() bool {
 func scanChannel(sc interface{ Scan(...any) error }) (*channel, error) {
 	c := channel{Overrides: []override{}}
 	var parent, starter sql.NullInt64
-	var announcement, thread bool
-	if err := sc.Scan(&c.ID, &c.Type, &c.Name, &c.Topic, &parent, &c.Position, &announcement, &thread, &starter); err != nil {
+	var announcement, thread, forum bool
+	if err := sc.Scan(&c.ID, &c.Type, &c.Name, &c.Topic, &parent, &c.Position, &announcement, &thread, &starter, &forum); err != nil {
 		return nil, err
 	}
 	if parent.Valid {
@@ -72,11 +73,13 @@ func scanChannel(sc interface{ Scan(...any) error }) (*channel, error) {
 		c.Type = chanThread
 	case announcement:
 		c.Type = chanAnnouncement
+	case forum:
+		c.Type = chanForum
 	}
 	return &c, nil
 }
 
-const channelCols = `id, type, name, topic, parent_id, position, announcement, thread, thread_starter`
+const channelCols = `id, type, name, topic, parent_id, position, announcement, thread, thread_starter, forum`
 
 // loadOverrides attaches overrides to channels (all of them if channelID is 0).
 func loadOverrides(ctx context.Context, q querier, byID map[int64]*channel, channelID int64) error {
@@ -224,13 +227,16 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 	if req.Type == "" {
 		req.Type = chanText
 	}
-	if req.Type != chanText && req.Type != chanVoice && req.Type != chanCategory && req.Type != chanAnnouncement {
-		writeErr(w, r, errf(http.StatusBadRequest, "invalid_type", "type must be text, announcement, voice or category (threads start from a message)"))
+	if req.Type != chanText && req.Type != chanVoice && req.Type != chanCategory && req.Type != chanAnnouncement && req.Type != chanForum {
+		writeErr(w, r, errf(http.StatusBadRequest, "invalid_type", "type must be text, announcement, forum, voice or category (threads start from a message)"))
 		return
 	}
-	storedType, announcement := req.Type, false
-	if req.Type == chanAnnouncement {
+	storedType, announcement, forum := req.Type, false, false
+	switch req.Type {
+	case chanAnnouncement:
 		storedType, announcement = chanText, true
+	case chanForum:
+		storedType, forum = chanText, true
 	}
 	name, err := validName(req.Name)
 	if err != nil {
@@ -254,8 +260,8 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO channels (type, name, topic, parent_id, position, created_at, announcement) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		storedType, name, topic, nullParent(req.ParentID), pos, s.nowMs(), announcement)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO channels (type, name, topic, parent_id, position, created_at, announcement, forum) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		storedType, name, topic, nullParent(req.ParentID), pos, s.nowMs(), announcement, forum)
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -267,6 +273,7 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.broadcastChannel(ctx, "CHANNEL_CREATE", c.ID, c)
+	s.syncPermissions(ctx) // everyone gets their permissions in the new channel
 	s.audit(ctx, s.db, memberFrom(r).ID, auditChannelCreate, fmt.Sprint(c.ID), "", map[string]any{"name": c.Name, "type": c.Type})
 	writeJSON(w, http.StatusCreated, c)
 }

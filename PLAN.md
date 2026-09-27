@@ -91,7 +91,7 @@
 - [x] **P0** Catégories, ordre des salons
 - [x] **P1** Fils de discussion (threads)
 - [x] **P1** Salons d'annonces (lecture seule)
-- [ ] **P2** Salons forum
+- [x] **P2** Salons forum *(2026-09-27 : posts avec titre, chacun sa discussion, classés par activité)*
 
 ### B4. Messages (non chiffrés E2E)
 - [x] **P0** Envoi / réception en temps réel (WebSocket)

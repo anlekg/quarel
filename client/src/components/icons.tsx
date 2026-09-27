@@ -39,6 +39,7 @@ export const ChevronDown = (p: P) => <Icon {...p}><path d="M6 9l6 6 6-6" /></Ico
 export const FileIcon = (p: P) => <Icon {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></Icon>
 export const Download = (p: P) => <Icon {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></Icon>
 export const Crown = (p: P) => <Icon {...p}><path d="M2 18h20M3 8l4 5 5-7 5 7 4-5-2 10H5z" /></Icon>
+export const Forum = (p: P) => <Icon {...p}><path d="M4 5h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" /><path d="M17 9h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1v3l-4-3h-4" /></Icon>
 export const Thread = (p: P) => <Icon {...p}><path d="M4 4v10a4 4 0 0 0 4 4h12M16 14l4 4-4 4" /></Icon>
 export const Send = (p: P) => <Icon {...p}><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" /></Icon>
 export const Mic = (p: P) => <Icon {...p}><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v4" /></Icon>

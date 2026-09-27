@@ -33,7 +33,7 @@ export interface ChannelGroup {
 // Root channels first, then each category with its channels; threads under their channel.
 export function channelTree(channels: Channel[]): ChannelGroup[] {
   const threads = (id: number) => channels.filter((c) => c.type === 'thread' && c.parent_id === id).sort(byPos)
-  const node = (c: Channel): ChannelNode => ({ channel: c, threads: threads(c.id) })
+  const node = (c: Channel): ChannelNode => ({ channel: c, threads: c.type === 'forum' ? [] : threads(c.id) }) // posts stay in their forum
   const inside = (id: number | null) =>
     channels.filter((c) => c.type !== 'category' && c.type !== 'thread' && c.parent_id === id).sort(byPos).map(node)
   const groups: ChannelGroup[] = []

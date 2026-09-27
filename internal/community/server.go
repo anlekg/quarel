@@ -300,6 +300,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/bots", s.authed(s.needPerm(permManageServer, s.handleCreateBot)))
 	mux.HandleFunc("POST /v1/bots/{id}/token", s.authed(s.handleResetBotToken))
 	mux.HandleFunc("DELETE /v1/bots/{id}", s.authed(s.handleDeleteBot))
+	mux.HandleFunc("GET /v1/channels/{id}/posts", s.authed(s.handleListPosts))
+	mux.HandleFunc("POST /v1/channels/{id}/posts", s.authed(s.handleCreatePost))
 	mux.HandleFunc("GET /v1/emojis", s.authed(s.handleListEmojis))
 	mux.HandleFunc("POST /v1/emojis", s.authed(s.needPerm(permManageServer, s.handleCreateEmoji)))
 	mux.HandleFunc("DELETE /v1/emojis/{id}", s.authed(s.needPerm(permManageServer, s.handleDeleteEmoji)))

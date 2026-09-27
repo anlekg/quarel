@@ -4,13 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Channel, Member, Ready } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { Alert, Dialog, Field } from '../components/ui'
-import { ChevronDown, Crown, Hash, Megaphone, Speaker, Thread } from '../components/icons'
+import { ChevronDown, Crown, Hash, Megaphone, Speaker, Thread, Forum } from '../components/icons'
 import { canServer, channelTree, firstTextChannel, memberAvatar, memberColor } from '../lib/community'
 import { errorMessage } from '../lib/errors'
 import { inviteLink } from '../lib/invite'
 import { prefs } from '../platform'
 import { leaveServer, useServerState, type ServerConn, type ServerState } from '../state/servers'
 import { ChannelView } from './ChannelView'
+import { ForumView } from './ForumView'
 import { VoiceMembers, VoiceView } from './Voice'
 import { joinVoice, useVoice } from '../state/voice'
 import { can } from '../lib/community'
@@ -83,6 +84,8 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
           <PhoneGate conn={conn} />
         ) : channel?.type === 'voice' ? (
           <VoiceView conn={conn} ready={r} channel={channel} />
+        ) : channel?.type === 'forum' ? (
+          <ForumView key={channel.id} conn={conn} ready={r} state={state} channel={channel} onOpenChannel={(id) => openChannel(id)} />
         ) : channel ? (
           <ChannelView key={channel.id} conn={conn} ready={r} state={state} channel={channel}
             jump={jump} onJumped={() => setJump(null)} onOpenChannel={openChannel}
@@ -189,6 +192,7 @@ function channelIcon(c: Channel) {
   if (c.type === 'voice') return <Speaker size={18} />
   if (c.type === 'announcement') return <Megaphone size={18} />
   if (c.type === 'thread') return <Thread size={16} />
+  if (c.type === 'forum') return <Forum size={18} />
   return <Hash size={18} />
 }
 
@@ -203,7 +207,9 @@ function ChannelList({ conn, ready, state, active, onPick }: {
   const voice = useVoice()
   const button = (c: Channel) => {
     const rs = state.reads[c.id]
-    const unread = !!rs && rs.last_message_id > rs.last_read && c.id !== active
+    const unread = c.type === 'forum' // a forum: unread when one of its posts is
+      ? ready.channels.some((t) => t.type === 'thread' && t.parent_id === c.id && (state.reads[t.id]?.last_message_id ?? 0) > (state.reads[t.id]?.last_read ?? 0))
+      : !!rs && rs.last_message_id > rs.last_read && c.id !== active
     if (c.type === 'voice') {
       const joined = voice?.conn === conn && voice.channelId === c.id
       return (

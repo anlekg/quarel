@@ -273,6 +273,10 @@ CREATE TABLE emojis (
 	created_at   INTEGER NOT NULL
 );
 `,
+	// 10 (P2, 2026-09-27): forum channels (a text channel marked, as announcements).
+	`
+ALTER TABLE channels ADD COLUMN forum INTEGER NOT NULL DEFAULT 0;
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

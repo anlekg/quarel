@@ -36,6 +36,10 @@ Vos serveurs vous suivent sur tous vos appareils validés.
 - Sur un message : répondre, réagir, créer un fil, épingler (selon vos droits), modifier ou supprimer les vôtres.
 - En tête de salon : **recherche**, messages épinglés, **cloche** des notifications (tous les messages, @mentions seulement, rien, sourdine).
 
+## Forums
+
+Un salon **forum** rassemble des posts : chacun a un titre et sa propre discussion (**Nouveau post**). Les posts les plus actifs remontent en tête. Les gestionnaires des salons en créent avec « Créer un salon » › type **Forum**.
+
 ## Mettre en forme
 
 Dans les salons comme dans les messages privés : `**gras**`, `*italique*`, `__souligné__`, `~~barré~~`, `` `code` ``, `||divulgâcheur||` (caché jusqu’au clic) ; en début de ligne, `# Titre` (aussi `##`, `###`), `> citation`, `- liste` ou `1. liste numérotée` ; les blocs de code entre trois accents graves, avec le langage après les premiers (` ```js `). Les liens s’affichent toujours avec leur vraie adresse.

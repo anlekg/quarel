@@ -346,6 +346,7 @@ export function ChannelDialog({ conn, ready, channel, onClose, parent }: {
                 <option value="text">Textuel</option>
                 <option value="voice">Vocal</option>
                 <option value="announcement">Annonces (seuls les modérateurs écrivent)</option>
+                <option value="forum">Forum (des posts avec un titre, chacun sa discussion)</option>
                 <option value="category">Catégorie</option>
               </select>
             </div>
