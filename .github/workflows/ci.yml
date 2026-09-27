@@ -121,7 +121,10 @@ jobs:
         run: |
           sudo chown root:root node_modules/electron/dist/chrome-sandbox
           sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
-      - run: make e2e-client
+      - run: make e2e-client 2>&1 | tee /tmp/e2e-client.log
+      - name: Failed tests (annotations, readable without signing in)
+        if: failure()
+        run: grep -E '✘|Error|waiting for|spec\.ts:[0-9]+' /tmp/e2e-client.log | head -40 | sed 's/^/::error::/'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
