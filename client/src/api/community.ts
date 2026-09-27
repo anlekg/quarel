@@ -134,6 +134,32 @@ export interface Message {
   created_at: string
   edited_at: string | null
   webhook?: { id: string; name: string } // posted by this incoming webhook
+  interaction?: { name: string; member_id: string } // a bot's reply to this slash command, run by this member
+}
+
+// A bot's slash command.
+export interface CommandOption {
+  name: string
+  description: string
+  type: 'string' | 'integer' | 'boolean' | 'member' | 'channel'
+  required: boolean
+}
+
+export interface BotCommand {
+  bot_id: string
+  name: string
+  description: string
+  options: CommandOption[]
+}
+
+// A command reply only its author sees (never stored).
+export interface EphemeralReply {
+  interaction_id: string
+  channel_id: number
+  bot_id: string
+  name: string
+  content: string
+  at: number // received (ms)
 }
 
 // Incoming webhook of a channel; token only in the creation answer.
@@ -325,6 +351,14 @@ export class CommunityClient {
 
   updateServer(body: Partial<Pick<ServerInfo, 'name' | 'access' | 'rules' | 'require_phone'>>) {
     return this.call<ServerInfo>('PATCH', '/v1/server', body)
+  }
+
+  commands() {
+    return this.call<BotCommand[]>('GET', '/v1/commands')
+  }
+
+  runCommand(channel: number, botId: string, name: string, options: Record<string, unknown>) {
+    return this.call<{ id: string }>('POST', '/v1/channels/' + channel + '/commands', { bot_id: botId, name, options })
   }
 
   webhooks(channel: number) {

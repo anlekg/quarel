@@ -4,6 +4,7 @@ import { fetchBlob } from '../api/http'
 import type { Attachment, Channel, Message, Ready } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { encodeMentions, MessageContent, type MentionNames } from '../components/MessageContent'
+import { parseCommand, suggestCommands, usage } from '../lib/commands'
 import { Alert, BackButton, Dialog } from '../components/ui'
 import { Bell, BellOff, Close, Download, FileIcon, Hash, Megaphone, Paperclip, Pencil, Pin, Reply, Search, Send, Smile, Thread, Trash, Users } from '../components/icons'
 import { channelNotify, setActive } from '../state/notify'
@@ -206,6 +207,17 @@ function MessageList({ conn, ready, channel, messages, hasMore, loading, names, 
           </Fragment>
         )
       })}
+      {(conn.state.ephemeral[channel.id] ?? []).map((e) => (
+        <div className="msg head ephemeral" key={e.interaction_id} data-testid="ephemeral-reply">
+          <div className="gutter"><Avatar id={e.bot_id} name={names.member(e.bot_id) ?? '?'} size={40} /></div>
+          <div className="body">
+            <div className="interaction-ref">/{e.name}</div>
+            <div className="meta"><span className="author">{names.member(e.bot_id) ?? 'Bot'}</span><span className="bot-tag">BOT</span>
+              <span className="when">Visible uniquement par vous</span></div>
+            <div className="text"><MessageContent text={e.content} names={names} /></div>
+          </div>
+        </div>
+      ))}
       {deleting && (
         <Dialog title="Supprimer le message ?" onClose={() => setDeleting(null)}>
           <p className="muted" style={{ lineHeight: 1.5 }}>Il disparaîtra pour tout le monde. Astuce : Maj + clic sur la corbeille supprime sans confirmation.</p>
@@ -274,6 +286,9 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
             : <Avatar id={m.author_id} name={m.webhook?.name ?? '?'} size={40} />}
       </div>
       <div className="body">
+        {m.interaction && (
+          <div className="interaction-ref" data-testid="interaction">{names.member(m.interaction.member_id) ?? 'Ancien membre'} a utilisé /{m.interaction.name}</div>
+        )}
         {m.referenced && (
           <div className="reply-ref" onClick={() => onJump(m.referenced!.id)} title="Aller au message">
             <b>@{names.member(m.referenced.author_id) ?? 'ancien membre'}</b>
@@ -500,7 +515,44 @@ function Composer({ conn, ready, channel, replyTo, onCancelReply, names }: {
     }
   }
 
+  const commands = conn.state.commands
+  const suggestions = suggestCommands(text, commands)
+  const botName = (id: string) => ready.members.find((m) => m.id === id)?.display_name ?? 'Bot'
+
+  async function runCommand(): Promise<boolean> {
+    const parsed = parseCommand(text, commands, {
+      member: (ref) => {
+        const id = /^<@([A-Za-z0-9]+)>$/.exec(ref)?.[1]
+        if (id) return ready.members.find((m) => m.id === id)?.id
+        const name = ref.replace(/^@/, '').toLowerCase()
+        return ready.members.find((m) => m.display_name.toLowerCase() === name || m.handle.toLowerCase() === name || m.handle.toLowerCase().split('@')[0] === name)?.id
+      },
+      channel: (ref) => ready.channels.find((c) => c.name.toLowerCase() === ref.replace(/^#/, '').toLowerCase() && c.type !== 'category')?.id,
+    })
+    if (!parsed) return false
+    if ('error' in parsed) {
+      setError(parsed.error)
+      return true
+    }
+    if (files.length) {
+      setError('Une commande ne prend pas de fichier.')
+      return true
+    }
+    setSending(true)
+    setError('')
+    try {
+      await conn.api((c) => c.runCommand(channel.id, parsed.cmd.bot_id, parsed.cmd.name, parsed.options))
+      setText('')
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setSending(false)
+    }
+    return true
+  }
+
   async function send() {
+    if (text.trim().startsWith('/') && (await runCommand())) return
     const content = encodeMentions(text.trim(), ready.members)
     const ready_ = files.filter((f) => f.id)
     if (files.some((f) => !f.id && !f.error)) return setError('Envoi des fichiers en cours…')
@@ -542,6 +594,18 @@ function Composer({ conn, ready, channel, replyTo, onCancelReply, names }: {
         addFiles(e.dataTransfer.files)
       }}>
       {error && <div style={{ marginBottom: 8 }}><Alert kind="error">{error}</Alert></div>}
+      {suggestions.length > 0 && (
+        <div className="cmd-suggest" role="listbox" aria-label="Commandes">
+          {suggestions.map((c) => (
+            <button key={c.bot_id + c.name} role="option" aria-selected={false} onClick={() => {
+              setText('/' + c.name + (c.options.length ? ' ' : ''))
+              area.current?.querySelector('textarea')?.focus()
+            }}>
+              <b>{usage(c)}</b><span className="muted">{c.description}</span><span className="cmd-bot">{botName(c.bot_id)}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="composer">
         {replyTo && (
           <div className="composer-bar">
@@ -579,6 +643,11 @@ function Composer({ conn, ready, channel, replyTo, onCancelReply, names }: {
               }
             }}
             onKeyDown={(e) => {
+              if (e.key === 'Tab' && suggestions.length) {
+                e.preventDefault()
+                setText('/' + suggestions[0].name + (suggestions[0].options.length ? ' ' : ''))
+                return
+              }
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 if (!sending) send()

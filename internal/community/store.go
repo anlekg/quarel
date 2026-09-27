@@ -246,6 +246,22 @@ CREATE TABLE webhooks (
 );
 CREATE INDEX webhooks_channel ON webhooks (channel_id);
 `,
+	// 8 (P2, 2026-09-27): slash commands declared by bots, and the command
+	// (with who ran it) behind each bot reply.
+	`
+CREATE TABLE bot_commands (
+	bot_id      TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+	name        TEXT NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	options     TEXT NOT NULL DEFAULT '[]',
+	PRIMARY KEY (bot_id, name)
+);
+CREATE TABLE message_interactions (
+	message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+	name       TEXT NOT NULL,
+	member_id  TEXT NOT NULL REFERENCES members(id)
+);
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

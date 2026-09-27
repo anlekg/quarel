@@ -54,6 +54,7 @@ type Server struct {
 	disabled disabledSet   // accounts disabled by their identity service
 	names    []string      // host names clients may use with an ordinary certificate (see checkProof)
 	automod  autoModState  // recent messages and refusals (automatic moderation)
+	cmds     interactions  // slash commands waiting for their bot's reply
 }
 
 // ServerID derives the public server identifier from its key.
@@ -299,6 +300,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/bots", s.authed(s.needPerm(permManageServer, s.handleCreateBot)))
 	mux.HandleFunc("POST /v1/bots/{id}/token", s.authed(s.handleResetBotToken))
 	mux.HandleFunc("DELETE /v1/bots/{id}", s.authed(s.handleDeleteBot))
+	mux.HandleFunc("PUT /v1/bots/@me/commands", s.authed(s.handleSetCommands))
+	mux.HandleFunc("GET /v1/commands", s.authed(s.handleListCommands))
+	mux.HandleFunc("POST /v1/channels/{id}/commands", s.authed(s.handleRunCommand))
+	mux.HandleFunc("POST /v1/interactions/{id}/reply", s.authed(s.handleInteractionReply))
 	mux.HandleFunc("GET /v1/channels/{id}/webhooks", s.authed(s.handleListWebhooks))
 	mux.HandleFunc("POST /v1/channels/{id}/webhooks", s.authed(s.handleCreateWebhook))
 	mux.HandleFunc("DELETE /v1/webhooks/{id}", s.authed(s.handleDeleteWebhook))

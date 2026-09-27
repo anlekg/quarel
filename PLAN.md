@@ -133,7 +133,7 @@
 - [x] **P1** Comptes bot avec jeton propre au serveur
 - [x] **P1** API publique documentée pour les bots *(`site/src/content/docs/wiki/developper/api.md`, bot d'exemple `examples/pingbot`)*
 - [x] **P2** Webhooks entrants *(2026-09-27 : adresse secrète par salon, gérée avec « gérer les salons »)*
-- [ ] **P2** Commandes slash
+- [x] **P2** Commandes slash *(2026-09-27 : déclarées par les bots, suggérées dans l'application, réponse publique ou visible par son seul auteur)*
 
 ### B9. Notifications
 - [x] **P1** Réglages de notification par salon (tout, mentions, rien) *(livré au bloc 1 : réglages stockés et synchronisés, appliqués par le client)*

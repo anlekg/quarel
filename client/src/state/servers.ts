@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react'
 import { ApiError } from '../api/http'
 import {
-  CommunityClient, type Channel, type LoginResult, type Member, type Message, type ReadState, type Ready,
+  CommunityClient, type BotCommand, type Channel, type EphemeralReply, type LoginResult, type Member, type Message, type ReadState, type Ready,
   type Role, type ServerInfo, type VoiceState,
 } from '../api/community'
 import { toBase64url } from '../lib/base64'
@@ -50,6 +50,8 @@ export interface ServerState {
   reads: Record<number, ReadState>
   messages: Record<number, ChannelMessages>
   typing: Record<number, Record<string, number>> // channel → member → shown until (ms)
+  commands: BotCommand[] // slash commands of the server's bots
+  ephemeral: Record<number, EphemeralReply[]> // channel → command replies only this member sees (this session)
 }
 
 const PAGE = 50
@@ -104,7 +106,7 @@ export async function previewServer(account: Account, inv: Invite): Promise<Serv
 }
 
 export class ServerConn {
-  state: ServerState = { status: 'connecting', reads: {}, messages: {}, typing: {} }
+  state: ServerState = { status: 'connecting', reads: {}, messages: {}, typing: {}, commands: [], ephemeral: {} }
   private listeners = new Set<() => void>()
   private ws: WebSocket | null = null
   private retry = 0
@@ -246,6 +248,7 @@ export class ServerConn {
         for (const rs of ready.read_states ?? []) reads[rs.channel_id] = rs
         // Messages may have been missed while disconnected: reload on demand.
         this.set({ status: 'ready', ready, reads, messages: {}, typing: {} })
+        this.api((c) => c.commands()).then((commands) => this.set({ commands }), () => {})
         if (ready.server.name !== this.saved.name) {
           this.saved = { ...this.saved, name: ready.server.name }
           this.persist()
@@ -265,6 +268,12 @@ export class ServerConn {
       case 'REACTION_ADD':
       case 'REACTION_REMOVE':
         return this.onReaction(d, t === 'REACTION_ADD')
+      case 'COMMANDS_UPDATE':
+        return this.set({ commands: d as BotCommand[] })
+      case 'INTERACTION_REPLY': {
+        const e = { ...(d as EphemeralReply), at: Date.now() }
+        return this.set({ ephemeral: { ...this.state.ephemeral, [e.channel_id]: [...(this.state.ephemeral[e.channel_id] ?? []), e].slice(-20) } })
+      }
       case 'TYPING_START': {
         if (d.member_id === this.me?.id) return
         const ch = { ...(this.state.typing[d.channel_id] ?? {}), [d.member_id]: Date.now() + TYPING_MS }

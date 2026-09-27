@@ -72,6 +72,18 @@ func (h *Hub) GroupOnline(group string) bool {
 	return h.groups[group] > 0
 }
 
+// KeyOnline reports whether a key (a member, a bot) has an open connection.
+func (h *Hub) KeyOnline(key string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for c := range h.conns {
+		if c.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
 // Broadcast sends an event to every connection.
 func (h *Hub) Broadcast(t string, d any) { h.BroadcastTo(t, d, nil) }
 

@@ -162,6 +162,9 @@ func (s *Server) handleDeleteBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.afterRemoval(m.ID, leftVoluntarily)
+	if all, err := s.commands(ctx); err == nil {
+		s.hub.Broadcast("COMMANDS_UPDATE", all) // its commands are gone
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -1,6 +1,8 @@
 // Command pingbot is a minimal Quarel bot: it answers "!ping" with "pong"
-// in every channel it can read and write. It shows the whole bot API: token
-// authentication, the real-time gateway, and REST calls.
+// in every channel it can read and write, and declares two slash commands:
+// /ping (public answer) and /echo <texte> (answer only its author sees). It
+// shows the whole bot API: token authentication, the real-time gateway,
+// REST calls and slash commands.
 //
 //	QUAREL_URL=https://mon-serveur:8090 QUAREL_BOT_TOKEN=qb_… QUAREL_SERVER_ID=… go run ./examples/pingbot
 //
@@ -94,6 +96,29 @@ func (b *bot) run(ctx context.Context) error {
 			json.Unmarshal(ev.D, &d)
 			b.me = d.Member.ID
 			log.Printf("connected to %q as %s", d.Server.Name, d.Member.DisplayName)
+			// Slash commands: declared once connected (this replaces the bot's list).
+			err := b.call(ctx, "PUT", "/v1/bots/@me/commands", []map[string]any{
+				{"name": "ping", "description": "Répond pong"},
+				{"name": "echo", "description": "Répète un texte, visible par vous seul·e",
+					"options": []map[string]any{{"name": "texte", "description": "Le texte à répéter", "type": "string", "required": true}}},
+			})
+			if err != nil {
+				log.Printf("declaring commands failed: %v", err)
+			}
+		case "INTERACTION_CREATE": // Someone ran one of our commands: answer within 15 minutes.
+			var it struct {
+				ID      string         `json:"id"`
+				Name    string         `json:"name"`
+				Options map[string]any `json:"options"`
+			}
+			json.Unmarshal(ev.D, &it)
+			reply := map[string]any{"content": "pong"}
+			if it.Name == "echo" {
+				reply = map[string]any{"content": fmt.Sprint(it.Options["texte"]), "ephemeral": true}
+			}
+			if err := b.call(ctx, "POST", "/v1/interactions/"+it.ID+"/reply", reply); err != nil {
+				log.Printf("command reply failed: %v", err)
+			}
 		case "MESSAGE_CREATE": // 3. Then events, as they happen.
 			var m struct {
 				ID        int64  `json:"id"`

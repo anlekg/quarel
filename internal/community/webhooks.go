@@ -220,41 +220,53 @@ func (s *Server) handleWebhookPost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	msg := &message{ChannelID: c.ID, AuthorID: memberID, Content: content}
-	tx, err := s.db.BeginTx(ctx, nil)
+	msg, err := s.storeMessage(ctx, ps, c, memberID, content, permSendMessages, nil) // no @everyone, no protected roles
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
+	writeJSON(w, http.StatusCreated, msg)
+}
+
+// storeMessage inserts a message by author in c (content already checked),
+// resolving its mentions with the permissions p, then tells clients: for
+// messages that are not a member's own request (webhooks, command replies).
+// extra runs inside the transaction, with the new message's ID.
+func (s *Server) storeMessage(ctx context.Context, ps *permSnapshot, c *channel, author, content string, p perm, extra func(tx *sql.Tx, id int64) error) (*message, error) {
+	msg := &message{ChannelID: c.ID, AuthorID: author, Content: content}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
 	defer tx.Rollback()
-	if err := resolveMentions(ctx, tx, ps, msg, permSendMessages); err != nil { // no @everyone, no protected roles
-		writeErr(w, r, err)
-		return
+	if err := resolveMentions(ctx, tx, ps, msg, p); err != nil {
+		return nil, err
 	}
 	now := s.nowMs()
 	res, err := tx.ExecContext(ctx, `INSERT INTO messages (channel_id, author_id, content, mention_everyone, created_at) VALUES (?, ?, ?, ?, ?)`,
-		c.ID, memberID, msg.Content, msg.MentionEveryone, now)
+		c.ID, author, msg.Content, msg.MentionEveryone, now)
 	if err != nil {
-		writeErr(w, r, err)
-		return
+		return nil, err
 	}
 	msg.ID, _ = res.LastInsertId()
 	msg.CreatedAt = fromMs(now)
 	if err := saveMentions(ctx, tx, msg); err != nil {
-		writeErr(w, r, err)
-		return
+		return nil, err
+	}
+	if extra != nil {
+		if err := extra(tx, msg.ID); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
-		writeErr(w, r, err)
-		return
+		return nil, err
 	}
 	if err := s.enrich(ctx, "", []*message{msg}); err != nil {
-		writeErr(w, r, err)
-		return
+		return nil, err
 	}
 	s.broadcastChannel(ctx, "MESSAGE_CREATE", c.ID, msg)
 	s.schedulePreviews(msg)
-	writeJSON(w, http.StatusCreated, msg)
+	return msg, nil
 }
 
 // loadWebhookAuthors marks the messages posted by webhooks with their name.

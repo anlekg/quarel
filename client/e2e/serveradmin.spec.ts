@@ -1,10 +1,13 @@
 // Step 6b of the desktop client: administering a community server from the
 // app. The owner (app) sets the server up, manages roles, channel
 // permissions, invites and bots, and moderates alice (Go test client).
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, test, type Page } from '@playwright/test'
 import { Community, Ctl, Identity, launchApp, tempDir } from './fixtures'
 
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const id = new Identity(19580)
 const srv = new Community(19590, 'localhost:19580')
 const ctl = new Ctl(id)
@@ -154,10 +157,38 @@ test('server administration: overview, invites, roles, channel permissions, mode
   await settings.getByRole('button', { name: 'Créer un bot' }).click()
   const token = page.getByRole('dialog', { name: 'Jeton de pingbot' })
   await expect(token.getByLabel('Jeton du bot')).toHaveValue(/^qb_/)
+  const botToken = await token.getByLabel('Jeton du bot').inputValue()
   await token.getByRole('button', { name: 'Fermer' }).click()
   await expect(settings.getByTestId('bots')).toContainText('pingbot')
 
   await settings.getByRole('button', { name: 'Fermer les paramètres du serveur' }).click()
   await expect(settings).toBeHidden()
+
+  // Slash commands: the example bot runs with this token and declares /ping and /echo.
+  const bot = spawn(join(repo, 'bin', 'pingbot'), [], {
+    env: { ...process.env, QUAREL_URL: `https://localhost:${srv.port}`, QUAREL_BOT_TOKEN: botToken, QUAREL_SERVER_ID: sid }, stdio: 'ignore',
+  })
+  try {
+    await page.getByRole('navigation', { name: 'Salons' }).getByRole('button', { name: 'général', exact: true }).click()
+    const composer = page.getByLabel('Message pour #général')
+    await composer.fill('/p')
+    await expect(page.getByRole('listbox', { name: 'Commandes' })).toContainText('/ping', { timeout: 15_000 })
+    await composer.press('Tab')
+    await expect(composer).toHaveValue('/ping')
+    await composer.press('Enter')
+    const reply = page.locator('.msg', { has: page.getByTestId('interaction') }).last()
+    await expect(reply).toContainText('bob a utilisé /ping')
+    await expect(reply).toContainText('pong')
+    await composer.fill('/echo un secret pour moi')
+    await composer.press('Enter')
+    await expect(page.getByTestId('ephemeral-reply')).toContainText('un secret pour moi')
+    await expect(page.getByTestId('ephemeral-reply')).toContainText('Visible uniquement par vous')
+    expect(ctl.run('alice', 'history', 'général')).not.toContain('un secret pour moi')
+    await composer.fill('/echo')
+    await composer.press('Enter')
+    await expect(page.getByRole('alert')).toContainText('Il manque « texte »')
+  } finally {
+    bot.kill()
+  }
   await app.close()
 })
