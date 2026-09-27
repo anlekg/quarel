@@ -543,7 +543,7 @@ make e2e-messages     # réponses, réactions, fichiers, recherche, fils, non-lu
 make e2e-moderation   # exclusion, purge, journal, règles, téléphone, bots avec examples/pingbot (24 vérifications)
 make e2e-ops          # sauvegardes à chaud des deux services, restauration, retour à l'identique (15 vérifications)
 make e2e-calls        # appels pair à pair réels (WebRTC) : direct, par le relais TURN, relais refusé (10 vérifications)
-make e2e-dm-groups    # groupes, modification/suppression, fichiers chiffrés, frappe, lecture (22 vérifications)
+make e2e-dm-groups    # groupes, modification/suppression, fichiers chiffrés, frappe, lecture, membres confirmés (40 vérifications)
 make e2e-accounts     # comptes : mots de passe, email, pseudo, profil, blocage, présence, suppression, outil opérateur (30 vérifications)
 make client-dev       # application desktop en développement (lancer d'abord make run-identity)
 make client-build     # construit l'interface et les processus Electron
