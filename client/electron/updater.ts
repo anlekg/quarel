@@ -101,7 +101,8 @@ export function setupUpdates(fromApp: (e: Electron.IpcMainInvokeEvent) => void) 
   })
   ipcMain.handle('update:install', (e) => {
     fromApp(e)
-    if (state.status === 'ready') setImmediate(() => autoUpdater.quitAndInstall(false, true))
+    // Silent install (no installer window, same folder), then Quarel starts again.
+    if (state.status === 'ready') setImmediate(() => autoUpdater.quitAndInstall(true, true))
   })
   // Not in development, nor in tests (unless a test feed is given).
   if ((!app.isPackaged && !process.env.QUAREL_UPDATE_URL) || (process.env.QUAREL_USER_DATA && !process.env.QUAREL_UPDATE_URL)) {
