@@ -386,3 +386,46 @@ func TestResetMasterKey(t *testing.T) {
 		t.Fatal("no alert email")
 	}
 }
+
+// Who may send me a friend request: everyone, friends of friends (and
+// members of my conversations), nobody. A request crossing mine still
+// accepts it.
+func TestFriendRequestPrivacy(t *testing.T) {
+	e := newEnv(t)
+	const pw = "correct horse battery"
+	alice, _ := e.registerVerified("a@example.com", "alice", pw)
+	bob, _ := e.registerVerified("b@example.com", "bob", pw)
+	carol, _ := e.registerVerified("c@example.com", "carol", pw)
+	dave, _ := e.registerVerified("d@example.com", "dave", pw)
+	var p map[string]any
+	e.expect(200, "", e.call("GET", "/v1/me/privacy", alice.SessionToken, nil, &p))
+	if p["friend_requests"] != "everyone" {
+		t.Fatalf("default = %v", p)
+	}
+	e.expect(400, "bad_request", e.call("PATCH", "/v1/me/privacy", alice.SessionToken, map[string]string{"friend_requests": "some"}, nil))
+	e.expect(200, "", e.call("PATCH", "/v1/me/privacy", alice.SessionToken, map[string]string{"friend_requests": "friends_of_friends"}, &p))
+	if p["friend_requests"] != "friends_of_friends" || p["typing"] != true {
+		t.Fatalf("privacy = %v", p)
+	}
+	e.befriend(alice, bob, "bob")
+	e.expect(403, "friend_requests_closed", e.call("POST", "/v1/friends", carol.SessionToken, map[string]string{"pseudo": "alice"}, nil))
+	e.befriend(bob, carol, "carol") // now a friend of a friend
+	e.expect(200, "", e.call("POST", "/v1/friends", carol.SessionToken, map[string]string{"pseudo": "alice"}, nil))
+	// A member of one of my conversations: bob's group with alice and dave,
+	// still there after dave and bob are no longer friends.
+	e.expect(403, "friend_requests_closed", e.call("POST", "/v1/friends", dave.SessionToken, map[string]string{"pseudo": "alice"}, nil))
+	e.befriend(bob, dave, "dave")
+	e.expect(201, "", e.call("POST", "/v1/dms", bob.SessionToken, map[string]any{"user_ids": []string{alice.User.ID, dave.User.ID}, "name": "g"}, nil))
+	e.expect(204, "", e.call("DELETE", "/v1/friends/"+dave.User.ID, bob.SessionToken, nil, nil))
+	e.expect(200, "", e.call("POST", "/v1/friends", dave.SessionToken, map[string]string{"pseudo": "alice"}, nil))
+	// Nobody: new requests refused, but a request alice sent is still answered.
+	e.expect(204, "", e.call("DELETE", "/v1/friends/"+dave.User.ID, alice.SessionToken, nil, nil))
+	e.expect(200, "", e.call("PATCH", "/v1/me/privacy", alice.SessionToken, map[string]string{"friend_requests": "nobody"}, nil))
+	e.expect(403, "friend_requests_closed", e.call("POST", "/v1/friends", dave.SessionToken, map[string]string{"pseudo": "alice"}, nil))
+	e.expect(200, "", e.call("POST", "/v1/friends", alice.SessionToken, map[string]string{"pseudo": "dave"}, nil))
+	var rel struct{ Status string }
+	e.expect(200, "", e.call("POST", "/v1/friends", dave.SessionToken, map[string]string{"pseudo": "alice"}, &rel))
+	if rel.Status != relFriends {
+		t.Fatalf("crossed request = %q", rel.Status)
+	}
+}

@@ -148,9 +148,9 @@ func TestTypingReadAndPrivacy(t *testing.T) {
 		t.Fatalf("%s %v", typ, d)
 	}
 	// Turned off: nothing reaches bob (the next event he gets is the one after re-enabling).
-	var p map[string]bool
+	var p map[string]any
 	e.expect(200, "", e.call("PATCH", "/v1/me/privacy", alice.SessionToken, map[string]bool{"typing": false, "read_receipts": false}, &p))
-	if p["typing"] || p["read_receipts"] {
+	if p["typing"] != false || p["read_receipts"] != false {
 		t.Fatalf("privacy = %v", p)
 	}
 	e.clock = e.clock.Add(5 * time.Second)

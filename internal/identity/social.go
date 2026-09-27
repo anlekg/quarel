@@ -188,6 +188,15 @@ func (s *Server) handleAddFriend(w http.ResponseWriter, r *http.Request) {
 	case relIncoming:
 		_, err = s.db.ExecContext(ctx, `UPDATE friendships SET status = 'accepted' WHERE user_a = ? AND user_b = ?`, a, b)
 	default:
+		ok, merr := s.mayRequest(ctx, me.ID, other.ID)
+		if merr != nil {
+			writeErr(w, r, merr)
+			return
+		}
+		if !ok {
+			writeErr(w, r, errf(http.StatusForbidden, "friend_requests_closed", "this user does not accept friend requests from you"))
+			return
+		}
 		_, err = s.db.ExecContext(ctx, `INSERT INTO friendships (user_a, user_b, status, requester, created_at) VALUES (?, ?, 'pending', ?, ?)`,
 			a, b, me.ID, s.now().Unix())
 	}

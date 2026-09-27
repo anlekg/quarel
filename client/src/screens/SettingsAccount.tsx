@@ -403,7 +403,7 @@ export function PrivacySection({ account }: { account: Account }) {
   }
   useEffect(load, [account]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggle = (k: keyof Privacy) => a.run(async () => setPrivacy(await api(account).setPrivacy({ [k]: !privacy![k] })))
+  const toggle = (k: 'typing' | 'read_receipts') => a.run(async () => setPrivacy(await api(account).setPrivacy({ [k]: !privacy![k] })))
 
   return (
     <>
@@ -418,6 +418,18 @@ export function PrivacySection({ account }: { account: Account }) {
           <label className="check-line card-row">
             <input type="checkbox" checked={privacy.read_receipts} onChange={() => toggle('read_receipts')} />
             <span className="grow"><span className="title">Accusés de lecture</span><span className="sub">« Vu » sous les messages privés que vous avez lus.</span></span>
+          </label>
+          <label className="check-line card-row">
+            <span className="grow"><span className="title">Qui peut vous demander en ami</span><span className="sub">Une demande que vous avez envoyée peut toujours être acceptée.</span></span>
+            <select className="input" aria-label="Qui peut vous demander en ami" value={privacy.friend_requests} style={{ width: 'auto', height: 34, padding: '0 8px' }}
+              onChange={(e) => {
+                const v = e.target.value as Privacy['friend_requests']
+                a.run(async () => setPrivacy(await api(account).setPrivacy({ friend_requests: v })))
+              }}>
+              <option value="everyone">Tout le monde</option>
+              <option value="friends_of_friends">Amis de mes amis et membres de mes groupes</option>
+              <option value="nobody">Personne</option>
+            </select>
           </label>
         </div>
       )}

@@ -119,6 +119,13 @@ test('settings: profile, security, presence, privacy, devices, deletion', async 
   await expect.poll(() => ctl.run('alice', 'friends'), { timeout: 15_000 }).not.toContain('bobby')
   await settings.getByTestId('blocked').getByRole('button', { name: 'Débloquer' }).click()
   await expect(settings).toContainText('Personne n’est bloqué'.replace('’', "'"))
+  // Nobody may send a friend request: alice (no longer a friend) is refused, then allowed again.
+  const who = settings.getByLabel('Qui peut vous demander en ami')
+  await expect(who).toHaveValue('everyone')
+  await who.selectOption('nobody')
+  await expect.poll(() => ctl.run('alice', 'friend-add', 'bobby'), { timeout: 10_000 }).toMatch(/friend_requests_closed|does not accept/)
+  await who.selectOption('everyone')
+  expect(ctl.run('alice', 'friend-add', 'bobby')).toContain('demande envoyée')
 
   // Microphone, speakers and camera (fake devices).
   await settings.getByRole('button', { name: 'Voix et vidéo' }).click()

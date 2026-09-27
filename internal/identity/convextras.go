@@ -25,18 +25,33 @@ func (s *Server) privacy(ctx context.Context, userID string) (typing, receipts b
 	return
 }
 
-// handlePrivacy: GET/PATCH /v1/me/privacy {typing?, read_receipts?}.
+// Who may send a friend request (users.friend_requests): anyone; only the
+// friends of my friends and the members of my conversations; nobody.
+var friendRequestModes = map[string]bool{"everyone": true, "friends_of_friends": true, "nobody": true}
+
+// handlePrivacy: GET/PATCH /v1/me/privacy {typing?, read_receipts?, friend_requests?}.
 func (s *Server) handlePrivacy(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	me := sessionFrom(r).UserID
 	if r.Method == http.MethodPatch {
 		var req struct {
-			Typing       *bool `json:"typing"`
-			ReadReceipts *bool `json:"read_receipts"`
+			Typing         *bool   `json:"typing"`
+			ReadReceipts   *bool   `json:"read_receipts"`
+			FriendRequests *string `json:"friend_requests"`
 		}
 		if err := decode(r, &req); err != nil {
 			writeErr(w, r, err)
 			return
+		}
+		if req.FriendRequests != nil {
+			if !friendRequestModes[*req.FriendRequests] {
+				writeErr(w, r, errf(http.StatusBadRequest, "bad_request", "friend_requests: everyone, friends_of_friends or nobody"))
+				return
+			}
+			if _, err := s.db.ExecContext(ctx, `UPDATE users SET friend_requests = ? WHERE id = ?`, *req.FriendRequests, me); err != nil {
+				writeErr(w, r, err)
+				return
+			}
 		}
 		if req.Typing != nil {
 			if _, err := s.db.ExecContext(ctx, `UPDATE users SET share_typing = ? WHERE id = ?`, *req.Typing, me); err != nil {
@@ -52,11 +67,37 @@ func (s *Server) handlePrivacy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	typing, receipts, err := s.privacy(ctx, me)
+	var requests string
+	if err == nil {
+		err = s.db.QueryRowContext(ctx, `SELECT friend_requests FROM users WHERE id = ?`, me).Scan(&requests)
+	}
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"typing": typing, "read_receipts": receipts})
+	writeJSON(w, http.StatusOK, map[string]any{"typing": typing, "read_receipts": receipts, "friend_requests": requests})
+}
+
+// mayRequest says whether from may send a friend request to to, by to's setting.
+func (s *Server) mayRequest(ctx context.Context, from, to string) (bool, error) {
+	var mode string
+	if err := s.db.QueryRowContext(ctx, `SELECT friend_requests FROM users WHERE id = ?`, to).Scan(&mode); err != nil {
+		return false, err
+	}
+	switch mode {
+	case "nobody":
+		return false, nil
+	case "friends_of_friends":
+		var n int
+		err := s.db.QueryRowContext(ctx, `
+SELECT (SELECT COUNT(*) FROM friendships f1 JOIN friendships f2
+          ON (CASE WHEN f1.user_a = ?1 THEN f1.user_b ELSE f1.user_a END) = (CASE WHEN f2.user_a = ?2 THEN f2.user_b ELSE f2.user_a END)
+        WHERE f1.status = 'accepted' AND f2.status = 'accepted' AND ?1 IN (f1.user_a, f1.user_b) AND ?2 IN (f2.user_a, f2.user_b))
+     + (SELECT COUNT(*) FROM conversation_members m1 JOIN conversation_members m2 ON m1.conversation_id = m2.conversation_id
+        WHERE m1.user_id = ?1 AND m2.user_id = ?2)`, from, to).Scan(&n)
+		return n > 0, err
+	}
+	return true, nil
 }
 
 // broadcastConv sends an ephemeral event to the connected devices of a

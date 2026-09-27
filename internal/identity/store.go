@@ -306,6 +306,11 @@ ALTER TABLE inbox ADD COLUMN size INTEGER NOT NULL DEFAULT 0;
 UPDATE inbox SET size = length(payload);
 CREATE INDEX inbox_created ON inbox(created_at);
 `,
+	// 10 (P2, 2026-09-27): who may send me a friend request.
+	`
+ALTER TABLE users ADD COLUMN friend_requests TEXT NOT NULL DEFAULT 'everyone'
+	CHECK (friend_requests IN ('everyone', 'friends_of_friends', 'nobody'));
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

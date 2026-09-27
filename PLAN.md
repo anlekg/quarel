@@ -39,7 +39,7 @@
 - [x] **P0** Liste d'amis, retrait d'un ami
 - [x] **P1** Bloquer un utilisateur
 - [x] **P1** Présence entre amis (en ligne / absent / ne pas déranger / invisible)
-- [ ] **P2** Réglages de confidentialité (qui peut m'envoyer une demande)
+- [x] **P2** Réglages de confidentialité (qui peut m'envoyer une demande) *(2026-09-27 : tout le monde, amis d'amis et membres de mes conversations, personne)*
 
 ### A5. Messages privés (chiffrés E2E)
 - [x] **P0** MP 1-à-1 chiffrés (Olm/Megolm, choisi par le CP)

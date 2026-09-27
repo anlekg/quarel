@@ -588,11 +588,19 @@ func (c *cli) markDMRead(target string) error {
 	})
 }
 
-// privacySettings [typing=on|off] [receipts=on|off]
+// privacySettings [typing=on|off] [receipts=on|off] [friends=everyone|fof|nobody]
 func (c *cli) privacySettings(args []string) error {
-	body := map[string]bool{}
+	body := map[string]any{}
+	modes := map[string]string{"everyone": "everyone", "tous": "everyone", "fof": "friends_of_friends", "friends_of_friends": "friends_of_friends", "nobody": "nobody", "personne": "nobody"}
 	for _, a := range args {
 		k, v, ok := strings.Cut(a, "=")
+		if k == "friends" {
+			if modes[v] == "" {
+				return fmt.Errorf("réglage invalide %q (friends=everyone|fof|nobody)", a)
+			}
+			body["friend_requests"] = modes[v]
+			continue
+		}
 		on := v == "on" || v == "oui" || v == "true"
 		if !ok || (!on && v != "off" && v != "non" && v != "false") {
 			return fmt.Errorf("réglage invalide %q (typing=on|off, receipts=on|off)", a)
@@ -603,7 +611,7 @@ func (c *cli) privacySettings(args []string) error {
 		case "receipts", "read_receipts":
 			body["read_receipts"] = on
 		default:
-			return fmt.Errorf("réglage inconnu %q (typing, receipts)", k)
+			return fmt.Errorf("réglage inconnu %q (typing, receipts, friends)", k)
 		}
 	}
 	method := "GET"
@@ -611,12 +619,17 @@ func (c *cli) privacySettings(args []string) error {
 	if len(body) > 0 {
 		method, in = "PATCH", body
 	}
-	var p map[string]bool
+	var p struct {
+		Typing         bool   `json:"typing"`
+		ReadReceipts   bool   `json:"read_receipts"`
+		FriendRequests string `json:"friend_requests"`
+	}
 	if err := c.do(method, "/v1/me/privacy", in, &p); err != nil {
 		return err
 	}
 	onOff := map[bool]string{true: "partagé", false: "non partagé"}
-	fmt.Printf("« En train d'écrire » : %s\nAccusés de lecture : %s\n", onOff[p["typing"]], onOff[p["read_receipts"]])
+	who := map[string]string{"everyone": "tout le monde", "friends_of_friends": "amis de vos amis et membres de vos conversations", "nobody": "personne"}[p.FriendRequests]
+	fmt.Printf("« En train d'écrire » : %s\nAccusés de lecture : %s\nDemandes d'ami acceptées de : %s\n", onOff[p.Typing], onOff[p.ReadReceipts], who)
 	return nil
 }
 

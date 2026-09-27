@@ -89,7 +89,8 @@ Messages privés (chiffrés de bout en bout, entre amis)
   dm-file <cible> <fichier> [texte…]   envoyer un fichier chiffré de bout en bout
   dm-download <cible> <n°> [destination]   récupérer et déchiffrer un fichier reçu
   dm-typing <cible> / dm-read <cible>      signaler « en train d'écrire » / marquer comme lu
-  privacy [typing=on|off] [receipts=on|off]   partager ou non ces deux informations
+  privacy [typing=on|off] [receipts=on|off] [friends=everyone|fof|nobody]
+                                   partager ou non ces deux informations ; qui peut vous demander en ami
 
 Appels entre amis (pair à pair, signalisation chiffrée de bout en bout)
   call <pseudo> [--seconds N] [--relay-only]   appeler (client de test : envoie une tonalité, mesure l'audio reçu)

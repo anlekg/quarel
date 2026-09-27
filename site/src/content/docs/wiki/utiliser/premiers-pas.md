@@ -40,4 +40,6 @@ Vos serveurs vous suivent sur tous vos appareils validés.
 
 Messages privés › **Amis** › **Ajouter un ami** : tapez son pseudo. Dès qu’elle accepte, vous pouvez lui écrire et l’appeler. Les amis doivent avoir un compte sur le **même service d’identité** que vous.
 
+Paramètres › Confidentialité › **Qui peut vous demander en ami** : tout le monde, les amis de vos amis et les membres de vos groupes, ou personne. Une demande que vous avez envoyée peut toujours être acceptée.
+
 Vous pouvez **bloquer** quelqu’un depuis la liste d’amis ou Paramètres › Confidentialité : ses messages sont aussi masqués sur les serveurs communautaires.

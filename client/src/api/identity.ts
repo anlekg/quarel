@@ -105,6 +105,7 @@ export interface Profile {
 export interface Privacy {
   typing: boolean
   read_receipts: boolean
+  friend_requests: 'everyone' | 'friends_of_friends' | 'nobody'
 }
 
 export interface ServerBackup {

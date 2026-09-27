@@ -31,6 +31,7 @@ const messages: Record<string, string> = {
   self_block: 'Vous ne pouvez pas vous bloquer vous-même.',
   mfa_required: 'Entrez aussi un code de double authentification.',
   not_found: 'Introuvable.',
+  friend_requests_closed: 'Cette personne n\u2019accepte pas de demande d\u2019ami de votre part.',
   // Community servers.
   invalid_invite: 'Invitation inconnue, expirée, épuisée ou révoquée. Demandez-en une nouvelle.',
   invite_required: 'Une invitation est nécessaire.',
