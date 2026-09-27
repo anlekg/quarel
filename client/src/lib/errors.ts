@@ -32,6 +32,7 @@ const messages: Record<string, string> = {
   mfa_required: 'Entrez aussi un code de double authentification.',
   not_found: 'Introuvable.',
   no_passkey: 'Aucune clé d\u2019accès sur ce compte : utilisez un code.',
+  invalid_passkey_code: 'Ce n\u2019est pas le code affiché par la page de votre navigateur.',
   ticket_expired: 'La vérification de la clé a expiré ou échoué : recommencez.',
   '2fa_not_enabled': 'Activez d\u2019abord la double authentification : ses codes de secours restent votre porte de sortie.',
   too_many_passkeys: '10 clés d\u2019accès au plus.',

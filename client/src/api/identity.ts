@@ -171,8 +171,9 @@ export class IdentityClient {
     return this.call<{ passkey_ticket: string; url: string }>('POST', '/v1/auth/login', { ...req, passkey: true })
   }
 
-  pollPasskeyLogin(ticket: string) {
-    return this.call<LoginResult | { status: 'pending' }>('POST', '/v1/auth/login/passkey', { ticket })
+  // pending: the key is not verified yet; code_required: send the code the page shows.
+  pollPasskeyLogin(ticket: string, code?: string) {
+    return this.call<LoginResult | { status: 'pending' | 'code_required' }>('POST', '/v1/auth/login/passkey', { ticket, ...(code ? { code } : {}) })
   }
 
   pushKey() {
@@ -195,8 +196,8 @@ export class IdentityClient {
     return this.call<{ ticket: string; url: string }>('POST', '/v1/me/passkeys', { password, name })
   }
 
-  deletePasskey(id: string) {
-    return this.call<void>('DELETE', '/v1/me/passkeys/' + encodeURIComponent(id))
+  deletePasskey(id: string, password: string) {
+    return this.call<void>('DELETE', '/v1/me/passkeys/' + encodeURIComponent(id), { password })
   }
 
   forgotPassword(email: string) {

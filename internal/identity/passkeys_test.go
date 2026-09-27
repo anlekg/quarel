@@ -93,6 +93,12 @@ func (k *softKey) get(options map[string]any) map[string]any {
 // ceremony plays the page: options, then the key's answer.
 func (e *testEnv) ceremony(ticket string, answer func(map[string]any) map[string]any) result {
 	e.t.Helper()
+	return e.ceremonyOut(ticket, answer, nil)
+}
+
+// ceremonyOut is ceremony, decoding the page's answer (the code, signing in).
+func (e *testEnv) ceremonyOut(ticket string, answer func(map[string]any) map[string]any, out any) result {
+	e.t.Helper()
 	var opt struct {
 		Kind    string
 		Options map[string]any
@@ -100,7 +106,7 @@ func (e *testEnv) ceremony(ticket string, answer func(map[string]any) map[string
 	if res := e.call("POST", "/v1/passkeys/options", "", map[string]string{"ticket": ticket}, &opt); res.status != 200 {
 		return res
 	}
-	return e.call("POST", "/v1/passkeys/finish", "", map[string]any{"ticket": ticket, "credential": answer(opt.Options)}, nil)
+	return e.call("POST", "/v1/passkeys/finish", "", map[string]any{"ticket": ticket, "credential": answer(opt.Options)}, out)
 }
 
 func TestPasskeys(t *testing.T) {
@@ -126,6 +132,9 @@ func TestPasskeys(t *testing.T) {
 	}
 	e.expect(204, "", e.ceremony(add.Ticket, key.create))
 	e.expect(404, "ticket_expired", e.call("POST", "/v1/passkeys/options", "", map[string]string{"ticket": add.Ticket}, nil)) // single use
+	if !strings.Contains(e.mail.last["a@example.com"], "« Clé USB ») vient d'être ajoutée") {
+		t.Fatalf("no alert for the new key: %q", e.mail.last["a@example.com"])
+	}
 	var keys []passkeyJSON
 	e.expect(200, "", e.call("GET", "/v1/me/passkeys", tok, nil, &keys))
 	if len(keys) != 1 || keys[0].Name != "Clé USB" || keys[0].LastUsedAt != nil {
@@ -144,21 +153,56 @@ func TestPasskeys(t *testing.T) {
 	poll := func(out any) result {
 		return e.call("POST", "/v1/auth/login/passkey", "", map[string]string{"ticket": started.Ticket}, out)
 	}
+	withCode := func(code string, out any) result {
+		return e.call("POST", "/v1/auth/login/passkey", "", map[string]string{"ticket": started.Ticket, "code": code}, out)
+	}
 	e.expect(202, "", poll(nil))
 	// A key of someone else is refused, and the ticket is spent.
 	other := newSoftKey(t, "id.test", "https://id.test")
 	e.expect(401, "invalid_passkey", e.ceremony(started.Ticket, other.get))
 	e.expect(404, "ticket_expired", poll(nil))
-	// The right key.
+	// The right key: the page shows the sign-in (device, address, time), then a
+	// code that the app must send (someone who sent the link would need it too).
 	e.expect(202, "", e.call("POST", "/v1/auth/login", "", login, &started))
-	e.expect(204, "", e.ceremony(started.Ticket, key.get))
+	var shown struct {
+		Device      string
+		IP          string
+		RequestedAt string `json:"requested_at"`
+	}
+	e.expect(200, "", e.call("POST", "/v1/passkeys/options", "", map[string]string{"ticket": started.Ticket}, &shown))
+	if shown.Device != "Portable" || shown.IP == "" || shown.RequestedAt == "" {
+		t.Fatalf("the page does not show the sign-in: %+v", shown)
+	}
+	var page struct{ Code string }
+	e.expect(200, "", e.ceremonyOut(started.Ticket, key.get, &page))
+	if len(page.Code) != 6 {
+		t.Fatalf("code = %q", page.Code)
+	}
+	var status struct{ Status string }
+	e.expect(202, "", poll(&status))
+	if status.Status != "code_required" {
+		t.Fatalf("status = %q", status.Status)
+	}
+	wrong := "000000"
+	if page.Code == wrong {
+		wrong = "111111"
+	}
+	e.expect(401, "invalid_passkey_code", withCode(wrong, nil))
 	var sess loginResp
-	e.expect(200, "", poll(&sess))
+	e.expect(200, "", withCode(page.Code[:3]+" "+page.Code[3:], &sess))
 	if sess.SessionToken == "" || sess.User.Pseudo != "alice" {
 		t.Fatalf("session = %+v", sess)
 	}
 	e.expect(200, "", e.call("GET", "/v1/me", sess.SessionToken, nil, nil))
-	e.expect(404, "ticket_expired", poll(nil)) // once
+	e.expect(404, "ticket_expired", withCode(page.Code, nil)) // once
+	// Five wrong codes: the ticket is gone.
+	e.expect(202, "", e.call("POST", "/v1/auth/login", "", login, &started))
+	e.expect(200, "", e.ceremonyOut(started.Ticket, key.get, &page))
+	for i := 0; i < 4; i++ {
+		e.expect(401, "invalid_passkey_code", withCode(wrong, nil))
+	}
+	e.expect(404, "ticket_expired", withCode(wrong, nil))
+	e.expect(404, "ticket_expired", withCode(page.Code, nil))
 	e.expect(200, "", e.call("GET", "/v1/me/passkeys", tok, nil, &keys))
 	if keys[0].LastUsedAt == nil {
 		t.Fatal("last use not recorded")
@@ -180,7 +224,11 @@ func TestPasskeys(t *testing.T) {
 	if resp.StatusCode != 200 || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "default-src 'none'") || !strings.Contains(string(body), "page.js") {
 		t.Fatalf("page: %d %q", resp.StatusCode, resp.Header.Get("Content-Security-Policy"))
 	}
-	// Deleting one; turning TOTP off removes them all.
-	e.expect(204, "", e.call("DELETE", "/v1/me/passkeys/"+keys[0].ID, tok, nil, nil))
+	// Deleting one needs the password (and tells the owner); turning TOTP off removes them all.
+	e.expect(401, "invalid_credentials", e.call("DELETE", "/v1/me/passkeys/"+keys[0].ID, tok, map[string]string{"password": "faux faux faux"}, nil))
+	e.expect(204, "", e.call("DELETE", "/v1/me/passkeys/"+keys[0].ID, tok, map[string]string{"password": pw}, nil))
+	if !strings.Contains(e.mail.last["a@example.com"], "« Clé USB » a été retirée") {
+		t.Fatalf("no alert for the removed key: %q", e.mail.last["a@example.com"])
+	}
 	e.expect(400, "no_passkey", e.call("POST", "/v1/auth/login", "", login, nil))
 }

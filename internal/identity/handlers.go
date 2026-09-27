@@ -367,7 +367,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, r, errf(http.StatusBadRequest, "no_passkey", "no passkey on this account: use a 2FA code"))
 			return
 		}
-		ticket := s.passkeys.put(s.now(), &passkeyTicket{kind: "login", userID: u.ID, deviceName: req.DeviceName, deviceKey: req.DeviceKey})
+		ticket := s.passkeys.put(s.now(), &passkeyTicket{kind: "login", userID: u.ID, deviceName: req.DeviceName, deviceKey: req.DeviceKey,
+			ip: s.proxies.ClientIP(r), requested: s.now()})
 		writeJSON(w, http.StatusAccepted, map[string]string{"passkey_ticket": ticket, "url": s.passkeyURL(ticket)})
 		return
 	}

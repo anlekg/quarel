@@ -7,6 +7,8 @@
   addEventListener('hashchange', () => location.reload()) // a new ticket in the same tab: start again
   const status = document.getElementById('status')
   const what = document.getElementById('what')
+  const warn = document.getElementById('warn')
+  const codeLine = document.getElementById('code')
   const go = document.getElementById('go')
   const say = (text, cls) => { status.textContent = text; status.className = cls || '' }
 
@@ -59,8 +61,15 @@
       const cred = kind === 'register'
         ? await navigator.credentials.create({ publicKey: creationOptions(options.publicKey) })
         : await navigator.credentials.get({ publicKey: requestOptions(options.publicKey) })
-      await post('/v1/passkeys/finish', { ticket, credential: encode(cred) })
-      say(kind === 'register' ? 'Clé ajoutée. Vous pouvez fermer cette page.' : 'C’est fait : l’application Quarel vous connecte. Vous pouvez fermer cette page.', 'ok')
+      const done = await post('/v1/passkeys/finish', { ticket, credential: encode(cred) })
+      if (kind === 'register') say('Clé ajoutée. Vous pouvez fermer cette page.', 'ok')
+      else {
+        // The app asks for this code: whoever sent this link would need it too.
+        warn.hidden = true
+        codeLine.textContent = done.code.slice(0, 3) + ' ' + done.code.slice(3)
+        codeLine.hidden = false
+        say('Tapez ce code dans l’application Quarel pour terminer la connexion. Ne le donnez à personne : si quelqu’un vous le demande, c’est une tentative de piratage.', 'ok')
+      }
       document.body.dataset.done = kind
     } catch (e) {
       const code = e && (e.name in errors ? e.name : e.message)
@@ -77,9 +86,13 @@
     } catch (e) {
       return say(errors[e.message] || 'Échec : ' + e.message, 'err')
     }
-    what.textContent = prepared.kind === 'register'
-      ? 'Ajouter une clé d’accès au compte ' + prepared.name + '.'
-      : 'Connexion au compte ' + prepared.name + ' : utilisez votre clé d’accès.'
+    if (prepared.kind === 'register') what.textContent = 'Ajouter une clé d’accès au compte ' + prepared.name + '.'
+    else {
+      const at = new Date(prepared.requested_at)
+      what.textContent = 'Connexion au compte ' + prepared.name + ' depuis l’appareil « ' + prepared.device + ' » (adresse ' + prepared.ip +
+        ', à ' + at.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) + ') : utilisez votre clé d’accès.'
+      warn.hidden = false
+    }
     say('Prêt.')
     go.hidden = false
     go.onclick = run
