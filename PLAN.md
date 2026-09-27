@@ -56,7 +56,7 @@
 - [x] **P1** Appels audio 1-à-1 en P2P
 - [x] **P1** Relais TURN de secours, désactivable par l'utilisateur
 - [x] **P2** Vidéo et partage d'écran en P2P *(2026-09-27 : caméra depuis l'étape 5 du client ; partage d'écran entre applications 0.4.0+, renégocié sur le canal de données de l'appel)*
-- [ ] **P2** Appels de groupe entre amis
+- [x] **P2** Appels de groupe entre amis *(2026-09-27 : maillage pair à pair dans les groupes de messages privés, 6 personnes au plus, caméra et partage d'écran)*
 
 ### A7. Administration du service central
 - [x] **P1** Désactivation / réactivation d'un compte (outil admin, journalisé)

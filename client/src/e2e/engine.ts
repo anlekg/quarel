@@ -178,9 +178,13 @@ export interface FileSignal {
 }
 
 // Olm "call" message (cmd/quarelctl/calls.go): complete SDP, no trickle ICE.
+// Group calls (app 0.4.0+, src/state/calls.ts) carry conv_id: join (start: it
+// rings), offer/answer between two participants, leave, full.
 export interface CallSignal {
   call_id: string
-  action: 'invite' | 'answer' | 'reject' | 'hangup'
+  action: 'invite' | 'answer' | 'reject' | 'hangup' | 'join' | 'offer' | 'leave' | 'full'
+  conv_id?: string
+  start?: boolean
   sdp?: string
   from_user: string // set on reception
   from_device: string
@@ -420,7 +424,7 @@ export class E2E {
     })
   }
 
-  private isConfirmed(dmId: string, userId: string) {
+  isConfirmed(dmId: string, userId: string) {
     return !!this.st.members?.[dmId]?.confirmed.includes(userId)
   }
 

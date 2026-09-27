@@ -1,5 +1,6 @@
-// Calls between friends: the bar above the user bar (visible everywhere), the
-// incoming call card, and the call panel of a private conversation.
+// Calls between friends and in groups: the bar above the user bar (visible
+// everywhere), the incoming call card, and the call panel of a private
+// conversation.
 import { useEffect, useRef, useState } from 'react'
 import type { Account } from '../state/account'
 import { Avatar } from '../components/Avatar'
@@ -25,17 +26,25 @@ function useElapsed(since?: number) {
   return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0')
 }
 
+const connected = (c: CallSnapshot) => c.peers.filter((p) => p.connected).length
+
 function statusText(c: CallSnapshot, elapsed: string) {
+  const group = c.kind === 'group'
   switch (c.status) {
-    case 'ringing': return 'Appel en cours…'
-    case 'incoming': return 'Appel entrant'
+    case 'ringing': return group ? 'En attente des autres membres…' : 'Appel en cours…'
+    case 'incoming': return group ? 'Appel de groupe' : 'Appel entrant'
     case 'connecting': return 'Connexion…'
-    case 'active': return 'En communication · ' + elapsed
+    case 'active': return 'En communication · ' + (group ? connected(c) + 1 + ' personnes · ' : '') + elapsed
     case 'ended': return c.ended ?? 'Appel terminé.'
   }
 }
 
-export function CallBar({ onOpen }: { onOpen: (userId: string) => void }) {
+// Where the call is: the friend (and the path), or the group.
+function where(c: CallSnapshot) {
+  return c.title + (c.kind === 'direct' && c.status === 'active' && c.path ? ' · ' + pathLabel[c.path] : '')
+}
+
+export function CallBar({ onOpen }: { onOpen: (c: CallSnapshot) => void }) {
   const c = useCall()
   const elapsed = useElapsed(c?.startedAt)
   const [picking, setPicking] = useState(false)
@@ -46,14 +55,15 @@ export function CallBar({ onOpen }: { onOpen: (userId: string) => void }) {
     fn().catch((e) => setError(errorMessage(e)))
   }
   const cls = c.status === 'active' ? '' : c.status === 'ended' ? 'err' : 'warn'
+  const live = c.status === 'active' || c.status === 'connecting' || (c.kind === 'group' && c.status === 'ringing')
+  const received = c.kind === 'direct' ? c.received : c.peers.reduce((n, p) => n + p.received, 0)
   return (
-    <div className="voicebar" role="region" aria-label="Appel" data-testid="callbar" data-status={c.status} data-path={c.path ?? ''} data-received={c.received}>
+    <div className="voicebar" role="region" aria-label="Appel" data-testid="callbar" data-status={c.status} data-path={c.path ?? ''} data-received={received}
+      data-peers={connected(c)}>
       <div className="st">
         <div className="t">
           <b className={cls}>{statusText(c, elapsed)}</b>
-          <span onClick={() => onOpen(c.peer.id)} title="Afficher la conversation">
-            {c.peer.pseudo}{c.status === 'active' && c.path ? ' · ' + pathLabel[c.path] : ''}
-          </span>
+          <span onClick={() => onOpen(c)} title="Afficher la conversation">{where(c)}</span>
         </div>
         {c.status !== 'ended' && (
           <button className="icon-btn hang" aria-label="Raccrocher" title="Raccrocher" onClick={() => hangUp()}><Hangup size={18} /></button>
@@ -65,11 +75,11 @@ export function CallBar({ onOpen }: { onOpen: (userId: string) => void }) {
             title={c.muted ? 'Réactiver le micro' : 'Couper le micro'} onClick={toggleCallMute}>
             {c.muted ? <MicOff size={18} /> : <Mic size={18} />}
           </button>
-          {c.canVideo && (c.status === 'active' || c.status === 'connecting') && (
+          {c.canVideo && live && (
             <button className={'icon-btn' + (c.camera ? ' on' : '')} aria-pressed={c.camera} aria-label={c.camera ? 'Couper la caméra' : 'Activer la caméra'}
               title={c.camera ? 'Couper la caméra' : 'Activer la caméra'} onClick={() => toggleCallCamera().catch(() => {})}><Camera size={18} /></button>
           )}
-          {c.canScreen && c.status === 'active' && canShareScreen() && (
+          {c.canScreen && (c.status === 'active' || c.kind === 'group') && live && canShareScreen() && (
             <button className={'icon-btn' + (c.screen ? ' on' : '')} aria-pressed={c.screen} aria-label={c.screen ? 'Arrêter le partage d’écran' : 'Partager l’écran'}
               title={c.screen ? 'Arrêter le partage d’écran' : 'Partager l’écran'}
               onClick={() => (c.screen || !isDesktop ? share(toggleCallScreen) : setPicking(true))}><Monitor size={18} /></button>
@@ -91,13 +101,19 @@ export function CallBar({ onOpen }: { onOpen: (userId: string) => void }) {
 export function IncomingCall({ account }: { account: Account }) {
   const c = useCall()
   if (!c || c.status !== 'incoming') return null
+  const group = c.kind === 'group'
   return (
-    <div className="incoming-call" role="alertdialog" aria-label={'Appel de ' + c.peer.pseudo}>
+    <div className="incoming-call" role="alertdialog" aria-label={group ? 'Appel de groupe ' + c.title : 'Appel de ' + c.peer.pseudo}>
       <Avatar id={c.peer.id} name={c.peer.pseudo} src={account.identity + '/v1/users/' + c.peer.id + '/avatar'} size={64} />
-      <div className="who"><b>{c.peer.pseudo}</b><span className="muted small">vous appelle</span></div>
+      <div className="who">
+        <b>{group ? c.title : c.peer.pseudo}</b>
+        <span className="muted small">{group ? c.peer.pseudo + ' lance un appel de groupe' : 'vous appelle'}</span>
+      </div>
       <div className="acts">
-        <button className="btn btn-danger btn-sm" onClick={declineCall}><Hangup size={16} />Refuser</button>
-        <button className="btn btn-primary btn-sm" onClick={() => acceptCall().catch(() => hangUp('Impossible de répondre.'))}><Phone size={16} />Répondre</button>
+        <button className="btn btn-danger btn-sm" onClick={declineCall}><Hangup size={16} />{group ? 'Ignorer' : 'Refuser'}</button>
+        <button className="btn btn-primary btn-sm" onClick={() => acceptCall().catch(() => hangUp('Impossible de répondre.'))}>
+          <Phone size={16} />{group ? 'Rejoindre' : 'Répondre'}
+        </button>
       </div>
     </div>
   )
@@ -111,24 +127,31 @@ function Video({ stream, muted, mirror }: { stream: MediaStream; muted?: boolean
   return <video ref={ref} autoPlay playsInline muted={muted} className={mirror ? 'mirror' : ''} />
 }
 
-// The call with this person, in their conversation.
-export function CallPanel({ account, userId }: { account: Account; userId: string }) {
+const hasVideo = (s: MediaStream | null): s is MediaStream => !!s && s.getVideoTracks().length > 0
+
+// The call in this conversation: with this person (userId), or in this group (convId).
+export function CallPanel({ account, userId, convId }: { account: Account; userId?: string; convId?: string }) {
   const c = useCall()
   const elapsed = useElapsed(c?.startedAt)
-  if (!c || c.peer.id !== userId || c.status === 'incoming') return null
-  const remoteVideo = c.remoteCamera && c.remoteStream && c.remoteStream.getVideoTracks().length > 0
-  const remoteScreen = c.remoteScreen && c.remoteScreenStream && c.remoteScreenStream.getVideoTracks().length > 0
+  if (!c || c.status === 'incoming') return null
+  if (c.kind === 'direct' ? !userId || c.peer.id !== userId : !convId || c.convId !== convId) return null
   const me = account.user
+  const avatar = (id: string, name: string) => <Avatar id={id} name={name} src={account.identity + '/v1/users/' + id + '/avatar'} size={72} />
+  // Before the friend answers, their tile is still shown.
+  const others = c.kind === 'direct' && !c.peers.length
+    ? [{ device: '', user: c.peer, connected: false, muted: false, camera: false, screen: false, stream: null, screenStream: null }]
+    : c.peers
+  const screens = others.filter((p) => p.screen && hasVideo(p.screenStream))
   return (
     <div className="call-panel" data-testid="call-panel">
-      {(remoteScreen || (c.screen && c.screenStream)) && (
+      {(screens.length > 0 || (c.screen && c.screenStream)) && (
         <div className="call-screens">
-          {remoteScreen && (
-            <div className="call-screen" data-testid="call-remote-screen">
-              <Video stream={c.remoteScreenStream!} muted />
-              <span className="call-name">Écran de {c.peer.pseudo}</span>
+          {screens.map((p) => (
+            <div key={p.device} className="call-screen" data-testid="call-remote-screen">
+              <Video stream={p.screenStream!} muted />
+              <span className="call-name">Écran de {p.user.pseudo}</span>
             </div>
-          )}
+          ))}
           {c.screen && c.screenStream && (
             <div className="call-screen mine" data-testid="call-my-screen">
               <Video stream={c.screenStream} muted />
@@ -137,17 +160,19 @@ export function CallPanel({ account, userId }: { account: Account; userId: strin
           )}
         </div>
       )}
-      <div className="call-stage">
+      <div className={'call-stage' + (others.length > 1 ? ' grid' : '')}>
+        {others.map((p) => (
+          <div key={p.device || p.user.id} className={'call-tile' + (p.connected || c.kind === 'direct' ? '' : ' waiting')} data-testid="call-peer" data-connected={p.connected}>
+            {p.camera && hasVideo(p.stream) ? <Video stream={p.stream} muted /> : avatar(p.user.id, p.user.pseudo)}
+            <span className="call-name">{p.user.pseudo}{p.muted && <MicOff size={14} />}</span>
+          </div>
+        ))}
         <div className="call-tile">
-          {remoteVideo ? <Video stream={c.remoteStream!} muted /> : <Avatar id={c.peer.id} name={c.peer.pseudo} src={account.identity + '/v1/users/' + c.peer.id + '/avatar'} size={72} />}
-          <span className="call-name">{c.peer.pseudo}{c.remoteMuted && <MicOff size={14} />}</span>
-        </div>
-        <div className="call-tile">
-          {c.camera && c.localStream ? <Video stream={c.localStream} muted mirror /> : <Avatar id={me.id} name={me.pseudo} src={account.identity + '/v1/users/' + me.id + '/avatar'} size={72} />}
+          {c.camera && c.localStream ? <Video stream={c.localStream} muted mirror /> : avatar(me.id, me.pseudo)}
           <span className="call-name">{me.pseudo}{c.muted && <MicOff size={14} />}</span>
         </div>
       </div>
-      <p className="call-status">{statusText(c, elapsed)}{c.status === 'active' && c.path ? ' · ' + pathLabel[c.path] : ''}</p>
+      <p className="call-status">{statusText(c, elapsed)}{c.kind === 'direct' && c.status === 'active' && c.path ? ' · ' + pathLabel[c.path] : ''}</p>
     </div>
   )
 }

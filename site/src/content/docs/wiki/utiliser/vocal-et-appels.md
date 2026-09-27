@@ -20,6 +20,13 @@ Le son et la vidéo vont directement au serveur vocal du serveur communautaire, 
 - Pendant l’appel : micro, caméra, **partage d’écran** (un écran ou une fenêtre, les deux personnes peuvent partager en même temps ; sous Windows, avec le son du système ; il faut que l’autre personne ait Quarel 0.4.0 ou plus récent), raccrocher. La barre d’appel indique la durée et le **chemin** : réseau local, pair à pair ou relais.
 - En statut « Ne pas déranger », vous ne recevez ni sonnerie ni notification.
 
+### Appels de groupe
+
+- Dans un groupe de messages privés : bouton **Appeler le groupe**. Les autres membres reçoivent une sonnerie (« Rejoindre » ou « Ignorer »).
+- Tant qu’un appel est en cours, le groupe affiche **Rejoindre l’appel** avec le nombre de participant·es : on peut partir et revenir.
+- **6 personnes au plus** : chaque participant·e envoie son son et sa vidéo directement à chacun·e des autres (aucun serveur ne voit le flux), ce qui demande plus de débit montant qu’un appel à deux.
+- Micro, caméra et partage d’écran comme pour un appel à deux. Il faut Quarel 0.4.0 ou plus récent.
+
 Les appels sont **pair à pair et chiffrés**. Quand aucun chemin direct n’existe, le relais de votre service d’identité transmet le flux chiffré. Paramètres › Voix et vidéo › décochez « Utiliser le relais si aucune connexion directe n’est possible » pour le refuser (l’appel échouera alors sans chemin direct).
 
 ## Micro, haut-parleurs, caméra

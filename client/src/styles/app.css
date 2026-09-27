@@ -497,6 +497,9 @@ p { margin: 0; }
   align-items: center; justify-content: center; overflow: hidden; }
 .call-tile video { width: 100%; height: 100%; object-fit: cover; }
 .call-tile video.mirror { transform: scaleX(-1); }
+.call-stage.grid { flex-wrap: wrap; }
+.call-stage.grid .call-tile { flex: 1 1 30%; min-width: 200px; max-width: 320px; }
+.call-tile.waiting { opacity: .5; }
 .call-name { position: absolute; left: 8px; bottom: 8px; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px;
   background: rgba(0, 0, 0, .55); font-size: 12px; font-weight: 600; }
 .call-status { text-align: center; font-size: 13px; color: var(--text-3); margin: 10px 0 0; }

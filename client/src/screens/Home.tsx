@@ -12,7 +12,7 @@ import { SafetyDialog, SecurityBanner } from './Security'
 import { showContent } from '../state/mobile'
 import { setActive } from '../state/notify'
 import { CallPanel } from './Call'
-import { startCall, useCall } from '../state/calls'
+import { GROUP_CALL_MAX, startCall, startGroupCall, useCall, useGroupCall } from '../state/calls'
 import type { Account } from '../state/account'
 import type { FileRef, HistMsg } from '../e2e/engine'
 import { E2EError } from '../e2e/engine'
@@ -348,10 +348,13 @@ function ConversationView({ account, conv, onLeft }: { account: Account; conv: C
               disabled={!s.validated || (!!activeCall && activeCall.status !== 'ended')} onClick={() => run(startCall(other))}><Phone size={18} /></button>
           )}
           {conv.kind === 'group' && (
+            <GroupCallButton conv={conv} validated={s.validated} busy={!!activeCall && activeCall.status !== 'ended'} run={run} />
+          )}
+          {conv.kind === 'group' && (
             <button className="btn btn-ghost btn-sm" onClick={() => { if (confirm('Quitter le groupe « ' + title + ' » ?')) run(leaveGroup(conv).then(onLeft)) }}>Quitter le groupe</button>
           )}
         </header>
-        {other && <CallPanel account={account} userId={other.id} />}
+        <CallPanel account={account} userId={other?.id} convId={conv.kind === 'group' ? conv.id : undefined} />
         <SecurityBanner />
         {error && <div style={{ padding: '8px 16px 0' }}><Alert kind="error">{error}</Alert></div>}
         {keyChanged && (
@@ -547,5 +550,21 @@ function DMFile({ conv, ref_, onImage }: { conv: Conversation; ref_: FileRef; on
       </div>
       <button className="icon-btn" aria-label={'Télécharger ' + ref_.name} title="Télécharger" disabled={busy} onClick={download}><Download size={18} /></button>
     </div>
+  )
+}
+
+// Starts a call in the group, or joins the one going on.
+function GroupCallButton({ conv, validated, busy, run }: { conv: Conversation; validated: boolean; busy: boolean; run: (p: Promise<unknown>) => void }) {
+  const going = useGroupCall(conv.id)
+  if (going && !busy) {
+    const full = going.count >= GROUP_CALL_MAX
+    return (
+      <button className="btn btn-primary btn-sm" disabled={!validated || full} title={full ? 'L’appel est complet (' + GROUP_CALL_MAX + ' personnes au plus)' : ''}
+        onClick={() => run(startGroupCall(conv))}><Phone size={16} />Rejoindre l’appel ({going.count})</button>
+    )
+  }
+  return (
+    <button className="icon-btn" aria-label="Appeler le groupe" title={validated ? 'Appeler le groupe (' + GROUP_CALL_MAX + ' personnes au plus)' : 'Appareil non validé'}
+      disabled={!validated || busy} onClick={() => run(startGroupCall(conv))}><Phone size={18} /></button>
   )
 }

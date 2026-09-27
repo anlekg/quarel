@@ -69,9 +69,10 @@ export function Shell({ account }: { account: Account }) {
   const userbar = (
     <>
     <UpdateBanner />
-    <CallBar onOpen={(userId) => {
+    <CallBar onOpen={(c) => {
       select('home')
-      window.dispatchEvent(new CustomEvent('quarel:open-dm', { detail: { userId } }))
+      if (c.convId) window.dispatchEvent(new CustomEvent('quarel:open-conversation', { detail: { dmId: c.convId } }))
+      else window.dispatchEvent(new CustomEvent('quarel:open-dm', { detail: { userId: c.peer.id } }))
     }} />
     <VoiceBar onOpen={(conn, channelId) => {
       prefs.set('channel:' + conn.saved.sid, channelId)
