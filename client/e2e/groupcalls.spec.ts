@@ -82,6 +82,9 @@ test('group calls: mesh of three apps, join, leave, screen', async () => {
   // Everyone hears both others (fake microphones).
   for (const p of [bob.page, carol.page, dave.page]) await expect.poll(() => received(p), { timeout: 15000 }).toBeGreaterThan(4000)
   await expect(bob.page.getByTestId('callbar')).toContainText('3 personnes')
+  // Each person's round trip on their tile, the slowest one in the call bar.
+  for (const who of ['carol', 'dave']) await expect(bob.page.getByTestId('call-panel').getByRole('img', { name: new RegExp('Ping avec ' + who + ' : \\d+ ms') })).toBeVisible({ timeout: 10000 })
+  await expect(bob.page.getByTestId('callbar').getByRole('img', { name: /Ping \(la liaison la plus lente\) : \d+ ms/ })).toBeVisible()
 
   // dave's camera reaches both others.
   await dave.page.getByRole('button', { name: 'Activer la caméra' }).click()

@@ -33,6 +33,7 @@ export interface VoiceSnapshot {
   speaking: Set<string> // member IDs
   participants: string[] // member IDs connected to the room (us included)
   videos: VideoTile[]
+  rtt?: number // round trip to the voice server (ms), media path if known
 }
 
 let snap: VoiceSnapshot | null = null
@@ -120,6 +121,29 @@ function refresh() {
   applyDeafen()
 }
 
+// Round trip to the voice server every 2 s: the media connection's selected
+// candidate pair (subscriber, else publisher), else the signalling ping.
+function watchPing(r: Room) {
+  const tick = async () => {
+    if (room !== r) return clearInterval(timer)
+    const pcs = r.engine.pcManager
+    let rtt: number | undefined
+    for (const t of [pcs?.subscriber, pcs?.publisher]) {
+      const stats = await t?.getStats()?.catch(() => undefined)
+      stats?.forEach((s) => {
+        if (rtt === undefined && s.type === 'candidate-pair' && s.nominated && s.state === 'succeeded' && typeof s.currentRoundTripTime === 'number') {
+          rtt = Math.round(s.currentRoundTripTime * 1000)
+        }
+      })
+      if (rtt !== undefined) break
+    }
+    rtt ??= r.engine.client.rtt || undefined
+    if (room === r && rtt !== snap?.rtt) emit({ rtt })
+  }
+  const timer = setInterval(tick, 2000)
+  tick()
+}
+
 async function tellServer() {
   if (!snap) return
   const conn = snap.conn
@@ -194,6 +218,7 @@ export async function joinVoice(conn: ServerConn, channelId: number) {
   if (room !== r) return
   emit({ status: 'connected' })
   refresh()
+  watchPing(r)
   if (snap && snap.canSpeak && !prefs.muted && !prefs.deafened) {
     await r.localParticipant.setMicrophoneEnabled(true).catch(() => {
       prefs.muted = true

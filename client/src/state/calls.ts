@@ -49,6 +49,7 @@ export interface PeerSnapshot {
   screen: boolean
   canScreen: boolean // their app can receive a shared screen (0.4.0+)
   path?: CallPath
+  rtt?: number // round trip with them (ms)
   received: number // audio bytes received (diagnostics, tests)
   stream: MediaStream | null // their microphone and camera
   screenStream: MediaStream | null // their screen
@@ -77,6 +78,7 @@ export interface CallSnapshot {
   remoteCamera: boolean
   remoteScreen: boolean
   path?: CallPath
+  rtt?: number // the friend (one to one), the slowest connected person (group)
   received: number
   remoteStream: MediaStream | null
   remoteScreenStream: MediaStream | null
@@ -98,7 +100,7 @@ interface Link {
 }
 
 interface Call {
-  snap: Omit<CallSnapshot, 'peers' | 'remoteMuted' | 'remoteCamera' | 'remoteScreen' | 'path' | 'received' | 'remoteStream' | 'remoteScreenStream'>
+  snap: Omit<CallSnapshot, 'peers' | 'remoteMuted' | 'remoteCamera' | 'remoteScreen' | 'path' | 'rtt' | 'received' | 'remoteStream' | 'remoteScreenStream'>
   links: Map<string, Link>
   config: Promise<RTCConfiguration>
   devices?: DeviceInfo[] // one to one, outgoing: the friend's devices that ring
@@ -124,6 +126,7 @@ function publish() {
     snapshot = {
       ...call.snap, peers,
       remoteMuted: !!p?.muted, remoteCamera: !!p?.camera, remoteScreen: !!p?.screen, path: p?.path, received: p?.received ?? 0,
+      rtt: p ? p.rtt : peers.reduce<number | undefined>((m, x) => (x.connected && x.rtt !== undefined ? Math.max(m ?? 0, x.rtt) : m), undefined),
       remoteStream: p?.stream ?? null, remoteScreenStream: p?.screenStream ?? null,
     }
   }
@@ -483,6 +486,7 @@ function watchStats(c: Call, l: Link) {
       if (r.type === 'inbound-rtp' && r.kind === 'audio') received += r.bytesReceived ?? 0
     })
     const pair = pairId ? stats.get(pairId) : null
+    if (pair && typeof pair.currentRoundTripTime === 'number') l.snap.rtt = Math.round(pair.currentRoundTripTime * 1000)
     if (pair) {
       const local = stats.get(pair.localCandidateId)
       const remote = stats.get(pair.remoteCandidateId)

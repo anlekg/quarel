@@ -38,3 +38,8 @@ Les appels sont **pair à pair et chiffrés**. Quand aucun chemin direct n’exi
 Paramètres › **Voix et vidéo** : choisir les périphériques (appliqué en direct, même en plein appel), tester le micro (vu-mètre), jouer un son de test, prévisualiser la caméra.
 
 Dans le navigateur, le micro et la caméra demandent votre autorisation la première fois.
+
+## Qualité de la connexion
+
+Des **barres de signal** indiquent le temps d’aller-retour (ping) : à gauche de « Vocal connecté » vers le serveur vocal, dans la barre d’appel et sur la tuile de chaque participant·e d’un appel. Quatre barres sous 60 ms, trois sous 120, deux sous 200, une sous 300, rouge au-delà ; la valeur exacte s’affiche au survol.
+

@@ -6,6 +6,7 @@ import type { Account } from '../state/account'
 import { Avatar } from '../components/Avatar'
 import { Camera, Hangup, Mic, MicOff, Monitor, Phone } from '../components/icons'
 import { ScreenPicker } from '../components/ScreenPicker'
+import { SignalBars } from '../components/SignalBars'
 import { errorMessage } from '../lib/errors'
 import { chooseScreenSource, isDesktop } from '../platform'
 import {
@@ -61,6 +62,7 @@ export function CallBar({ onOpen }: { onOpen: (c: CallSnapshot) => void }) {
     <div className="voicebar" role="region" aria-label="Appel" data-testid="callbar" data-status={c.status} data-path={c.path ?? ''} data-received={received}
       data-peers={connected(c)}>
       <div className="st">
+        {c.status === 'active' && <SignalBars rtt={c.rtt} label={c.kind === 'group' ? 'Ping (la liaison la plus lente)' : 'Ping avec ' + c.peer.pseudo} />}
         <div className="t">
           <b className={cls}>{statusText(c, elapsed)}</b>
           <span onClick={() => onOpen(c)} title="Afficher la conversation">{where(c)}</span>
@@ -139,7 +141,7 @@ export function CallPanel({ account, userId, convId }: { account: Account; userI
   const avatar = (id: string, name: string) => <Avatar id={id} name={name} src={account.identity + '/v1/users/' + id + '/avatar'} size={72} />
   // Before the friend answers, their tile is still shown.
   const others = c.kind === 'direct' && !c.peers.length
-    ? [{ device: '', user: c.peer, connected: false, muted: false, camera: false, screen: false, stream: null, screenStream: null }]
+    ? [{ device: '', user: c.peer, connected: false, muted: false, camera: false, screen: false, stream: null, screenStream: null, rtt: undefined as number | undefined }]
     : c.peers
   const screens = others.filter((p) => p.screen && hasVideo(p.screenStream))
   return (
@@ -164,7 +166,7 @@ export function CallPanel({ account, userId, convId }: { account: Account; userI
         {others.map((p) => (
           <div key={p.device || p.user.id} className={'call-tile' + (p.connected || c.kind === 'direct' ? '' : ' waiting')} data-testid="call-peer" data-connected={p.connected}>
             {p.camera && hasVideo(p.stream) ? <Video stream={p.stream} muted /> : avatar(p.user.id, p.user.pseudo)}
-            <span className="call-name">{p.user.pseudo}{p.muted && <MicOff size={14} />}</span>
+            <span className="call-name">{p.user.pseudo}{p.muted && <MicOff size={14} />}{p.connected && <SignalBars rtt={p.rtt} label={'Ping avec ' + p.user.pseudo} size={12} />}</span>
           </div>
         ))}
         <div className="call-tile">

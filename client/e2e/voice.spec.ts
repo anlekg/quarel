@@ -59,6 +59,8 @@ test('voice: join, hear, mute, camera, moderation, leave', async () => {
   await expect(channels.locator('.voice-users').getByText('alice')).toBeVisible()
   await channels.getByRole('button', { name: 'Général', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Vocal' }).getByText('Vocal connecté')).toBeVisible({ timeout: 15000 })
+  // The round trip to the voice server, next to "Vocal connecté".
+  await expect(page.getByRole('region', { name: 'Vocal' }).getByRole('img', { name: /Ping vers le serveur vocal : \d+ ms/ })).toBeVisible({ timeout: 10000 })
   const grid = page.getByRole('region', { name: 'Participants' })
   await expect(grid.locator('.tile')).toHaveCount(2)
   await expect(grid.getByText('bob (vous)')).toBeVisible()

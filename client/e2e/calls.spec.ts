@@ -104,6 +104,7 @@ test('calls: app and Go client both ways, relay, app to app with video', async (
   await expect(bar).toHaveAttribute('data-status', 'active', { timeout: 20000 })
   await expect(carolBar).toHaveAttribute('data-status', 'active', { timeout: 20000 })
   await expect.poll(async () => Number(await carolBar.getAttribute('data-received'))).toBeGreaterThan(1000)
+  await expect(carolBar.getByRole('img', { name: /Ping avec bob : \d+ ms/ })).toBeVisible({ timeout: 10000 })
   await bob.page.getByRole('button', { name: 'Activer la caméra' }).click()
   await expect(carol.page.getByTestId('call-panel').locator('video')).toHaveCount(1, { timeout: 10000 }) // bob's camera
   await expect.poll(() => carol.page.getByTestId('call-panel').locator('video').evaluate((v: HTMLVideoElement) => v.videoWidth)).toBeGreaterThan(0)

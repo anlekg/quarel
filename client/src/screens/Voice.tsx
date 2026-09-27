@@ -10,6 +10,7 @@ import { errorMessage } from '../lib/errors'
 import { ApiError } from '../api/http'
 import { isDesktop, chooseScreenSource } from '../platform'
 import { ScreenPicker } from '../components/ScreenPicker'
+import { SignalBars } from '../components/SignalBars'
 import type { ServerConn } from '../state/servers'
 import {
   joinVoice, leaveVoice, toggleCamera, toggleDeafen, toggleMute, toggleScreen, useVoice, type VideoTile,
@@ -67,6 +68,7 @@ export function VoiceBar({ onOpen }: { onOpen: (conn: ServerConn, channelId: num
   return (
     <div className="voicebar" role="region" aria-label="Vocal">
       <div className="st">
+        {v.status === 'connected' && <SignalBars rtt={v.rtt} label="Ping vers le serveur vocal" />}
         <div className="t">
           {status}
           <span onClick={() => onOpen(v.conn, v.channelId)} title="Afficher le salon vocal">{(ch?.name ?? 'Salon vocal') + ' / ' + server}</span>

@@ -701,3 +701,11 @@ code.secret { font-family: ui-monospace, monospace; letter-spacing: .06em; word-
 .stage-audience h3 { font-size: 12px; text-transform: uppercase; color: var(--text-2); margin: 4px 0 8px; }
 .stage-listener { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; }
 .stage-listener .grow { flex: 1; }
+
+/* Ping: signal bars (SignalBars). */
+.signal { display: inline-flex; align-items: center; cursor: default; flex-shrink: 0; }
+.signal rect.off { fill: var(--bg-3); }
+.signal.good rect.on { fill: var(--accent); }
+.signal.fair rect.on { fill: #d8c35a; }
+.signal.poor rect.on { fill: #e0955a; }
+.signal.bad rect.off { fill: #e5746b; opacity: .6; }
