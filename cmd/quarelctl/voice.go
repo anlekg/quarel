@@ -59,6 +59,21 @@ func (c *cli) runVoice(cmd string, args []string) (bool, error) {
 		return true, c.voiceMove(args)
 	case "voice-kick":
 		return true, c.voiceKick(args)
+	case "voice-speaker":
+		id, name, err := c.moderate(args)
+		if err != nil {
+			return true, err
+		}
+		on := len(args) < 2 || (args[1] != "off" && args[1] != "non")
+		if err := c.cdo("PATCH", "/v1/voice/states/"+id, map[string]any{"speaker": on}, nil); err != nil {
+			return true, err
+		}
+		if on {
+			fmt.Printf("%s peut parler sur la scène.\n", name)
+		} else {
+			fmt.Printf("%s retourne dans le public.\n", name)
+		}
+		return true, nil
 	}
 	return c.runSocial(cmd, args)
 }

@@ -45,6 +45,7 @@ const (
 	auditVoiceDeafen      = "voice_deafen"
 	auditVoiceMove        = "voice_move"
 	auditVoiceDisconnect  = "voice_disconnect"
+	auditVoiceSpeaker     = "voice_speaker"
 	auditEmojiCreate      = "emoji_create"
 	auditEmojiDelete      = "emoji_delete"
 )

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Channel, Member, Ready } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { Alert, Dialog, Field } from '../components/ui'
-import { ChevronDown, Crown, Hash, Megaphone, Speaker, Thread, Forum } from '../components/icons'
+import { ChevronDown, Crown, Hash, Megaphone, Speaker, Thread, Forum, Stage } from '../components/icons'
 import { canServer, channelTree, firstTextChannel, memberAvatar, memberColor } from '../lib/community'
 import { errorMessage } from '../lib/errors'
 import { inviteLink } from '../lib/invite'
@@ -189,7 +189,7 @@ function LeaveDialog({ conn, onClose }: { conn: ServerConn; onClose: () => void 
 }
 
 function channelIcon(c: Channel) {
-  if (c.type === 'voice') return <Speaker size={18} />
+  if (c.type === 'voice') return c.stage ? <Stage size={18} /> : <Speaker size={18} />
   if (c.type === 'announcement') return <Megaphone size={18} />
   if (c.type === 'thread') return <Thread size={16} />
   if (c.type === 'forum') return <Forum size={18} />

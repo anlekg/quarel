@@ -14,6 +14,10 @@ sidebar:
 
 Le son et la vidéo vont directement au serveur vocal du serveur communautaire, jamais par un service central.
 
+## Scènes
+
+Un salon vocal peut être une **scène** (conférence, soirée quiz…) : case « Scène » dans les réglages du salon. En arrivant, vous êtes dans le **public** : vous écoutez. **Lever la main** demande la parole ; les personnes qui peuvent couper le micro des autres dans ce salon parlent librement et **invitent à parler** (ou renvoient dans le public). « Quitter la scène » vous ramène dans le public ; en partant du salon, vous y revenez aussi.
+
 ## Appels entre amis
 
 - Dans une conversation en tête à tête avec un·e ami·e : bouton **Appeler**. La sonnerie retentit sur tous ses appareils ; le premier qui répond prend l’appel.

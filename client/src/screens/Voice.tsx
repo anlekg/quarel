@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Channel, Member, Ready, VoiceState } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { Alert, BackButton } from '../components/ui'
-import { Camera, Hangup, Headphones, HeadphonesOff, Mic, MicOff, Monitor, Speaker } from '../components/icons'
+import { Camera, Hangup, Headphones, HeadphonesOff, Mic, MicOff, Monitor, Speaker, Hand, Stage } from '../components/icons'
 import { can, memberAvatar } from '../lib/community'
 import { errorMessage } from '../lib/errors'
 import { ApiError } from '../api/http'
@@ -108,13 +108,26 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
   const connectOK = can(ready, channel.id, 'connect')
   const inside = ready.voice_states.filter((s) => s.channel_id === channel.id)
   const name = (id: string) => ready.members.find((m) => m.id === id)
+  // A stage: speakers (and moderators) on stage, everyone else in the audience.
+  const stage = !!channel.stage
+  const stateOf = (id: string) => inside.find((s) => s.member_id === id)
+  const onStage = (id: string) => !stage || (id === ready.member.id ? !!here?.canSpeak : !!stateOf(id)?.can_speak)
+  const mine = stateOf(ready.member.id)
+  const moderator = can(ready, channel.id, 'mute_members')
+  const [stageError, setStageError] = useState('')
+  const act = (p: Promise<unknown>) => {
+    setStageError('')
+    p.catch((e) => setStageError(errorMessage(e)))
+  }
+  const audience = here ? here.participants.filter((id) => !onStage(id)) : []
 
   return (
     <div className="voice-view">
       <header className="channel-head" style={{ background: 'var(--bg-1)' }}>
         <BackButton />
-        <Speaker />
+        {stage ? <Stage /> : <Speaker />}
         <span className="title">{channel.name}</span>
+        {stage && <span className="e2e-badge">Scène</span>}
         <span className="topic">{inside.length} personne{inside.length > 1 ? 's' : ''}{here?.status === 'reconnecting' ? ' · reconnexion…' : ''}</span>
       </header>
       {!here ? (
@@ -130,7 +143,8 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
         <>
           {here.error && here.status !== 'error' && <div style={{ padding: '8px 16px 0' }}><Alert kind="warn">{voiceError(here.error)}</Alert></div>}
           {here.status === 'error' && <div style={{ padding: 16 }}><Alert kind="error">{voiceError(here.error)}</Alert></div>}
-          <section className="voice-grid" aria-label="Participants">
+          {stageError && <div style={{ padding: '8px 16px 0' }}><Alert kind="error">{stageError}</Alert></div>}
+          <section className="voice-grid" aria-label={stage ? 'Sur scène' : 'Participants'}>
             {here.videos.map((t) => (
               <div key={t.key} className={'tile' + (here.speaking.has(t.local ? ready.member.id : t.memberId) && t.source === 'camera' ? ' speaking' : '')}>
                 <VideoView tile={t} />
@@ -139,9 +153,33 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
                 </span>
               </div>
             ))}
-            {here.participants.filter((id) => !here.videos.some((t) => t.source === 'camera' && (t.local ? ready.member.id : t.memberId) === id))
-              .map((id) => <PersonTile key={id} m={name(id)} state={inside.find((s) => s.member_id === id)} me={id === ready.member.id} speaking={here.speaking.has(id)} />)}
+            {here.participants.filter((id) => onStage(id) && !here.videos.some((t) => t.source === 'camera' && (t.local ? ready.member.id : t.memberId) === id))
+              .map((id) => !stage ? <PersonTile key={id} m={name(id)} state={stateOf(id)} me={id === ready.member.id} speaking={here.speaking.has(id)} /> : (
+                <div key={id} className="stage-slot">
+                  <PersonTile m={name(id)} state={stateOf(id)} me={id === ready.member.id} speaking={here.speaking.has(id)} />
+                  {moderator && id !== ready.member.id && stateOf(id)?.speaker && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => act(conn.api((c) => c.moderateVoice(id, { speaker: false })))}>Renvoyer dans le public</button>
+                  )}
+                </div>
+              ))}
           </section>
+          {stage && (
+            <section className="stage-audience" aria-label="Public">
+              <h3>Public — {audience.length}</h3>
+              {audience.map((id) => {
+                const st = stateOf(id)
+                return (
+                  <div key={id} className="stage-listener" data-testid="listener">
+                    <span className="grow">{name(id)?.display_name ?? '…'}{id === ready.member.id ? ' (vous)' : ''}</span>
+                    {st?.hand_raised && <Hand size={16} aria-label="main levée" />}
+                    {moderator && id !== ready.member.id && (
+                      <button className="btn btn-ghost btn-sm" onClick={() => act(conn.api((c) => c.moderateVoice(id, { speaker: true })))}>Inviter à parler</button>
+                    )}
+                  </div>
+                )
+              })}
+            </section>
+          )}
           <footer className="voice-controls">
             <button className={'round' + (here.muted ? ' off' : '')} disabled={!here.canSpeak} onClick={toggleMute}
               aria-pressed={here.muted} aria-label={here.muted ? 'Réactiver le micro' : 'Couper le micro'} title={here.canSpeak ? '' : 'Vous ne pouvez pas parler ici'}>
@@ -155,6 +193,14 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
             <button className={'round' + (here.screen ? ' on' : '')} disabled={!here.canStream}
               onClick={() => (here.screen || !isDesktop ? toggleScreen() : setPicking(true))}
               aria-pressed={here.screen} aria-label={here.screen ? 'Arrêter le partage d’écran' : 'Partager l’écran'}><Monitor size={22} /></button>
+            {stage && !here.canSpeak && (
+              <button className={'round' + (mine?.hand_raised ? ' on' : '')} aria-pressed={!!mine?.hand_raised}
+                aria-label={mine?.hand_raised ? 'Baisser la main' : 'Lever la main'} title={mine?.hand_raised ? 'Baisser la main' : 'Lever la main pour demander la parole'}
+                onClick={() => act(conn.api((c) => c.voiceState({ hand_raised: !mine?.hand_raised })))}><Hand size={22} /></button>
+            )}
+            {stage && mine?.speaker && (
+              <button className="btn btn-ghost btn-sm" onClick={() => act(conn.api((c) => c.voiceState({ speaker: false })))}>Quitter la scène</button>
+            )}
             <button className="leave-btn" onClick={() => leaveVoice()}><Hangup size={20} />Quitter</button>
           </footer>
         </>

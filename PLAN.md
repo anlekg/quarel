@@ -127,7 +127,7 @@
 - [x] **P1** Vidéo et partage d'écran
 - [x] **P1** Permissions vocales `connect` / `speak`, appliquées en direct *(avancé au jalon 4)*
 - [x] **P1** Modération vocale : déplacer / rendre muet un membre, permission de streamer *(+ sourdine imposée, déconnexion)*
-- [ ] **P2** Salons « scène » (conférence)
+- [x] **P2** Salons « scène » (conférence) *(2026-09-27 : salon vocal marqué scène, public qui lève la main, invités à parler)*
 
 ### B8. Bots et intégrations
 - [x] **P1** Comptes bot avec jeton propre au serveur

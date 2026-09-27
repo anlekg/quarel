@@ -47,6 +47,7 @@ type channel struct {
 	ParentID      *int64     `json:"parent_id"`
 	Position      int64      `json:"position"`
 	ThreadStarter *int64     `json:"thread_starter,omitempty"` // threads: message they started from
+	Stage         bool       `json:"stage,omitempty"`          // voice: only speakers talk (see stage.go)
 	Overrides     []override `json:"overrides"`
 }
 
@@ -59,7 +60,7 @@ func scanChannel(sc interface{ Scan(...any) error }) (*channel, error) {
 	c := channel{Overrides: []override{}}
 	var parent, starter sql.NullInt64
 	var announcement, thread, forum bool
-	if err := sc.Scan(&c.ID, &c.Type, &c.Name, &c.Topic, &parent, &c.Position, &announcement, &thread, &starter, &forum); err != nil {
+	if err := sc.Scan(&c.ID, &c.Type, &c.Name, &c.Topic, &parent, &c.Position, &announcement, &thread, &starter, &forum, &c.Stage); err != nil {
 		return nil, err
 	}
 	if parent.Valid {
@@ -79,7 +80,7 @@ func scanChannel(sc interface{ Scan(...any) error }) (*channel, error) {
 	return &c, nil
 }
 
-const channelCols = `id, type, name, topic, parent_id, position, announcement, thread, thread_starter, forum`
+const channelCols = `id, type, name, topic, parent_id, position, announcement, thread, thread_starter, forum, stage`
 
 // loadOverrides attaches overrides to channels (all of them if channelID is 0).
 func loadOverrides(ctx context.Context, q querier, byID map[int64]*channel, channelID int64) error {
@@ -213,6 +214,7 @@ func (s *Server) broadcastChannel(ctx context.Context, t string, channelID int64
 
 func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Stage    bool   `json:"stage"` // voice channels only
 		Type     string `json:"type"`
 		Name     string `json:"name"`
 		Topic    string `json:"topic"`
@@ -229,6 +231,10 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Type != chanText && req.Type != chanVoice && req.Type != chanCategory && req.Type != chanAnnouncement && req.Type != chanForum {
 		writeErr(w, r, errf(http.StatusBadRequest, "invalid_type", "type must be text, announcement, forum, voice or category (threads start from a message)"))
+		return
+	}
+	if req.Stage && req.Type != chanVoice {
+		writeErr(w, r, errf(http.StatusBadRequest, "invalid_type", "only voice channels can be stages"))
 		return
 	}
 	storedType, announcement, forum := req.Type, false, false
@@ -260,8 +266,8 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO channels (type, name, topic, parent_id, position, created_at, announcement, forum) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		storedType, name, topic, nullParent(req.ParentID), pos, s.nowMs(), announcement, forum)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO channels (type, name, topic, parent_id, position, created_at, announcement, forum, stage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		storedType, name, topic, nullParent(req.ParentID), pos, s.nowMs(), announcement, forum, req.Stage)
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -284,6 +290,7 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 		Topic    *string `json:"topic"`
 		ParentID *int64  `json:"parent_id"` // 0: move to top level
 		Position *int64  `json:"position"`
+		Stage    *bool   `json:"stage"` // voice channels only
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, r, err)
@@ -333,12 +340,20 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if req.Position != nil {
 		c.Position = *req.Position
 	}
+	stageChanged := false
+	if req.Stage != nil {
+		if c.Type != chanVoice {
+			writeErr(w, r, errf(http.StatusBadRequest, "invalid_type", "only voice channels can be stages"))
+			return
+		}
+		stageChanged, c.Stage = c.Stage != *req.Stage, *req.Stage
+	}
 	var parent int64
 	if c.ParentID != nil {
 		parent = *c.ParentID
 	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE channels SET name = ?, topic = ?, parent_id = ?, position = ? WHERE id = ?`,
-		c.Name, c.Topic, nullParent(parent), c.Position, c.ID); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE channels SET name = ?, topic = ?, parent_id = ?, position = ?, stage = ? WHERE id = ?`,
+		c.Name, c.Topic, nullParent(parent), c.Position, c.Stage, c.ID); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -346,6 +361,9 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 	s.audit(ctx, s.db, memberFrom(r).ID, auditChannelUpdate, fmt.Sprint(c.ID), "", map[string]any{"name": c.Name, "topic": c.Topic, "parent_id": c.ParentID, "position": c.Position})
 	if moved {
 		s.syncPermissions(ctx) // a new category can change who sees the channel
+	}
+	if stageChanged {
+		s.reconcileVoice(ctx) // who may talk there changed
 	}
 	writeJSON(w, http.StatusOK, c)
 }

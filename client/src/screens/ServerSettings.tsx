@@ -312,6 +312,7 @@ export function ChannelDialog({ conn, ready, channel, onClose, parent }: {
   const [name, setName] = useState(channel?.name ?? '')
   const [topic, setTopic] = useState(channel?.topic ?? '')
   const [parentId, setParentId] = useState<number | null>(channel ? channel.parent_id : (parent ?? null))
+  const [stage, setStage] = useState(!!channel?.stage)
   const a = useAction()
   const categories = ready.channels.filter((c) => c.type === 'category')
   const canManage = canServer(ready, 'manage_channels') || (channel ? ready.permissions.channels[String(channel.id)]?.includes('manage_channels') : false)
@@ -334,8 +335,8 @@ export function ChannelDialog({ conn, ready, channel, onClose, parent }: {
         <form style={{ display: 'flex', flexDirection: 'column', gap: 14 }} onSubmit={(e) => {
           e.preventDefault()
           a.run(async () => {
-            if (channel) await conn.api((c) => c.updateChannel(channel.id, { name: name.trim(), topic, ...(channel.type !== 'category' ? { parent_id: parentId } : {}) }))
-            else await conn.api((c) => c.createChannel({ type, name: name.trim(), topic, parent_id: type === 'category' ? null : parentId }))
+            if (channel) await conn.api((c) => c.updateChannel(channel.id, { name: name.trim(), topic, ...(channel.type !== 'category' ? { parent_id: parentId } : {}), ...(channel.type === 'voice' ? { stage } : {}) }))
+            else await conn.api((c) => c.createChannel({ type, name: name.trim(), topic, parent_id: type === 'category' ? null : parentId, ...(type === 'voice' ? { stage } : {}) }))
             onClose()
           })
         }}>
@@ -363,6 +364,12 @@ export function ChannelDialog({ conn, ready, channel, onClose, parent }: {
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
+          )}
+          {type === 'voice' && (
+            <label className="check-line">
+              <input type="checkbox" checked={stage} disabled={!canManage} onChange={(e) => setStage(e.target.checked)} />
+              <span>Scène : seules les personnes invitées à parler ont la parole, les autres écoutent et peuvent lever la main</span>
+            </label>
           )}
           <Alert kind="error">{a.error}</Alert>
           <div className="dialog-actions">

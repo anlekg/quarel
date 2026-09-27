@@ -277,6 +277,10 @@ CREATE TABLE emojis (
 	`
 ALTER TABLE channels ADD COLUMN forum INTEGER NOT NULL DEFAULT 0;
 `,
+	// 11 (P2, 2026-09-27): stage channels (voice channels where only speakers talk).
+	`
+ALTER TABLE channels ADD COLUMN stage INTEGER NOT NULL DEFAULT 0;
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

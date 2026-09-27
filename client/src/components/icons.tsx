@@ -39,6 +39,8 @@ export const ChevronDown = (p: P) => <Icon {...p}><path d="M6 9l6 6 6-6" /></Ico
 export const FileIcon = (p: P) => <Icon {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></Icon>
 export const Download = (p: P) => <Icon {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></Icon>
 export const Crown = (p: P) => <Icon {...p}><path d="M2 18h20M3 8l4 5 5-7 5 7 4-5-2 10H5z" /></Icon>
+export const Stage = (p: P) => <Icon {...p}><path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" /><path d="M3 21h18M6 17h12" /></Icon>
+export const Hand = (p: P) => <Icon {...p}><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11.5v-7a1.5 1.5 0 0 1 3 0V12M14 5.5a1.5 1.5 0 0 1 3 0V13M17 9.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-2a6 6 0 0 1-5.2-3L4 13.5a1.5 1.5 0 0 1 2.6-1.5L8 14" /></Icon>
 export const Forum = (p: P) => <Icon {...p}><path d="M4 5h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" /><path d="M17 9h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1v3l-4-3h-4" /></Icon>
 export const Thread = (p: P) => <Icon {...p}><path d="M4 4v10a4 4 0 0 0 4 4h12M16 14l4 4-4 4" /></Icon>
 export const Send = (p: P) => <Icon {...p}><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" /></Icon>

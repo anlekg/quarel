@@ -600,8 +600,10 @@ func (c *cli) channelEdit(args []string) error {
 				}
 				body["parent_id"] = cat.ID
 			}
+		case "stage":
+			body["stage"] = v == "on" || v == "oui" || v == "true"
 		default:
-			return fmt.Errorf("champ inconnu %q (name, topic, parent, position)", k)
+			return fmt.Errorf("champ inconnu %q (name, topic, parent, position, stage)", k)
 		}
 	}
 	var out channelInfo

@@ -118,7 +118,7 @@ Serveurs communautaires (connexion Identity requise)
 Salons (sur le serveur courant ; un salon se désigne par son nom ou son id)
   channels                         arborescence des salons
   channel-create <nom> [text|voice|category|announcement] [catégorie]
-  channel-edit <salon> name=… topic=… parent=<catégorie|0> position=N
+  channel-edit <salon> name=… topic=… parent=<catégorie|0> position=N stage=on|off (salon vocal : scène)
   channel-delete <salon>
 
 Messages
@@ -190,6 +190,7 @@ Vocal
   voice-deafen <membre> [off] [raison]  couper son son
   voice-move <membre> <salon vocal>     déplacer vers un autre salon vocal
   voice-kick <membre> [raison]          déconnecter du vocal
+  voice-speaker <membre> [off]          scène : inviter à parler (off : renvoyer dans le public)
 
 Options
   -s URL      adresse du service Identity (défaut : celle du profil, sinon http://localhost:8080)

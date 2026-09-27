@@ -57,6 +57,7 @@ export interface Channel {
   position: number
   thread_starter?: number
   overrides?: Override[]
+  stage?: boolean // voice: only speakers talk
 }
 
 export interface Override {
@@ -198,6 +199,9 @@ export interface VoiceState {
   server_deaf: boolean
   video: boolean
   screen: boolean
+  can_speak?: boolean
+  speaker?: boolean // stage: invited to speak
+  hand_raised?: boolean // stage: asks to speak
 }
 
 export type Restriction = '' | 'timed_out' | 'rules_not_accepted' | 'phone_not_verified'
@@ -330,7 +334,7 @@ export class CommunityClient {
       'POST', `/v1/channels/${channel}/voice/join`)
   }
 
-  voiceState(state: { self_mute: boolean; self_deaf: boolean }) {
+  voiceState(state: { self_mute?: boolean; self_deaf?: boolean; hand_raised?: boolean; speaker?: boolean }) {
     return this.call<void>('PATCH', '/v1/voice/state', state)
   }
 
@@ -433,11 +437,11 @@ export class CommunityClient {
     return this.call<void>(on ? 'PUT' : 'DELETE', '/v1/members/' + encodeURIComponent(member) + '/roles/' + role)
   }
 
-  createChannel(body: { type: string; name: string; topic?: string; parent_id?: number | null; position?: number }) {
+  createChannel(body: { type: string; name: string; topic?: string; parent_id?: number | null; position?: number; stage?: boolean }) {
     return this.call<Channel>('POST', '/v1/channels', body)
   }
 
-  updateChannel(id: number, body: { name?: string; topic?: string; parent_id?: number | null; position?: number }) {
+  updateChannel(id: number, body: { name?: string; topic?: string; parent_id?: number | null; position?: number; stage?: boolean }) {
     return this.call<Channel>('PATCH', '/v1/channels/' + id, body)
   }
 
@@ -513,7 +517,7 @@ export class CommunityClient {
     return this.call<void>('DELETE', '/v1/bots/' + encodeURIComponent(id))
   }
 
-  moderateVoice(member: string, body: { mute?: boolean; deaf?: boolean; channel_id?: number; reason?: string }) {
+  moderateVoice(member: string, body: { mute?: boolean; deaf?: boolean; channel_id?: number; speaker?: boolean; reason?: string }) {
     return this.call<void>('PATCH', '/v1/voice/states/' + encodeURIComponent(member), body)
   }
 

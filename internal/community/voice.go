@@ -50,9 +50,12 @@ type voiceState struct {
 	CanStream  bool      `json:"can_stream"`  // stream permission: camera and screen
 	Video      bool      `json:"video"`       // camera on
 	Screen     bool      `json:"screen"`      // sharing their screen
+	Speaker    bool      `json:"speaker"`     // stage: invited to speak
+	HandRaised bool      `json:"hand_raised"` // stage: asks to speak
 	JoinedAt   time.Time `json:"joined_at"`
 
-	grant voice.Grant // what LiveKit currently allows
+	grant   voice.Grant // what LiveKit currently allows
+	changed bool        // speaker or hand changed: announce it at the next reconcile
 }
 
 // voiceMod is a member's server mute/deafen, set by moderators.
@@ -76,9 +79,13 @@ func (s *Server) voiceMods(ctx context.Context) (map[string]voiceMod, error) {
 	return out, rows.Err()
 }
 
-// voiceGrant is what a member may do in a voice channel.
-func voiceGrant(ps *permSnapshot, mod voiceMod, memberID string, chID int64) voice.Grant {
+// voiceGrant is what a member may do in a voice channel. On a stage, only
+// speakers and those who may mute members talk and share.
+func voiceGrant(ps *permSnapshot, mod voiceMod, memberID string, chID int64, speaker bool) voice.Grant {
 	p := ps.inChannel(memberID, chID)
+	if c := ps.channels[chID]; c != nil && c.Stage && !speaker && p&permMuteMembers == 0 {
+		p &^= permSpeak | permStream
+	}
 	return voice.Grant{
 		Microphone: p&permSpeak != 0 && !mod.mute,
 		Camera:     p&permStream != 0,
@@ -99,8 +106,9 @@ func (st *voiceState) apply(g voice.Grant, mod voiceMod) {
 // voiceRegistry is the in-memory list of who is in which voice channel.
 // LiveKit is the source of truth; the registry is rebuilt from it at startup.
 type voiceRegistry struct {
-	mu     sync.Mutex
-	states map[string]*voiceState // by member ID
+	mu       sync.Mutex
+	states   map[string]*voiceState // by member ID
+	speakers map[string]int64       // member ID → stage channel where they were invited to speak
 }
 
 func roomName(channelID int64) string { return fmt.Sprint("channel-", channelID) }
@@ -113,7 +121,7 @@ func roomChannel(room string) (int64, bool) {
 // EnableVoice turns voice channels on.
 func (s *Server) EnableVoice(o VoiceOptions) {
 	s.voiceOpts = &o
-	s.voice = &voiceRegistry{states: map[string]*voiceState{}}
+	s.voice = &voiceRegistry{states: map[string]*voiceState{}, speakers: map[string]int64{}}
 }
 
 func (s *Server) requireVoice() error {
@@ -198,7 +206,7 @@ func (s *Server) handleVoiceJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mod := mods[m.ID]
-	g := voiceGrant(ps, mod, m.ID, c.ID)
+	g := voiceGrant(ps, mod, m.ID, c.ID, s.isSpeaker(m.ID, c.ID))
 	token, err := s.voiceOpts.Backend.JoinToken(roomName(c.ID), m.ID, m.json().DisplayName, g, voiceTokenTTL)
 	if err != nil {
 		writeErr(w, r, err)
@@ -221,8 +229,10 @@ func (s *Server) handleVoiceStates(w http.ResponseWriter, r *http.Request) {
 // the client mutes itself; deafened implies muted).
 func (s *Server) handleVoiceSelfState(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		SelfMute *bool `json:"self_mute"`
-		SelfDeaf *bool `json:"self_deaf"`
+		SelfMute   *bool `json:"self_mute"`
+		SelfDeaf   *bool `json:"self_deaf"`
+		HandRaised *bool `json:"hand_raised"` // stage: ask to speak
+		Speaker    *bool `json:"speaker"`     // stage: false steps down to the audience
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, r, err)
@@ -245,7 +255,11 @@ func (s *Server) handleVoiceSelfState(w http.ResponseWriter, r *http.Request) {
 		if st.SelfDeaf {
 			st.SelfMute = true
 		}
+		if req.HandRaised != nil {
+			st.HandRaised = *req.HandRaised && !st.Speaker
+		}
 	}
+	stepDown := st != nil && req.Speaker != nil && !*req.Speaker && st.Speaker
 	var snapshot voiceState
 	if st != nil {
 		snapshot = *st
@@ -255,7 +269,18 @@ func (s *Server) handleVoiceSelfState(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, errf(http.StatusConflict, "not_in_voice", "you are not in a voice channel"))
 		return
 	}
-	s.broadcastVoice(r.Context(), id, &snapshot, 0)
+	if req.Speaker != nil && *req.Speaker {
+		writeErr(w, r, errf(http.StatusForbidden, "missing_permissions", "only a moderator invites to speak: raise your hand"))
+		return
+	}
+	if stepDown {
+		s.setSpeaker(r.Context(), id, snapshot.ChannelID, false)
+		s.voice.mu.Lock()
+		snapshot = *s.voice.states[id]
+		s.voice.mu.Unlock()
+	} else {
+		s.broadcastVoice(r.Context(), id, &snapshot, 0)
+	}
 	writeJSON(w, http.StatusOK, snapshot)
 }
 
@@ -314,6 +339,9 @@ func (s *Server) handleVoiceEvent(ctx context.Context, ev voice.Event) {
 		st := s.voice.states[ev.Identity]
 		if st != nil && st.ChannelID == chID {
 			delete(s.voice.states, ev.Identity)
+		}
+		if s.voice.speakers[ev.Identity] == chID {
+			delete(s.voice.speakers, ev.Identity) // leaving the stage: back to the audience next time
 		}
 		s.voice.mu.Unlock()
 		if st != nil && st.ChannelID == chID {
@@ -380,8 +408,8 @@ func (s *Server) voiceJoined(ctx context.Context, chID int64, memberID string) {
 		s.logErr("loading voice moderation", err)
 		return
 	}
-	st := &voiceState{MemberID: memberID, ChannelID: chID, JoinedAt: s.now().UTC().Truncate(time.Millisecond)}
-	g := voiceGrant(ps, mods[memberID], memberID, chID)
+	st := &voiceState{MemberID: memberID, ChannelID: chID, JoinedAt: s.now().UTC().Truncate(time.Millisecond), Speaker: s.isSpeaker(memberID, chID)}
+	g := voiceGrant(ps, mods[memberID], memberID, chID, st.Speaker)
 	st.apply(g, mods[memberID])
 	s.voice.mu.Lock()
 	prev := s.voice.states[memberID]
@@ -429,12 +457,13 @@ func (s *Server) reconcileVoice(ctx context.Context) {
 	s.voice.mu.Lock()
 	for id, st := range s.voice.states {
 		p := ps.inChannel(id, st.ChannelID)
-		g, mod := voiceGrant(ps, mods[id], id, st.ChannelID), mods[id]
+		g, mod := voiceGrant(ps, mods[id], id, st.ChannelID, st.Speaker), mods[id]
 		switch {
 		case !active[id] || p&permConnect == 0:
 			delete(s.voice.states, id)
 			changes = append(changes, change{*st, true})
-		case g != st.grant || mod.mute != st.ServerMute || mod.deaf != st.ServerDeaf:
+		case g != st.grant || mod.mute != st.ServerMute || mod.deaf != st.ServerDeaf || st.changed:
+			st.changed = false
 			st.apply(g, mod)
 			changes = append(changes, change{*st, false})
 		}
@@ -518,6 +547,7 @@ func (s *Server) handleVoiceModerate(w http.ResponseWriter, r *http.Request) {
 		Mute      *bool  `json:"mute"`
 		Deaf      *bool  `json:"deaf"`
 		ChannelID *int64 `json:"channel_id"` // move them to this voice channel
+		Speaker   *bool  `json:"speaker"`    // stage: invite to speak or back to the audience
 		Reason    string `json:"reason"`
 	}
 	if err := decode(r, &req); err != nil {
@@ -548,7 +578,7 @@ func (s *Server) handleVoiceModerate(w http.ResponseWriter, r *http.Request) {
 	for _, c := range []struct {
 		set  bool
 		perm perm
-	}{{req.Mute != nil, permMuteMembers}, {req.Deaf != nil, permDeafenMembers}, {req.ChannelID != nil, permMoveMembers}} {
+	}{{req.Mute != nil || req.Speaker != nil, permMuteMembers}, {req.Deaf != nil, permDeafenMembers}, {req.ChannelID != nil, permMoveMembers}} {
 		if c.set && !has(c.perm) {
 			writeErr(w, r, ps.deny(me, c.perm))
 			return
@@ -594,6 +624,14 @@ func (s *Server) handleVoiceModerate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(ctx, s.db, me, c.action, target, reason, map[string]any{"enabled": *c.set})
+	}
+	if req.Speaker != nil {
+		if st == nil || ps.channels[st.ChannelID] == nil || !ps.channels[st.ChannelID].Stage {
+			writeErr(w, r, errf(http.StatusConflict, "not_on_stage", "this member is not on a stage"))
+			return
+		}
+		s.audit(ctx, s.db, me, auditVoiceSpeaker, target, reason, map[string]any{"enabled": *req.Speaker, "channel_id": st.ChannelID})
+		s.setSpeaker(ctx, target, st.ChannelID, *req.Speaker)
 	}
 	if req.Mute != nil || req.Deaf != nil {
 		s.reconcileVoice(ctx)

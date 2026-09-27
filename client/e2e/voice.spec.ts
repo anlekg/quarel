@@ -97,6 +97,21 @@ test('voice: join, hear, mute, camera, moderation, leave', async () => {
   ctl.run('alice', 'voice-mute', 'bob', 'off')
   await expect(grid.getByText('Micro coupé par la modération')).toHaveCount(0)
 
+  // A stage: bob moves to the audience, raises his hand, alice (owner) invites him to speak.
+  ctl.run('alice', 'channel-edit', 'Général', 'stage=on')
+  const audience = page.getByRole('region', { name: 'Public' })
+  await expect(audience.getByTestId('listener')).toContainText('bob (vous)', { timeout: 10000 })
+  await expect(controls.locator('button[aria-label="Couper le micro"], button[aria-label="Réactiver le micro"]')).toBeDisabled()
+  await controls.getByRole('button', { name: 'Lever la main' }).click()
+  await expect(audience.getByLabel('main levée')).toBeVisible()
+  expect(ctl.run('alice', 'voice-speaker', 'bob')).toContain('peut parler')
+  await expect(page.getByRole('region', { name: 'Sur scène' }).getByText('bob (vous)')).toBeVisible({ timeout: 10000 })
+  await expect(controls.getByRole('button', { name: 'Couper le micro' })).toBeEnabled()
+  await controls.getByRole('button', { name: 'Quitter la scène' }).click()
+  await expect(audience.getByTestId('listener')).toContainText('bob (vous)', { timeout: 10000 })
+  ctl.run('alice', 'channel-edit', 'Général', 'stage=off')
+  await expect(grid.getByText('bob (vous)')).toBeVisible({ timeout: 10000 })
+
   // Leave.
   await controls.getByRole('button', { name: 'Quitter' }).click()
   await expect(page.getByRole('region', { name: 'Vocal' })).toHaveCount(0)
