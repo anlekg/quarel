@@ -80,6 +80,16 @@ test('servers: join, rules, messages, replies, reactions, files, unread, kick', 
   await expect(msg1).toContainText('Salut @bob, tu viens samedi ?')
   await expect(msg1).toHaveClass(/mentioned/)
 
+  // Extended Markdown: a list, strikethrough and a spoiler revealed on click.
+  const m2 = lastID(ctl.run('alice', 'send', 'général', 'Au menu :\n- ~~pizza~~\n- crêpes\nFin : ||surprise||'))!
+  const msg2 = log.locator(`[data-mid="${m2}"]`)
+  await expect(msg2.locator('ul.md-list li')).toHaveCount(2)
+  await expect(msg2.locator('del')).toHaveText('pizza')
+  const spoiler = msg2.getByRole('button', { name: 'Divulgâcheur : afficher' })
+  await expect(spoiler).toBeVisible()
+  await spoiler.click()
+  await expect(msg2.locator('.md-spoiler.shown')).toHaveText('surprise')
+
   // alice is typing.
   ctl.run('alice', 'typing', 'général')
   await expect(page.getByText('alice écrit…')).toBeVisible()

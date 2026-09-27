@@ -106,7 +106,7 @@
 - [x] **P1** Recherche dans l'historique
 - [x] **P1** Indicateur « en train d'écrire », messages non lus *+ réglages de notification par salon (tout / mentions / rien, sourdine)*
 - [ ] **P2** Emojis personnalisés du serveur
-- [ ] **P2** Mise en forme Markdown étendue, blocs de code
+- [x] **P2** Mise en forme Markdown étendue, blocs de code *(2026-09-27 : titres, listes, citations, barré, souligné, divulgâcheurs, langage des blocs de code ; serveurs et messages privés)*
 
 ### B5. Rôles et permissions
 - [x] **P0** Rôles avec permissions (gérer le serveur, salons, rôles, membres, messages…)

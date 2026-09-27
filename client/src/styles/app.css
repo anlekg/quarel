@@ -325,6 +325,20 @@ p { margin: 0; }
 .mention.me { background: rgba(240, 179, 126, .22); color: #f6d2b0; }
 .md-code { background: var(--bg-deep); border-radius: 4px; padding: 1px 4px; font-family: ui-monospace, monospace; font-size: 13px; }
 .md-pre { background: var(--bg-deep); border: 1px solid var(--bg-3); border-radius: 6px; padding: 10px 12px; margin: 4px 0; overflow-x: auto; font-size: 13px; white-space: pre; }
+.md-pre[data-lang] { position: relative; padding-top: 22px; }
+.md-pre[data-lang]::before { content: attr(data-lang); position: absolute; top: 4px; right: 8px; font-size: 10px; color: var(--text-2); text-transform: uppercase; }
+.md-para { display: block; }
+.md-h { margin: 6px 0 2px; font-family: 'Space Grotesk', sans-serif; line-height: 1.25; color: var(--text); white-space: normal; }
+.md-h1 { font-size: 20px; }
+.md-h2 { font-size: 17px; }
+.md-h3 { font-size: 15px; }
+.md-quote { margin: 2px 0; padding: 0 0 0 10px; border-left: 3px solid var(--bg-3); color: var(--text-2); }
+.md-list { margin: 2px 0; padding-left: 22px; white-space: normal; }
+.md-list li { white-space: pre-wrap; }
+.md-spoiler { background: var(--bg-3); border-radius: 4px; cursor: pointer; }
+.md-spoiler > span { visibility: hidden; }
+.md-spoiler.shown { background: rgba(255, 255, 255, .06); cursor: auto; }
+.md-spoiler.shown > span { visibility: visible; }
 .attach-img { align-self: flex-start; max-width: min(420px, 100%); max-height: 320px; border-radius: 8px; cursor: zoom-in; display: block; background: var(--bg-1); }
 .attach-file { align-self: flex-start;
   display: flex; align-items: center; gap: 12px; padding: 10px 12px; max-width: 420px; border-radius: 8px;
