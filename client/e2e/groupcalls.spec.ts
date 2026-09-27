@@ -5,7 +5,11 @@
 import { expect, test, type Page } from '@playwright/test'
 import { Identity, launchApp, tempDir } from './fixtures'
 
-const id = new Identity(19980)
+// A relay on the loopback: carol and dave (not friends) talk only through it.
+const id = new Identity(19980, {
+  QUAREL_TURN: 'on', QUAREL_TURN_LISTEN: '127.0.0.1:19979', QUAREL_TURN_PUBLIC_IP: '127.0.0.1', QUAREL_TURN_PORTS: '50160-50199',
+  QUAREL_TURN_ALLOW_PRIVATE: '1',
+})
 const password = 'motdepasse-solide'
 
 async function account(pseudo: string) {
@@ -82,6 +86,13 @@ test('group calls: mesh of three apps, join, leave, screen', async () => {
   // Everyone hears both others (fake microphones).
   for (const p of [bob.page, carol.page, dave.page]) await expect.poll(() => received(p), { timeout: 15000 }).toBeGreaterThan(4000)
   await expect(bob.page.getByTestId('callbar')).toContainText('3 personnes')
+  // carol and dave are not friends: their link goes through the relay (neither
+  // learns the other's address); each one's link with bob, a friend, is direct.
+  const tile = (p: Page, who: string) => p.locator(`[data-testid="call-peer"][data-user="${who}"]`)
+  await expect(tile(carol.page, 'dave')).toHaveAttribute('data-path', 'relay', { timeout: 15000 })
+  await expect(tile(dave.page, 'carol')).toHaveAttribute('data-path', 'relay')
+  await expect(tile(carol.page, 'bob')).toHaveAttribute('data-path', /^(local|direct)$/)
+  await expect(tile(bob.page, 'dave')).toHaveAttribute('data-path', /^(local|direct)$/)
   // Each person's round trip on their tile, the slowest one in the call bar.
   for (const who of ['carol', 'dave']) await expect(bob.page.getByTestId('call-panel').getByRole('img', { name: new RegExp('Ping avec ' + who + ' : \\d+ ms') })).toBeVisible({ timeout: 10000 })
   await expect(bob.page.getByTestId('callbar').getByRole('img', { name: /Ping \(la liaison la plus lente\) : \d+ ms/ })).toBeVisible()

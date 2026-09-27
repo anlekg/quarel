@@ -166,7 +166,7 @@ export function CallPanel({ account, userId, convId }: { account: Account; userI
       )}
       <div className={'call-stage' + (others.length > 1 ? ' grid' : '')}>
         {others.map((p) => (
-          <div key={p.device || p.user.id} className={'call-tile' + (p.connected || c.kind === 'direct' ? '' : ' waiting')} data-testid="call-peer" data-connected={p.connected}
+          <div key={p.device || p.user.id} className={'call-tile' + (p.connected || c.kind === 'direct' ? '' : ' waiting')} data-testid="call-peer" data-connected={p.connected} data-user={p.user.pseudo} data-path={('path' in p && p.path) || ''}
             onContextMenu={(e) => {
               const key = personKey(account.issuer, p.user.id)
               showMenu(e, [

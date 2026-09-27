@@ -65,6 +65,7 @@ export class Files {
     private e2e: E2E,
     private api: IdentityClient,
     private members: (convId: string) => string[] | undefined, // user ids of a conversation, if we are in it
+    private direct: (userId: string) => boolean = () => true, // may connect directly (see state/netprivacy.ts)
   ) {
     this.off = e2e.on((ev) => {
       if (ev.kind === 'file_signal') this.onSignal(ev.signal)
@@ -88,15 +89,17 @@ export class Files {
     const ref: FileRef = { id: newId(), name: file.name || 'fichier', mime: file.type || 'application/octet-stream', size: data.length, key: padded(key), nonce: padded(nonce) }
     await store.put(ref.id, ct)
 
-    // 1. Offer it to every trusted device of the conversation; serve those that ask.
+    // 1. Offer it to every trusted device of the conversation that may connect
+    // directly (see state/netprivacy.ts); serve those that ask.
     const targets = await this.e2e.devicesOf([...others, this.e2e.userId])
+    const direct = await this.e2e.devicesOf([...others, this.e2e.userId].filter((u) => this.direct(u)))
     const delivered = new Set<string>()
     let active = 0
     const done = new Promise<void>((resolve) => {
       const start = Date.now()
       const check = () => {
         const quiet = Date.now() - start > 4000 && active === 0 // nobody online asked
-        if (delivered.size >= targets.length || quiet || Date.now() - start > OFFER_WINDOW) {
+        if (delivered.size >= direct.length || quiet || Date.now() - start > OFFER_WINDOW) {
           clearInterval(timer)
           this.served.delete(ref.id)
           resolve()
@@ -110,7 +113,7 @@ export class Files {
         check()
       })
     })
-    if (targets.length) await this.e2e.sendFileSignal(targets, { action: 'offer', conv_id: convId, file_id: ref.id, size: ct.length })
+    if (direct.length) await this.e2e.sendFileSignal(direct, { action: 'offer', conv_id: convId, file_id: ref.id, size: ct.length })
     await done
 
     // 2. A server copy for the others, deleted once they all have it.
@@ -152,7 +155,7 @@ export class Files {
           /* deleted or expired: ask a holder */
         }
       }
-      const holders = await this.e2e.devicesOf(this.members(convId) ?? [])
+      const holders = await this.e2e.devicesOf((this.members(convId) ?? []).filter((u) => this.direct(u)))
       const ct = await this.fetchP2P(convId, ref.id, holders, FETCH_TIMEOUT)
       decryptFile(convId, ref, ct) // never keep something that does not decrypt
       await store.put(ref.id, ct)
@@ -214,7 +217,7 @@ export class Files {
 
   // Takes a file just offered by the device that sends it.
   private async autoFetch(offer: FileSignal) {
-    if (!this.members(offer.conv_id) || (await store.get(offer.file_id)) || this.fetching.has(offer.file_id)) return
+    if (!this.members(offer.conv_id) || !this.direct(offer.from_user) || (await store.get(offer.file_id)) || this.fetching.has(offer.file_id)) return
     const holder = await this.e2e.trustedDevice(offer.from_user, offer.from_device)
     if (!holder) return
     const p = this.fetchP2P(offer.conv_id, offer.file_id, [holder], OFFER_WINDOW).then(async (ct) => {
@@ -276,6 +279,7 @@ export class Files {
   private async serve(req: FileSignal) {
     if (!req.sdp || !req.transfer_id) return
     if (!this.members(req.conv_id)?.includes(req.from_user)) return // never serve outside the conversation
+    if (!this.direct(req.from_user)) return // would give our address: the server copy is there for them
     const ct = await store.get(req.file_id)
     if (!ct) return // another holder may answer
     const requester = await this.e2e.trustedDevice(req.from_user, req.from_device)

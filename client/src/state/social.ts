@@ -10,6 +10,7 @@ import { Files, type SendResult } from '../e2e/files'
 import { verificationCode } from '../e2e/keys'
 import { identityClient, signOut, type Account } from './account'
 import { restoreWebPush } from './webpush'
+import { directOK } from './netprivacy'
 
 export interface SocialState {
   status: 'starting' | 'ready' | 'offline' | 'error'
@@ -100,7 +101,7 @@ export async function openSocial(a: Account) {
     e2e = await E2E.open(c, api(), a.user.id, a.user.pseudo, a.sessionId)
     e2e.on(onEngine)
     for (const l of engineListeners) l({ kind: 'servers' }) // the engine is ready: servers can sync
-    files = new Files(e2e, api(), (convId) => state.conversations.find((c) => c.id === convId)?.members.map((m) => m.id))
+    files = new Files(e2e, api(), (convId) => state.conversations.find((c) => c.id === convId)?.members.map((m) => m.id), directOK)
     // Ephemeral messages whose time is up, after Files listens (their files go too).
     const engine = e2e
     await engine.purgeExpired()
