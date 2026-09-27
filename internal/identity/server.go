@@ -183,7 +183,7 @@ type Server struct {
 	now      func() time.Time
 
 	proxies ratelimit.Proxies
-	limit   struct{ global, register, login, email, friends, files, sends, typing, turn, notice *ratelimit.Limiter }
+	limit   struct{ global, register, login, email, friends, files, sends, typing, turn, notice, export *ratelimit.Limiter }
 	turnKey string       // shared secret of the TURN relay ("" when it is off)
 	turnIP  atomic.Value // string: public address announced for the relay
 }
@@ -237,6 +237,7 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer, retired 
 	s.limit.typing = ratelimit.New(1, 3*time.Second)
 	s.limit.turn = ratelimit.New(60, time.Hour)
 	s.limit.notice = ratelimit.New(1, time.Hour) // "someone tried to register with your address", per address
+	s.limit.export = ratelimit.New(3, time.Hour) // data exports per user
 	if s.cfg.DMFileMaxBytes <= 0 {
 		s.cfg.DMFileMaxBytes = 25 << 20
 	}
@@ -325,6 +326,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/push/key", s.handlePushKey)
 	mux.HandleFunc("PUT /v1/me/push", s.authed(s.handleSetPush))
 	mux.HandleFunc("DELETE /v1/me/push", s.authed(s.handleSetPush))
+	mux.HandleFunc("GET /v1/me/export", s.authed(s.handleExport))
 	mux.HandleFunc("GET /v1/me/passkeys", s.authed(s.handleListPasskeys))
 	mux.HandleFunc("POST /v1/me/passkeys", s.authed(s.handleAddPasskey))
 	mux.HandleFunc("DELETE /v1/me/passkeys/{id}", s.authed(s.handleDeletePasskey))

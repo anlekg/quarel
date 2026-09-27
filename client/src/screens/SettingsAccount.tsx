@@ -8,7 +8,8 @@ import { Avatar, bumpAvatar } from '../components/Avatar'
 import { Alert, Dialog, Field, PasswordField, Submit } from '../components/ui'
 import { errorMessage } from '../lib/errors'
 import { identityClient, signOut, updateUser, type Account } from '../state/account'
-import { refreshBlocks } from '../state/social'
+import { engine, refreshBlocks } from '../state/social'
+import { saveJSON } from '../lib/download'
 
 const api = (a: Account) => identityClient(a)
 
@@ -573,6 +574,17 @@ export function PrivacySection({ account }: { account: Account }) {
         </div>
       )}
       {blocked && blocked.length === 0 && <p className="muted small">Personne n&apos;est bloqué.</p>}
+      <h3 className="settings-sub">Mes données</h3>
+      <p className="muted small" style={{ lineHeight: 1.5 }}>
+        Un fichier avec ce que votre service d&apos;identité garde sur vous (compte, appareils, amis, conversations…) et l&apos;historique de vos messages privés
+        gardé sur cet appareil (sans les messages éphémères). Pour vos messages sur un serveur : menu du serveur › « Mes données sur ce serveur ».
+      </p>
+      <div>
+        <button className="btn btn-ghost btn-sm" disabled={a.busy} onClick={() => a.run(async () => {
+          const identity = await api(account).exportData()
+          saveJSON('quarel-donnees-' + account.user.pseudo + '.json', { identity, private_messages: engine()?.exportHistory() ?? {} })
+        })}>Télécharger mes données</button>
+      </div>
     </>
   )
 }

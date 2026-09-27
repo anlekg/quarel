@@ -1042,6 +1042,18 @@ export class E2E {
     return !!this.st.backup_key
   }
 
+  // This device's copy of the private conversations, readable, for the
+  // person's export of their data (ephemeral messages left out).
+  exportHistory() {
+    const out: Record<string, { from: string; at: string; text: string; file?: string; edited?: boolean }[]> = {}
+    for (const [dm, list] of Object.entries(this.durableHistory())) {
+      out[dm] = list.filter((h) => h.text || h.file).map((h) => ({
+        from: this.name(h.from), at: h.at, text: h.text, ...(h.file ? { file: h.file.name } : {}), ...(h.edited ? { edited: true } : {}),
+      }))
+    }
+    return out
+  }
+
   // The history without its ephemeral messages: they never leave this device
   // (encrypted backup, history sent to a new device), as cmd/quarelctl does.
   private durableHistory(): Record<string, HistMsg[]> {

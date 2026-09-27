@@ -22,6 +22,7 @@ import { memberMenuItems } from './MemberMenu'
 import { menuRun, showMenu } from '../components/ContextMenu'
 import { channelNotify } from '../state/notify'
 import { Gear } from '../components/icons'
+import { saveJSON } from '../lib/download'
 import type { PublicUser } from '../api/identity'
 import { openDirect, sendText, useSocial } from '../state/social'
 import { useAccount } from '../state/account'
@@ -146,6 +147,10 @@ function ServerMenu({ conn, ready }: { conn: ServerConn; ready?: Ready }) {
           {canAdmin && <button role="menuitem" onClick={() => { setOpen(false); setDialog('settings') }}>Paramètres du serveur</button>}
           {canChannels && <button role="menuitem" onClick={() => { setOpen(false); setDialog('channel') }}>Créer un salon</button>}
           {ready && <button role="menuitem" onClick={() => { setOpen(false); setDialog('notify') }}>Notifications</button>}
+          {ready && <button role="menuitem" onClick={() => {
+            setOpen(false)
+            menuRun(conn.api((c) => c.exportMine()).then((d) => saveJSON('quarel-' + (ready.server.name || 'serveur') + '-donnees.json', d)), 'Données téléchargées.')
+          }}>Mes données sur ce serveur</button>}
           {!owner && <button role="menuitem" className="danger" onClick={() => { setOpen(false); setDialog('leave') }}>Quitter le serveur</button>}
 
         </div>

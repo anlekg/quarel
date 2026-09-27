@@ -48,7 +48,7 @@ type Server struct {
 	enc      *ecdh.PrivateKey                            // tokens sealed for this server (Identity services that approve servers)
 	network  func(ctx context.Context) netdiag.Diagnosis // nil: no diagnosis available
 	proxies  ratelimit.Proxies
-	limit    struct{ global, auth, messages, uploads, typing, phone, threads *ratelimit.Limiter }
+	limit    struct{ global, auth, messages, uploads, typing, phone, threads, export *ratelimit.Limiter }
 	previews *previewer    // nil: link previews disabled
 	phone    PhoneVerifier // nil: phone verification unavailable
 	disabled disabledSet   // accounts disabled by their identity service
@@ -104,6 +104,7 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, keys KeySource) *Server
 	s.limit.typing = ratelimit.New(1, 3*time.Second)
 	s.limit.phone = ratelimit.New(cfg.Limits.Phone, time.Hour)
 	s.limit.threads = ratelimit.New(cfg.Limits.Threads, 10*time.Minute)
+	s.limit.export = ratelimit.New(3, time.Hour) // data exports per member
 	s.phone = newPhoneVerifier(cfg)
 	if s.cfg.MaxUploadBytes <= 0 {
 		s.cfg.MaxUploadBytes = 25 << 20
@@ -283,6 +284,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /v1/members", s.authed(s.handleListMembers))
 	mux.HandleFunc("GET /v1/members/@me", s.authed(s.handleMe))
+	mux.HandleFunc("GET /v1/members/@me/export", s.authed(s.handleExport))
 	mux.HandleFunc("PATCH /v1/members/@me", s.authed(s.handleUpdateMe))
 	mux.HandleFunc("DELETE /v1/members/@me", s.authed(s.handleLeave))
 	mux.HandleFunc("GET /v1/members/@me/permissions", s.authed(s.handleMyPermissions))

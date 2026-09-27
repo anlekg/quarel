@@ -188,6 +188,11 @@ export class IdentityClient {
     return this.call<void>('DELETE', '/v1/me/push')
   }
 
+  // What the service keeps about the account (GET /v1/me/export).
+  exportData() {
+    return this.call<Record<string, unknown>>('GET', '/v1/me/export')
+  }
+
   passkeys() {
     return this.call<Passkey[]>('GET', '/v1/me/passkeys')
   }

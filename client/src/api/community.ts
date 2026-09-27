@@ -374,6 +374,11 @@ export class CommunityClient {
     return this.call<ServerInfo>('PATCH', '/v1/server', body)
   }
 
+  // What the server keeps about me: messages, reactions, roles, settings.
+  exportMine() {
+    return this.call<Record<string, unknown>>('GET', '/v1/members/@me/export')
+  }
+
   // One channel, also when left out of the lists (an archived thread).
   channel(id: number) {
     return this.call<Channel>('GET', '/v1/channels/' + id)
