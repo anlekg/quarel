@@ -16,12 +16,16 @@ import { VoiceMembers, VoiceView } from './Voice'
 import { joinVoice, useVoice } from '../state/voice'
 import { can } from '../lib/community'
 import { showContent } from '../state/mobile'
-import { ChannelDialog, MemberDialog, sectionsFor, ServerSettings } from './ServerSettings'
+import { askDeleteChannel, ChannelDialog, MemberDialog, sectionsFor, ServerSettings } from './ServerSettings'
 import { NotifyMenu } from './NotifyMenu'
 import { memberMenuItems } from './MemberMenu'
 import { menuRun, showMenu } from '../components/ContextMenu'
 import { channelNotify } from '../state/notify'
 import { Gear } from '../components/icons'
+import { saveJSON } from '../lib/download'
+import type { PublicUser } from '../api/identity'
+import { openDirect, sendText, useSocial } from '../state/social'
+import { useAccount } from '../state/account'
 
 export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React.ReactNode }) {
   const state = useServerState(conn)
@@ -31,7 +35,7 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
   const narrow = typeof matchMedia !== 'undefined' && matchMedia('(max-width: 700px)').matches
   const [showMembers, setShowMembers] = useState(() => !narrow && prefs.get('show-members', true))
 
-  const channel = r?.channels.find((c) => c.id === channelID && c.type !== 'category')
+  const channel = r?.channels.find((c) => c.id === channelID && c.type !== 'category') ?? (channelID != null ? state.archived[channelID] : undefined)
   const [jump, setJump] = useState<number | null>(null) // message to show once the channel is open
   // "Profil et modération…" from a message author's right-click menu.
   const [memberDialog, setMemberDialog] = useState<Member | null>(null)
@@ -58,9 +62,16 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
     window.addEventListener('quarel:open-channel', open)
     return () => window.removeEventListener('quarel:open-channel', open)
   }, [conn.saved.sid])
+  // The open channel is gone (deleted, no longer visible): back to its parent
+  // when it was a thread or a forum post, else to the first text channel.
+  const parentOf = useRef<number | null>(null)
+  useEffect(() => {
+    if (channel) parentOf.current = channel.type === 'thread' ? channel.parent_id : null
+  }, [channel])
   useEffect(() => {
     if (r && !channel) {
-      const first = firstTextChannel(r.channels)
+      const back = r.channels.find((c) => c.id === parentOf.current && c.type !== 'category')
+      const first = back ?? firstTextChannel(r.channels)
       if (first) setChannelID(first.id)
     }
   }, [r, channel])
@@ -136,6 +147,10 @@ function ServerMenu({ conn, ready }: { conn: ServerConn; ready?: Ready }) {
           {canAdmin && <button role="menuitem" onClick={() => { setOpen(false); setDialog('settings') }}>Paramètres du serveur</button>}
           {canChannels && <button role="menuitem" onClick={() => { setOpen(false); setDialog('channel') }}>Créer un salon</button>}
           {ready && <button role="menuitem" onClick={() => { setOpen(false); setDialog('notify') }}>Notifications</button>}
+          {ready && <button role="menuitem" onClick={() => {
+            setOpen(false)
+            menuRun(conn.api((c) => c.exportMine()).then((d) => saveJSON('quarel-' + (ready.server.name || 'serveur') + '-donnees.json', d)), 'Données téléchargées.')
+          }}>Mes données sur ce serveur</button>}
           {!owner && <button role="menuitem" className="danger" onClick={() => { setOpen(false); setDialog('leave') }}>Quitter le serveur</button>}
 
         </div>
@@ -149,19 +164,66 @@ function ServerMenu({ conn, ready }: { conn: ServerConn; ready?: Ready }) {
   )
 }
 
+// "Inviter sur…": friends (same identity service) get a single-use invite in a
+// private message, shown to them as a card; or a link to copy (7 days).
 function InviteDialog({ conn, onClose }: { conn: ServerConn; onClose: () => void }) {
   const [link, setLink] = useState('')
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [q, setQ] = useState('')
+  const [sent, setSent] = useState<Record<string, string>>({}) // friend → "sending", "sent" or an error
+  const st = useServerState(conn)
+  const social = useSocial()
+  const account = useAccount()
   useEffect(() => {
     conn.api((c) => c.createInvite(0)).then(
       (inv) => setLink(inviteLink(conn.saved.base, inv.code, conn.saved.sid)),
       (e) => setError(errorMessage(e)),
     )
   }, [conn])
+  const name = st.ready?.server.name ?? conn.saved.name
+  const member = (userId: string) => !!st.ready?.members.some((m) => m.issuer === account?.issuer && m.subject === userId)
+  const needle = q.trim().toLowerCase()
+  const friends = social.friends.friends.filter((f) => !needle || f.pseudo.toLowerCase().includes(needle))
+  const canDM = social.status === 'ready' && social.validated
+  const invite = async (f: PublicUser) => {
+    setSent((x) => ({ ...x, [f.id]: 'sending' }))
+    try {
+      const inv = await conn.api((c) => c.createInvite(1)) // single use: for this friend only
+      const conv = await openDirect(f.id)
+      await sendText(conv, 'Invitation à rejoindre « ' + name + ' » : ' + inviteLink(conn.saved.base, inv.code, conn.saved.sid))
+      setSent((x) => ({ ...x, [f.id]: 'sent' }))
+    } catch (e) {
+      setSent((x) => ({ ...x, [f.id]: errorMessage(e) }))
+    }
+  }
   return (
-    <Dialog title={'Inviter sur ' + conn.saved.name} onClose={onClose}>
-      <p className="muted small" style={{ lineHeight: 1.5 }}>Envoyez ce lien aux personnes à inviter. Il est valable 7 jours.</p>
+    <Dialog title={'Inviter sur ' + name} onClose={onClose}>
+      {social.friends.friends.length > 0 && (
+        <>
+          {!canDM && <Alert kind="info">Validez d’abord cet appareil (Messages privés) pour inviter vos amis par message. Le lien ci-dessous marche aussi.</Alert>}
+          {social.friends.friends.length > 5 && (
+            <input className="input" type="search" placeholder="Chercher un ami" aria-label="Chercher un ami" value={q} onChange={(e) => setQ(e.target.value)} />
+          )}
+          <ul className="invite-friends" aria-label="Amis à inviter">
+            {friends.map((f) => {
+              const state = sent[f.id]
+              const already = member(f.id)
+              return (
+                <li key={f.id}>
+                  <Avatar id={f.id} name={f.pseudo} src={account ? account.identity + '/v1/users/' + f.id + '/avatar' : undefined} size={32} />
+                  <span className="grow"><b>{f.pseudo}</b>{state && state !== 'sending' && state !== 'sent' && <span className="field-error">{state}</span>}</span>
+                  {already ? <span className="muted small">Déjà membre</span>
+                    : state === 'sent' ? <span className="muted small">Invitation envoyée</span>
+                      : <button className="btn btn-ghost btn-sm" disabled={!canDM || state === 'sending'} aria-label={'Inviter ' + f.pseudo} onClick={() => invite(f)}>Inviter</button>}
+                </li>
+              )
+            })}
+            {friends.length === 0 && <li className="muted small">Aucun ami ne correspond.</li>}
+          </ul>
+        </>
+      )}
+      <p className="muted small" style={{ lineHeight: 1.5 }}>{social.friends.friends.length ? 'Ou envoyez ce lien' : 'Envoyez ce lien aux personnes à inviter'}. Il est valable 7 jours.</p>
       <Alert kind="error">{error}</Alert>
       <div className="copy-row">
         <input className="input" readOnly value={link || 'Création…'} aria-label="Lien d'invitation" onFocus={(e) => e.target.select()} />
@@ -242,9 +304,11 @@ function ChannelList({ conn, ready, state, active, onPick }: {
     )
   }
   // Editing a channel: a gear next to it, for whoever manages channels or their permissions.
-  const editable = (c: Channel) => can(ready, c.id, 'manage_channels') || canServer(ready, 'manage_roles')
+  // A thread: its channel's manage_channels (overrides do not apply to threads).
+  const editable = (c: Channel) => can(ready, c.id, 'manage_channels') || (c.type !== 'thread' && (canServer(ready, 'manage_roles') || can(ready, c.id, 'manage_webhooks')))
   const gear = (c: Channel) => editable(c) && (
-    <button className="ch-edit" aria-label={'Modifier ' + c.name} title="Modifier le salon" onClick={() => setEditing(c)}><Gear size={14} /></button>
+    <button className="ch-edit" aria-label={'Modifier ' + c.name} title={'Modifier ' + (c.type === 'thread' ? 'le fil' : c.type === 'category' ? 'la catégorie' : 'le salon')}
+      onClick={() => setEditing(c)}><Gear size={14} /></button>
   )
   const [editing, setEditing] = useState<Channel | null>(null)
   const channelMenu = (c: Channel) => (e: React.MouseEvent) => {
@@ -255,6 +319,9 @@ function ChannelList({ conn, ready, state, active, onPick }: {
       c.type !== 'voice' && c.type !== 'category' && { label: 'Ouvrir', onClick: () => onPick(c) },
       !!rs && rs.last_message_id > rs.last_read && { label: 'Marquer comme lu', onClick: () => menuRun(conn.api((cl) => cl.ack(c.id))) },
       editable(c) && c.type !== 'thread' && { label: c.type === 'category' ? 'Modifier la catégorie' : 'Modifier le salon', onClick: () => setEditing(c) },
+      editable(c) && c.type === 'thread' && { label: 'Renommer le fil', onClick: () => setEditing(c) },
+      can(ready, c.id, 'manage_channels') && { separator: true },
+      can(ready, c.id, 'manage_channels') && { label: 'Supprimer ' + (c.type === 'thread' ? 'le fil' : c.type === 'category' ? 'la catégorie' : 'le salon') + '…', danger: true, onClick: () => menuRun(askDeleteChannel(conn, ready, c)) },
     ])
   }
   return (
@@ -265,7 +332,7 @@ function ChannelList({ conn, ready, state, active, onPick }: {
           {g.items.map((n) => (
             <div key={n.channel.id}>
               <div className="ch-wrap" onContextMenu={channelMenu(n.channel)}>{button(n.channel)}{n.channel.type !== 'thread' && gear(n.channel)}</div>
-              {n.threads.map((t) => <div key={t.id} onContextMenu={channelMenu(t)}>{button(t)}</div>)}
+              {n.threads.map((t) => <div key={t.id} className="ch-wrap" onContextMenu={channelMenu(t)}>{button(t)}{gear(t)}</div>)}
             </div>
           ))}
         </div>

@@ -60,7 +60,7 @@ func (e *e2e) backupKey() []byte {
 }
 
 func (e *e2e) payload() backupPayload {
-	p := backupPayload{Format: 1, MasterSeed: e.st.MasterSeed, History: e.st.History, Inbound: map[string]*inboundState{},
+	p := backupPayload{Format: 1, MasterSeed: e.st.MasterSeed, History: durableHistory(e.st.History), Inbound: map[string]*inboundState{},
 		Pinned: e.st.Pinned, Names: e.st.Names, Servers: e.st.Servers, CreatedAt: time.Now().UTC()}
 	for sid, in := range e.st.Inbound {
 		ig, err := olm.InboundGroupSessionFromPickled([]byte(in.Pickle), e.pk())
@@ -83,7 +83,7 @@ func (e *e2e) digest() string {
 		sids = append(sids, sid)
 	}
 	sort.Strings(sids)
-	data, _ := json.Marshal([]any{e.st.History, sids, e.st.Pinned, e.st.MasterSeed != "", e.st.Servers})
+	data, _ := json.Marshal([]any{durableHistory(e.st.History), sids, e.st.Pinned, e.st.MasterSeed != "", e.st.Servers})
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
 }

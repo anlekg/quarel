@@ -104,7 +104,8 @@ Légende : 🔑 = permission requise.
 ### Salons
 | | | |
 |---|---|---|
-| `GET /v1/channels` | | Salons visibles |
+| `GET /v1/channels` | | Salons visibles (sans les fils archivés) |
+| `GET /v1/channels/{id}` | 🔑 `view_channel` | Un salon, y compris un fil archivé (`archived_at`) |
 | `POST /v1/channels` | 🔑 `manage_channels` | `{type, name, topic?, parent_id?, position?}` |
 | `PATCH/DELETE /v1/channels/{id}` | 🔑 `manage_channels` | |
 | `PUT/DELETE /v1/channels/{id}/overrides/{role\|member}/{id}` | 🔑 `manage_roles` | `{allow: [...], deny: [...]}` |
@@ -122,12 +123,13 @@ Légende : 🔑 = permission requise.
 | `PUT/DELETE /v1/channels/{id}/messages/{mid}/reactions/{emoji}` | 🔑 `add_reactions` | Emoji encodé dans l'URL |
 | `DELETE …/reactions/{emoji}/{member}` | 🔑 `manage_messages` | |
 | `GET /v1/channels/{id}/pins` ; `PUT/DELETE /v1/channels/{id}/pins/{mid}` | 🔑 `manage_messages` pour modifier | |
-| `POST /v1/channels/{id}/messages/{mid}/threads` | 🔑 `send_messages` | `{name?}` → salon `thread` |
+| `POST /v1/channels/{id}/messages/{mid}/threads` | 🔑 `send_messages` | `{name?}` → salon `thread` (5 fils ou posts par 10 min et par membre, sauf `manage_channels` ; sans message pendant 7 jours, un fil est archivé : `CHANNEL_UPDATE` avec `archived_at`, absent de READY ; un message le rouvre : `CHANNEL_CREATE`) |
 | `POST /v1/channels/{id}/typing` | 🔑 `send_messages` | |
 | `POST /v1/channels/{id}/ack` | | `{message_id?}` : marquer lu |
 | `GET /v1/read-states` | | Non-lus et mentions par salon |
 | `GET /v1/notification-settings` ; `PUT /v1/notification-settings/{salon\|0}` | | `{level: default\|all\|mentions\|none, mute_for?: secondes, -1 = toujours}` |
 | `GET /v1/search` | | `?q=&channel_id=&author_id=&before=&limit=` (≤ 50) |
+| `GET /v1/members/@me/export` | | Vos données sur ce serveur : profil, rôles, réglages, réactions, fichiers et tous vos messages (JSON, 3 par heure) |
 
 ### Modération
 | | | |
@@ -148,14 +150,14 @@ On n'agit que sur un membre dont le rôle le plus haut est **strictement sous** 
 - **Forums** (type de salon `forum`) : pas de messages propres ; `POST /v1/channels/{id}/posts {title, content}` crée un post (un fil `thread` du forum, avec son premier message) ; `GET /v1/channels/{id}/posts?limit=&before=` → `[{channel, author_id, excerpt, message_count, last_message_at}]`, dernière activité d'abord. On répond dans un post comme dans n'importe quel fil.
 - **Emojis personnalisés** : `GET /v1/emojis` → `[{id, name}]` ; `POST /v1/emojis?name=nom` (corps = image PNG, GIF ou WebP, 256 Ko) et `DELETE /v1/emojis/{id}` — 🔑 `manage_server` ; image : `GET /v1/emojis/{id}` (session). Dans les messages et les réactions : `<:nom:id>`. Événement `EMOJIS_UPDATE` (liste complète), `emojis` dans `READY`.
 - **Commandes slash** : `PUT /v1/bots/@me/commands [{name, description, options: [{name, description, type, required}]}]` (bots, remplace la liste), `GET /v1/commands` → `[{bot_id, name, description, options}]` (événement `COMMANDS_UPDATE` avec la liste complète), `POST /v1/channels/{id}/commands {bot_id, name, options: {nom: valeur}}` → `202 {id}` (droit d'écrire dans le salon ; erreurs `unknown_command`, `missing_option`, `invalid_option`, `unknown_option`, `bot_offline`) ; le bot reçoit `INTERACTION_CREATE {id, name, options, channel_id, member_id}` et répond sous 15 min par `POST /v1/interactions/{id}/reply {content, ephemeral?}` → message (`interaction: {name, member_id}`) ou, éphémère, `INTERACTION_REPLY {interaction_id, channel_id, bot_id, name, content}` au seul membre (`204`).
-- **Webhooks entrants** : `GET /v1/channels/{id}/webhooks`, `POST /v1/channels/{id}/webhooks {name}` → `{id, channel_id, name, created_by, created_at, token}` (jeton `qw_…` affiché une seule fois), `DELETE /v1/webhooks/{id}` — 🔑 `manage_channels` dans le salon (textuel ou d'annonces). Publier : `POST /v1/webhooks/{id}/{token} {"content": "…"}` **sans session** → le message (`201`) ; 10 messages par 10 s ; pas de notification `@everyone` ni des rôles non mentionnables. Les messages d'un webhook portent `webhook: {id, name}` ; leur `author_id` est un membre caché, jamais listé.
+- **Webhooks entrants** : `GET /v1/channels/{id}/webhooks`, `POST /v1/channels/{id}/webhooks {name}` → `{id, channel_id, name, created_by, created_at, token}` (jeton `qw_…` affiché une seule fois), `DELETE /v1/webhooks/{id}` — 🔑 `manage_webhooks` dans le salon (textuel ou d'annonces) ; créer un webhook exige aussi d'y avoir le droit d'écrire (`send_messages`, et `manage_messages` dans un salon d'annonces). Publier : `POST /v1/webhooks/{id}/{token} {"content": "…"}` **sans session** → le message (`201`) ; 10 messages par 10 s ; pas de notification `@everyone` ni des rôles non mentionnables. Les messages d'un webhook portent `webhook: {id, name}` ; leur `author_id` est un membre caché, jamais listé.
 - `GET /v1/bots` → `[{member}]`, `POST /v1/bots {name}` → `{member, token}` (jeton affiché une seule fois), `POST /v1/bots/{id}/token` → `{member, token}`, `DELETE /v1/bots/{id}` — 🔑 `manage_server`.
 - **Vocal et vidéo** : `POST /v1/channels/{id}/voice/join` (🔑 `connect`) → `{url, token, room, can_speak, can_stream, server_mute, server_deaf}` pour se connecter au serveur média LiveKit (SDK `livekit-client` ou équivalent) ; micro = 🔑 `speak`, caméra et partage d'écran = 🔑 `stream`. `GET /v1/voice/states` → `[{member_id, channel_id, self_mute, self_deaf, server_mute, server_deaf, can_speak, can_stream, video, screen, joined_at}]`, `PATCH /v1/voice/state {self_mute?, self_deaf?}`, `POST /v1/voice/leave`.
 - **Modération vocale** : `PATCH /v1/voice/states/{member} {mute?, deaf?, channel_id?, reason?}` (🔑 `mute_members`, `deafen_members`, `move_members`) ; micro et son coupés par la modération persistent jusqu'à levée. Un client déplacé par la modération reçoit `VOICE_MOVE {channel_id, from_channel_id}` et doit rejoindre ce salon (il a déjà été retiré de l'ancien). `DELETE /v1/voice/states/{member}` (🔑 `move_members`) le déconnecte.
 
 ## 6. Permissions
 
-`view_channel`, `send_messages`, `manage_messages`, `mention_everyone`, `create_invite`, `manage_channels`, `manage_roles`, `kick_members`, `ban_members`, `manage_server`, `connect`, `speak`, `stream`, `add_reactions`, `attach_files`, `moderate_members`, `view_audit_log`, `mute_members`, `deafen_members`, `move_members`, `administrator`.
+`view_channel`, `send_messages`, `manage_messages`, `mention_everyone`, `create_invite`, `manage_channels`, `manage_roles`, `kick_members`, `ban_members`, `manage_server`, `connect`, `speak`, `stream`, `add_reactions`, `attach_files`, `moderate_members`, `view_audit_log`, `mute_members`, `deafen_members`, `move_members`, `manage_webhooks`, `administrator`.
 
 Calcul dans un salon : permissions de `@everyone` + union de vos rôles → surcharges de la catégorie → surcharges du salon (à chaque niveau : `@everyone`, puis vos rôles, puis vous). Sans `view_channel`, le salon n'existe pas pour vous (`404`). `administrator` et le propriétaire ont tout. Un membre **restreint** (exclusion temporaire, règles non acceptées, téléphone non vérifié) garde seulement `view_channel` ; ses refus portent le code de la restriction plutôt que `missing_permissions`.
 

@@ -335,6 +335,10 @@ func (s *Server) handleCreateThread(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	if err := s.allowThread(ps, memberFrom(r).ID, c); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		name = strings.TrimSpace(strings.SplitN(msg.Content, "\n", 2)[0])
@@ -350,6 +354,10 @@ func (s *Server) handleCreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	if err := s.checkAutoModName(ctx, ps, memberFrom(r).ID, c.ID, name); err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO channels (type, name, topic, parent_id, position, created_at, thread, thread_starter) VALUES ('text', ?, '', ?, 0, ?, 1, ?)`,
 		name, c.ID, s.nowMs(), msg.ID)
 	if err != nil {
@@ -478,10 +486,11 @@ func (s *Server) readStates(ctx context.Context, m *member, channels []int64) ([
 	return out, nil
 }
 
-// messagingChannels lists the channels holding messages that a member can see.
-func messagingChannels(ps *permSnapshot, memberID string) []int64 {
+// messagingChannels lists the channels holding messages that a member can
+// see (archived threads too, for search).
+func messagingChannels(ps *permSnapshot, memberID string, archived bool) []int64 {
 	var ids []int64
-	for _, c := range ps.visibleChannels(memberID) {
+	for _, c := range ps.channelsSeen(memberID, archived) {
 		if c.messaging() {
 			ids = append(ids, c.ID)
 		}
@@ -496,7 +505,7 @@ func (s *Server) handleReadStates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	me := memberFrom(r)
-	st, err := s.readStates(r.Context(), me, messagingChannels(ps, me.ID))
+	st, err := s.readStates(r.Context(), me, messagingChannels(ps, me.ID, false))
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -631,7 +640,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	me := memberFrom(r).ID
-	channels := messagingChannels(ps, me)
+	channels := messagingChannels(ps, me, true)
 	if cid, err := strconv.ParseInt(q.Get("channel_id"), 10, 64); err == nil {
 		if !slices.Contains(channels, cid) {
 			writeErr(w, r, errf(http.StatusNotFound, "not_found", "no such channel"))

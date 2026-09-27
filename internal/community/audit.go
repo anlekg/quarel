@@ -160,6 +160,9 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 		var nick sql.NullString
 		if s.db.QueryRowContext(r.Context(), `SELECT handle, nickname FROM members WHERE id = ?`, *id).Scan(&handle, &nick) == nil {
 			names[*id], _, _ = strings.Cut(handle, "@")
+			if handle == "" {
+				names[*id] = deletedName
+			}
 			if nick.Valid && nick.String != "" {
 				names[*id] = nick.String
 			}
@@ -182,6 +185,9 @@ func (s *Server) Housekeeping(ctx context.Context) error {
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, s.nowMs()); err != nil {
+		return err
+	}
+	if err := s.ArchiveThreads(ctx); err != nil {
 		return err
 	}
 	return s.CleanupAttachments(ctx)

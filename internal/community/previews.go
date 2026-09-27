@@ -40,12 +40,17 @@ type linkEmbed struct {
 	ImageURL    string `json:"image_url"` // not fetched by the server; clients decide whether to load it
 }
 
-var urlRe = regexp.MustCompile(`https?://[^\s<>"]+`)
+var (
+	urlRe     = regexp.MustCompile(`https?://[^\s<>"]+`)
+	spoilerRe = regexp.MustCompile(`\|\|[^|\n]+\|\|`)
+)
 
+// extractURLs lists the links to preview; a link hidden in a spoiler
+// (||…||) has none: its title would show what is hidden.
 func extractURLs(content string) []string {
 	var out []string
 	seen := map[string]bool{}
-	for _, u := range urlRe.FindAllString(content, -1) {
+	for _, u := range urlRe.FindAllString(spoilerRe.ReplaceAllString(content, " "), -1) {
 		u = strings.TrimRight(u, ".,;:!?)]}'")
 		if seen[u] {
 			continue

@@ -9,6 +9,7 @@ import { mutedForMe, personKey, setMutedForMe, setVolume, volumeOf } from '../li
 import { currentAccount } from '../state/account'
 import type { ServerConn } from '../state/servers'
 import { addFriend, openDirect, socialState } from '../state/social'
+import { confirmAction } from '../components/ConfirmDialog'
 
 const run = (p: Promise<unknown>, done?: string) => menuRun(p.catch((e) => Promise.reject(new Error(errorMessage(e)))), done)
 
@@ -60,8 +61,8 @@ export function memberMenuItems(conn: ServerConn, ready: Ready, m: Member, openD
     }
   }
   if (!me && above && (ready.permissions.server.includes('kick_members') || isAdmin(ready))) {
-    mod.push({ label: 'Expulser…', danger: true, onClick: () => {
-      if (confirm('Expulser ' + m.display_name + ' ? Cette personne pourra revenir avec une invitation.')) run(conn.api((c) => c.kick(m.id)), m.display_name + ' a été expulsé·e.')
+    mod.push({ label: 'Expulser…', danger: true, onClick: async () => {
+      if (await confirmAction({ title: 'Expulser ' + m.display_name + ' ?', message: 'Cette personne pourra revenir avec une invitation.', confirm: 'Expulser', danger: true })) run(conn.api((c) => c.kick(m.id)), m.display_name + ' a été expulsé·e.')
     } })
   }
   if (!me && above && (ready.permissions.server.includes('ban_members') || isAdmin(ready))) {

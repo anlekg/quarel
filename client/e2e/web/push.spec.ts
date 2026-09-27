@@ -1,12 +1,13 @@
 // Web Push in the web app: the empty wake-up of the identity service (see
 // internal/identity/webpush.go) turned on in the settings, and the service
 // worker's notification without any content.
+import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 import { Identity } from '../fixtures'
 
 test.use({ channel: 'chromium' }) // the full browser: the headless shell has no notifications
 
-const id = new Identity(19660)
+const id = new Identity(19660, { QUAREL_PUSH_HOSTS: 'push.example' }) // the stubbed subscription's push service
 const password = 'motdepasse-solide'
 
 test.beforeAll(async () => {
@@ -53,4 +54,16 @@ test('web push: empty wake-up, notification without content', async ({ page, con
   await other.goto('/')
   await expect.poll(() => other.evaluate(async () => (await (await navigator.serviceWorker.ready).getNotifications()).map((n) => n.title + ' | ' + n.body)))
     .toEqual(['Quarel | Du nouveau vous attend (message privé ou appel).'])
+
+  // Paramètres › Confidentialité › Télécharger mes données: a JSON file.
+  await other.getByRole('button', { name: 'Paramètres' }).click()
+  await other.getByRole('button', { name: 'Confidentialité' }).click()
+  const download = other.waitForEvent('download')
+  await other.getByRole('button', { name: 'Télécharger mes données' }).click()
+  const file = await download
+  expect(file.suggestedFilename()).toBe('quarel-donnees-bob.json')
+  const data = JSON.parse(readFileSync(await file.path(), 'utf8'))
+  expect(data.identity.account.pseudo).toBe('bob')
+  expect(data.identity.push).toHaveLength(1)
+  expect(data.private_messages).toEqual({})
 })

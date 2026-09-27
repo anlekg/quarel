@@ -166,6 +166,8 @@ p { margin: 0; }
 }
 .dialog h3 { font-size: 20px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.confirm-dialog { display: flex; flex-direction: column; gap: 16px; }
+.confirm-text { color: var(--text-2); line-height: 1.5; }
 
 /* --- signed-in shell --- */
 .shell { height: 100%; display: flex; background: var(--bg-2); }
@@ -727,3 +729,20 @@ code.secret { font-family: ui-monospace, monospace; letter-spacing: .06em; word-
 .ctx-emojis button { background: none; border: 0; border-radius: 6px; font-size: 18px; padding: 3px 5px; cursor: pointer; }
 .ctx-emojis button:hover { background: var(--bg-3); }
 .ctx-toast { position: fixed; z-index: 1001; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 10px 16px; background: var(--bg-3); color: var(--text); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, .4); font-size: 13px; max-width: 80vw; }
+
+/* --- invite cards (a message with an invite link) and friends to invite --- */
+.invite-card { display: flex; align-items: center; gap: 12px; margin-top: 6px; max-width: 440px; padding: 10px 12px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; }
+.invite-card .grow { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.invite-card .title { font-weight: 600; font-size: 14px; }
+.invite-card .sub { color: var(--text-3); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invite-mark { width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft); color: var(--accent-soft-text); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; font-size: 18px; }
+.invite-friends { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 300px; overflow-y: auto; }
+.invite-friends li { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; }
+.invite-friends li:hover { background: var(--bg-2); }
+.invite-friends .grow { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+/* --- archived threads --- */
+.archived-note { margin: 0 16px 8px; padding: 8px 12px; border-radius: 8px; background: var(--bg-2); color: var(--text-3); font-size: 13px; }
+.archived-tag { margin-left: 8px; padding: 1px 6px; border-radius: 6px; background: var(--bg-3); color: var(--text-3); font-size: 11px; font-weight: 600; vertical-align: middle; }

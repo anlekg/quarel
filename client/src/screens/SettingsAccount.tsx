@@ -8,7 +8,8 @@ import { Avatar, bumpAvatar } from '../components/Avatar'
 import { Alert, Dialog, Field, PasswordField, Submit } from '../components/ui'
 import { errorMessage } from '../lib/errors'
 import { identityClient, signOut, updateUser, type Account } from '../state/account'
-import { refreshBlocks } from '../state/social'
+import { engine, refreshBlocks } from '../state/social'
+import { saveJSON } from '../lib/download'
 
 const api = (a: Account) => identityClient(a)
 
@@ -337,6 +338,7 @@ function Enable2FADialog({ account, onClose }: { account: Account; onClose: (msg
 function Passkeys({ account }: { account: Account }) {
   const [list, setList] = useState<Passkey[] | null>(null)
   const [adding, setAdding] = useState(false)
+  const [removing, setRemoving] = useState<Passkey | null>(null)
   const [waiting, setWaiting] = useState(false)
   const a = useAction()
   const load = () => api(account).passkeys().then(setList, () => setList([]))
@@ -374,10 +376,7 @@ function Passkeys({ account }: { account: Account }) {
               <span className="title">{p.name}</span>
               <span className="sub">Ajoutée le {new Date(p.created_at * 1000).toLocaleDateString('fr-FR')}{p.last_used_at ? ' · utilisée le ' + new Date(p.last_used_at * 1000).toLocaleDateString('fr-FR') : ''}</span>
             </div>
-            <button className="btn btn-ghost btn-sm" aria-label={'Supprimer ' + p.name} onClick={() => a.run(async () => {
-              await api(account).deletePasskey(p.id)
-              await load()
-            })}>Supprimer</button>
+            <button className="btn btn-ghost btn-sm" aria-label={'Supprimer ' + p.name} onClick={() => setRemoving(p)}>Supprimer</button>
           </div>
         ))}
         <div className="card-row">
@@ -386,7 +385,32 @@ function Passkeys({ account }: { account: Account }) {
         </div>
       </div>
       {adding && <AddPasskeyDialog account={account} onClose={() => setAdding(false)} onOpened={() => { setAdding(false); setWaiting(true) }} />}
+      {removing && <RemovePasskeyDialog account={account} passkey={removing} onClose={() => setRemoving(null)} onRemoved={() => { setRemoving(null); load() }} />}
     </>
+  )
+}
+
+function RemovePasskeyDialog({ account, passkey, onClose, onRemoved }: { account: Account; passkey: Passkey; onClose: () => void; onRemoved: () => void }) {
+  const [password, setPassword] = useState('')
+  const a = useAction()
+  return (
+    <Dialog title={'Retirer « ' + passkey.name + ' » ?'} onClose={onClose}>
+      <form style={{ display: 'flex', flexDirection: 'column', gap: 14 }} onSubmit={(e) => {
+        e.preventDefault()
+        a.run(async () => {
+          await api(account).deletePasskey(passkey.id, password)
+          onRemoved()
+        })
+      }}>
+        <p className="muted small" style={{ lineHeight: 1.5 }}>Cette clé ne pourra plus servir à vous connecter. Un email vous le confirmera.</p>
+        <PasswordField label="Mot de passe actuel" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" autoFocus />
+        <Alert kind="error">{a.error}</Alert>
+        <div className="dialog-actions">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Annuler</button>
+          <Submit busy={a.busy} className="btn btn-danger btn-sm" disabled={!password}>Retirer la clé</Submit>
+        </div>
+      </form>
+    </Dialog>
   )
 }
 
@@ -550,6 +574,17 @@ export function PrivacySection({ account }: { account: Account }) {
         </div>
       )}
       {blocked && blocked.length === 0 && <p className="muted small">Personne n&apos;est bloqué.</p>}
+      <h3 className="settings-sub">Mes données</h3>
+      <p className="muted small" style={{ lineHeight: 1.5 }}>
+        Un fichier avec ce que votre service d&apos;identité garde sur vous (compte, appareils, amis, conversations…) et l&apos;historique de vos messages privés
+        gardé sur cet appareil (sans les messages éphémères). Pour vos messages sur un serveur : menu du serveur › « Mes données sur ce serveur ».
+      </p>
+      <div>
+        <button className="btn btn-ghost btn-sm" disabled={a.busy} onClick={() => a.run(async () => {
+          const identity = await api(account).exportData()
+          saveJSON('quarel-donnees-' + account.user.pseudo + '.json', { identity, private_messages: engine()?.exportHistory() ?? {} })
+        })}>Télécharger mes données</button>
+      </div>
     </>
   )
 }

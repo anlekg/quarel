@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/anlekg/quarel/internal/httpapi"
 )
@@ -48,6 +49,7 @@ type channel struct {
 	Position      int64      `json:"position"`
 	ThreadStarter *int64     `json:"thread_starter,omitempty"` // threads: message they started from
 	Stage         bool       `json:"stage,omitempty"`          // voice: only speakers talk (see stage.go)
+	ArchivedAt    *time.Time `json:"archived_at,omitempty"`    // threads: inactive, out of the channel lists (see threads.go)
 	Overrides     []override `json:"overrides"`
 }
 
@@ -58,10 +60,14 @@ func (c *channel) messaging() bool {
 
 func scanChannel(sc interface{ Scan(...any) error }) (*channel, error) {
 	c := channel{Overrides: []override{}}
-	var parent, starter sql.NullInt64
+	var parent, starter, archived sql.NullInt64
 	var announcement, thread, forum bool
-	if err := sc.Scan(&c.ID, &c.Type, &c.Name, &c.Topic, &parent, &c.Position, &announcement, &thread, &starter, &forum, &c.Stage); err != nil {
+	if err := sc.Scan(&c.ID, &c.Type, &c.Name, &c.Topic, &parent, &c.Position, &announcement, &thread, &starter, &forum, &c.Stage, &archived); err != nil {
 		return nil, err
+	}
+	if archived.Valid {
+		t := fromMs(archived.Int64)
+		c.ArchivedAt = &t
 	}
 	if parent.Valid {
 		c.ParentID = &parent.Int64
@@ -80,7 +86,7 @@ func scanChannel(sc interface{ Scan(...any) error }) (*channel, error) {
 	return &c, nil
 }
 
-const channelCols = `id, type, name, topic, parent_id, position, announcement, thread, thread_starter, forum, stage`
+const channelCols = `id, type, name, topic, parent_id, position, announcement, thread, thread_starter, forum, stage, archived_at`
 
 // loadOverrides attaches overrides to channels (all of them if channelID is 0).
 func loadOverrides(ctx context.Context, q querier, byID map[int64]*channel, channelID int64) error {

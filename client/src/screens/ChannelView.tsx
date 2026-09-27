@@ -8,9 +8,11 @@ import { parseCommand, suggestCommands, usage } from '../lib/commands'
 import { closeMenu, menuToast, showMenu } from '../components/ContextMenu'
 import { memberMenuItems } from './MemberMenu'
 import { Alert, BackButton, Dialog } from '../components/ui'
-import { Bell, BellOff, Close, Download, FileIcon, Hash, Megaphone, Paperclip, Pencil, Pin, Reply, Search, Send, Smile, Thread, Trash, Users } from '../components/icons'
+import { Bell, BellOff, Close, Download, FileIcon, Gear, Hash, Megaphone, Paperclip, Pencil, Pin, Reply, Search, Send, Smile, Thread, Trash, Users } from '../components/icons'
 import { channelNotify, setActive } from '../state/notify'
 import { NotifyMenu } from './NotifyMenu'
+import { InviteCards } from '../components/InviteCard'
+import { ChannelDialog, channelKind } from './ServerSettings'
 import { can, canPost, memberAvatar, memberColor } from '../lib/community'
 import { errorMessage } from '../lib/errors'
 import { formatDay, formatFull, formatSize, formatStamp, formatTime, roleColor, sameDay } from '../lib/format'
@@ -34,6 +36,7 @@ export function ChannelView({ conn, ready, state, channel, members, showMembers,
 }) {
   const [panel, setPanel] = useState<'pins' | 'search' | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
   useEffect(() => {
     setActive({ kind: 'channel', sid: conn.saved.sid, channel: channel.id })
     return () => setActive(null)
@@ -67,6 +70,10 @@ export function ChannelView({ conn, ready, state, channel, members, showMembers,
           {channel.type === 'announcement' ? <Megaphone /> : channel.type === 'thread' ? <Thread /> : <Hash />}
           <span className="title">{channel.name}</span>
           {channel.topic ? <span className="topic" title={channel.topic}>{channel.topic}</span> : <span style={{ flex: 1 }} />}
+          {channel.type === 'thread' && can(ready, channel.id, 'manage_channels') && (
+            <button className="icon-btn" aria-label={'Modifier ' + channel.name} title={channelKind(ready, channel) === 'Post' ? 'Modifier le post' : 'Modifier le fil'}
+              onClick={() => setEditing(true)}><Gear /></button>
+          )}
           <span className="head-tools">
             <button className={'icon-btn' + (notify.muted || notify.level === 'none' ? ' dim' : '')} aria-label="Notifications du salon" title="Notifications"
               aria-expanded={notifOpen} onClick={() => setNotifOpen(!notifOpen)}>{notify.muted || notify.level === 'none' ? <BellOff /> : <Bell />}</button>
@@ -83,6 +90,7 @@ export function ChannelView({ conn, ready, state, channel, members, showMembers,
         <MessageList conn={conn} ready={ready} channel={channel} messages={cm?.list ?? []} hasMore={cm?.hasMore ?? true}
           loading={cm?.loading ?? true} names={names} onReply={setReplyTo} onError={setError}
           jump={jump ?? null} onJumped={onJumped} onOpenChannel={onOpenChannel} />
+        {channel.archived_at && <div className="archived-note" role="status">Fil archivé (plus de message depuis une semaine) : écrire un message le rouvre.</div>}
         <Composer conn={conn} ready={ready} channel={channel} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} names={names} />
         <div className="typing-line" aria-live="polite">
           {typing.length === 1 && <><b>{typing[0]}</b> écrit…</>}
@@ -90,6 +98,7 @@ export function ChannelView({ conn, ready, state, channel, members, showMembers,
           {typing.length > 2 && <>Plusieurs personnes écrivent…</>}
         </div>
       </div>
+      {editing && <ChannelDialog conn={conn} ready={ready} channel={channel} onClose={() => setEditing(false)} />}
       {panel === 'pins' ? <PinsPanel conn={conn} ready={ready} channel={channel} names={names} onClose={() => setPanel(null)} onOpen={(id) => onOpenChannel(channel.id, id)} />
         : panel === 'search' ? <SearchPanel conn={conn} ready={ready} channel={channel} names={names} onClose={() => setPanel(null)} onOpen={onOpenChannel} />
           : members}
@@ -336,11 +345,17 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
             {m.edited_at && <span className="edited" title={formatFull(m.edited_at)}>(modifié)</span>}
           </div>
         ) : null}
+        {!editing && m.content && <InviteCards text={m.content} />}
         {m.attachments.map((a) => <AttachmentView key={a.id} a={a} conn={conn} onImage={onImage} />)}
         {m.pinned_at && <span className="pin-tag" title={'Épinglé le ' + formatFull(m.pinned_at)}><Pin size={12} />Épinglé</span>}
         {m.thread_id && (() => {
           const th = ready.channels.find((c) => c.id === m.thread_id)
-          return th ? <button className="thread-link" onClick={() => onOpenChannel(th.id)}><Thread size={14} />{th.name}<span className="muted small">Ouvrir le fil</span></button> : null
+          if (!th) { // archived (no message for a week): fetched when opened
+            const id = m.thread_id
+            return <button className="thread-link" onClick={() => conn.openArchived(id).then((c) => onOpenChannel(c.id), (e) => onError(errorMessage(e)))}>
+              <Thread size={14} />{conn.state.archived[id]?.name ?? 'Fil archivé'}<span className="muted small">Ouvrir le fil</span></button>
+          }
+          return <button className="thread-link" onClick={() => onOpenChannel(th.id)}><Thread size={14} />{th.name}<span className="muted small">Ouvrir le fil</span></button>
         })()}
         {threading && <ThreadDialog conn={conn} m={m} onClose={() => setThreading(false)} onCreated={(id) => { setThreading(false); onOpenChannel(id) }} />}
         {m.embeds.map((e) => (

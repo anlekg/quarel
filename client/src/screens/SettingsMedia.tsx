@@ -3,7 +3,7 @@
 // call relay choice.
 import { useEffect, useRef, useState } from 'react'
 import { applyOutput, audioConstraints, canChooseOutput, chooseDevice, chosenDevice, listDevices, videoConstraints, type MediaKind } from '../lib/media'
-import { relayAllowed, setRelayAllowed } from '../state/calls'
+import { relayMode, setRelayMode, type RelayMode } from '../state/netprivacy'
 
 function DeviceSelect({ kind, label, devices }: { kind: MediaKind; label: string; devices: MediaDeviceInfo[] }) {
   const [value, setValue] = useState(() => chosenDevice(kind))
@@ -115,7 +115,7 @@ function CameraPreview() {
 
 export function MediaSection() {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
-  const [relay, setRelay] = useState(relayAllowed)
+  const [relay, setRelay] = useState<RelayMode>(relayMode)
   useEffect(() => {
     const load = () => listDevices().then(setDevices)
     load()
@@ -140,16 +140,23 @@ export function MediaSection() {
         <DeviceSelect kind="videoinput" label="Caméra" devices={devices} />
         <CameraPreview />
       </div>
-      <h3 className="settings-sub">Appels entre amis</h3>
+      <h3 className="settings-sub">Appels et fichiers des messages privés</h3>
       <p className="muted small" style={{ lineHeight: 1.5 }}>
-        Les appels passent directement d&apos;un appareil à l&apos;autre, chiffrés de bout en bout. Quand c&apos;est impossible (certaines box ou réseaux
-        d&apos;entreprise), votre service d&apos;identité peut relayer le flux, qui reste chiffré : il ne peut ni l&apos;écouter ni le voir, mais il voit votre adresse IP.
+        Les appels et les fichiers passent directement d&apos;un appareil à l&apos;autre, chiffrés de bout en bout : l&apos;autre appareil voit alors votre adresse IP.
+        Votre service d&apos;identité peut relayer le flux, qui reste chiffré : il ne peut ni l&apos;écouter ni le voir, mais c&apos;est lui qui voit votre adresse.
       </p>
-      <label className="check-line card" style={{ padding: '14px 16px' }}>
-        <input type="checkbox" checked={relay} onChange={(e) => { setRelay(e.target.checked); setRelayAllowed(e.target.checked) }} />
-        <span>Utiliser le relais si aucune connexion directe n&apos;est possible
-          <span className="muted small" style={{ display: 'block' }}>Désactivé : votre appareil n&apos;utilisera jamais le relais (certains appels échoueront). Votre correspondant·e peut toujours utiliser le sien.</span></span>
-      </label>
+      <div className="card" role="radiogroup" aria-label="Qui peut voir mon adresse IP" style={{ padding: '6px 16px' }}>
+        {([
+          ['auto', 'Mes amis seulement (recommandé)', 'Connexion directe avec vos amis ; avec les membres d’un groupe qui ne sont pas vos amis, par le relais (fichiers : la copie du serveur). Sans relais sur votre service, la connexion reste directe.'],
+          ['always', 'Personne : toujours par le relais', 'Même avec vos amis. Si votre service d’identité n’a pas de relais, les appels échouent.'],
+          ['never', 'Tout le monde : jamais de relais', 'Connexions directes seulement : certains appels échoueront (box, réseaux d’entreprise). Votre correspondant·e peut toujours utiliser son relais.'],
+        ] as [RelayMode, string, string][]).map(([m, label, help]) => (
+          <label key={m} className="check-line" style={{ padding: '8px 0' }}>
+            <input type="radio" name="relay-mode" checked={relay === m} onChange={() => { setRelay(m); setRelayMode(m) }} />
+            <span>{label}<span className="muted small" style={{ display: 'block' }}>{help}</span></span>
+          </label>
+        ))}
+      </div>
     </>
   )
 }

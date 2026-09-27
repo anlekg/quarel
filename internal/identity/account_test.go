@@ -130,6 +130,14 @@ func TestDeleteAccount(t *testing.T) {
 	if len(friends["friends"]) != 0 {
 		t.Fatal("deleted account still a friend")
 	}
+	// Community servers learn it (hashed): they anonymise the member.
+	var list struct {
+		Deleted []struct{ H string } `json:"deleted_accounts"`
+	}
+	e.expect(200, "", e.call("GET", "/v1/disabled-accounts", "", nil, &list))
+	if len(list.Deleted) != 1 || list.Deleted[0].H != idtoken.AccountHash(alice.User.ID) {
+		t.Fatalf("deleted accounts = %+v", list.Deleted)
+	}
 	// Email and pseudo can be used again (by a new identity).
 	again, _ := e.registerVerified("alice@example.com", "alice", "mot-de-passe-neuf")
 	if again.User.ID == alice.User.ID {

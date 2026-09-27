@@ -46,6 +46,7 @@ type Config struct {
 	MinFreeBytes    int64         // uploads refused below this free disk space (0: no check)
 	DMFileTTL       time.Duration // how long the server keeps conversation files
 	GroupMaxMembers int           // members of a group conversation (QUAREL_DM_GROUP_MAX)
+	PushHosts       []string      // push services accepted besides the browsers' (QUAREL_PUSH_HOSTS; any port)
 
 	TURN TURNConfig // relay for peer-to-peer calls
 
@@ -139,6 +140,11 @@ func ConfigFromEnv() (Config, error) {
 			c.RegistrationDomains = append(c.RegistrationDomains, d)
 		}
 	}
+	for _, h := range strings.Split(settings.Get("QUAREL_PUSH_HOSTS"), ",") {
+		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
+			c.PushHosts = append(c.PushHosts, h)
+		}
+	}
 	c.MaxAccounts = envInt("QUAREL_MAX_ACCOUNTS", 0)
 	c.UserInvites = envInt("QUAREL_USER_INVITES", 0)
 	c.ServerPolicy = env("QUAREL_SERVER_POLICY", "open")
@@ -177,7 +183,7 @@ type Server struct {
 	now      func() time.Time
 
 	proxies ratelimit.Proxies
-	limit   struct{ global, register, login, email, friends, files, sends, typing, turn, notice *ratelimit.Limiter }
+	limit   struct{ global, register, login, email, friends, files, sends, typing, turn, notice, export *ratelimit.Limiter }
 	turnKey string       // shared secret of the TURN relay ("" when it is off)
 	turnIP  atomic.Value // string: public address announced for the relay
 }
@@ -231,6 +237,7 @@ func New(cfg Config, db *sql.DB, key ed25519.PrivateKey, mailer Mailer, retired 
 	s.limit.typing = ratelimit.New(1, 3*time.Second)
 	s.limit.turn = ratelimit.New(60, time.Hour)
 	s.limit.notice = ratelimit.New(1, time.Hour) // "someone tried to register with your address", per address
+	s.limit.export = ratelimit.New(3, time.Hour) // data exports per user
 	if s.cfg.DMFileMaxBytes <= 0 {
 		s.cfg.DMFileMaxBytes = 25 << 20
 	}
@@ -319,6 +326,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/push/key", s.handlePushKey)
 	mux.HandleFunc("PUT /v1/me/push", s.authed(s.handleSetPush))
 	mux.HandleFunc("DELETE /v1/me/push", s.authed(s.handleSetPush))
+	mux.HandleFunc("GET /v1/me/export", s.authed(s.handleExport))
 	mux.HandleFunc("GET /v1/me/passkeys", s.authed(s.handleListPasskeys))
 	mux.HandleFunc("POST /v1/me/passkeys", s.authed(s.handleAddPasskey))
 	mux.HandleFunc("DELETE /v1/me/passkeys/{id}", s.authed(s.handleDeletePasskey))

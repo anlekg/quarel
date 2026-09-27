@@ -32,12 +32,17 @@ Certains serveurs demandent d’accepter leurs **règles**, ou de vérifier un *
 
 Vos serveurs vous suivent sur tous vos appareils validés.
 
+## Inviter quelqu’un
+
+Menu du serveur (son nom, en haut) › **Inviter des personnes** : vos amis sont listés, **Inviter** leur envoie en message privé une invitation valable pour une personne. Ou copiez le lien affiché (7 jours) pour quelqu’un d’autre. Un lien d’invitation reçu dans un message s’affiche en carte avec **Rejoindre** (ou **Ouvrir** si vous êtes déjà membre).
+
 ## Se repérer
 
 - **Colonne de gauche** : vos serveurs ; en haut, l’icône **Messages privés** (amis et conversations).
 - **Salons** d’un serveur : textuels (`#`), vocaux (haut-parleur), regroupés en catégories. Un clic sur un salon vocal vous y connecte.
 - **Barre du bas** : votre nom (clic : statut en ligne, absent, ne pas déranger, invisible), et **Paramètres**.
 - Sur un message : répondre, réagir, créer un fil, épingler (selon vos droits), modifier ou supprimer les vôtres.
+- **Fils** : sans message pendant une semaine, un fil est **archivé** (il disparaît de la liste des salons) ; on le retrouve par le lien sous son message de départ, et y écrire le rouvre. Les gestionnaires des salons le renomment ou le suppriment (roue dentée ou clic droit).
 - En tête de salon : **recherche**, messages épinglés, **cloche** des notifications (tous les messages, @mentions seulement, rien, sourdine).
 
 ## Forums
@@ -56,7 +61,9 @@ Un **clic droit** ouvre les actions de ce qui est sous le pointeur :
 
 - sur une personne (liste des membres, salon vocal, appel) : son **volume pour vous** (jusqu’à 200 %) ou « Rendre muet pour moi » — gardés sur cet appareil, pour cette personne partout —, message privé, demande d’ami, et la modération que vos droits permettent (micro, son, exclusion, expulsion…) ;
 - sur un message : réagir, répondre, modifier, épingler, créer un fil, copier, supprimer ;
-- sur un salon : marquer comme lu, rejoindre le vocal, modifier.
+- sur un salon ou un fil : marquer comme lu, rejoindre le vocal, modifier, renommer, supprimer.
+
+Les suppressions et autres actions importantes demandent toujours une confirmation dans une fenêtre de l’application.
 
 ## Ajouter des amis
 

@@ -56,16 +56,30 @@ export function Auth({ notice }: { notice?: string }) {
     await complete(login, res)
   }
 
-  // Passkey: the identity service's page opens in the browser; wait for it (5 min).
-  async function passkeyLogin(login: string, password: string, cancelled: () => boolean) {
+  // Passkey: the identity service's page opens in the browser; wait for it
+  // (5 min). Once the key is verified, the page shows a code to type here
+  // (someone who sent the page's link to the account's owner would need it):
+  // resolves to the ticket then, null if cancelled or too late.
+  async function passkeyLogin(login: string, password: string, cancelled: () => boolean): Promise<string | null> {
     const { passkey_ticket, url } = await client.loginWithPasskey({ login, password, ...(await device()) })
     window.open(url, '_blank', 'noopener')
     const until = Date.now() + 5 * 60_000
     while (Date.now() < until && !cancelled()) {
       await new Promise((r) => setTimeout(r, 1500))
       const res = await client.pollPasskeyLogin(passkey_ticket)
-      if ('session_token' in res) return complete(login, res)
+      if ('session_token' in res) {
+        await complete(login, res)
+        return null
+      }
+      if (res.status === 'code_required') return passkey_ticket
     }
+    return null
+  }
+
+  async function passkeyCode(login: string, ticket: string, code: string) {
+    const res = await client.pollPasskeyLogin(ticket, code)
+    if ('session_token' in res) return complete(login, res)
+    throw new ApiError(0, 'ticket_expired', '')
   }
 
   function go(v: View, message = '') {
@@ -103,6 +117,7 @@ export function Auth({ notice }: { notice?: string }) {
         <MfaForm
           onSubmit={(code) => finishLogin(creds.login, creds.password, code)}
           onPasskey={(cancelled) => passkeyLogin(creds.login, creds.password, cancelled)}
+          onPasskeyCode={(ticket, code) => passkeyCode(creds.login, ticket, code)}
           onBack={() => go('login')}
         />
       )
@@ -279,16 +294,33 @@ function LoginForm({ initial, info, onSubmit, onForgot, onRegister }: {
   )
 }
 
-function MfaForm({ onSubmit, onPasskey, onBack }: {
+function MfaForm({ onSubmit, onPasskey, onPasskeyCode, onBack }: {
   onSubmit: (code: string) => Promise<void>
-  onPasskey: (cancelled: () => boolean) => Promise<void>
+  onPasskey: (cancelled: () => boolean) => Promise<string | null>
+  onPasskeyCode: (ticket: string, code: string) => Promise<void>
   onBack: () => void
 }) {
   const [code, setCode] = useState('')
   const [backup, setBackup] = useState(false)
   const [waiting, setWaiting] = useState(false)
+  const [ticket, setTicket] = useState<string | null>(null) // key verified: the page's code is expected
   const cancel = useRef(false)
   const s = useSubmit()
+  if (ticket) {
+    return (
+      <form className="auth-form" noValidate onSubmit={(e) => {
+        e.preventDefault()
+        if (code.trim()) s.run(() => onPasskeyCode(ticket, code.replace(/\D/g, '')))
+      }}>
+        <Head title="Clé d’accès vérifiée" sub="La page de votre navigateur affiche un code à 6 chiffres : tapez-le ici pour terminer." />
+        <Field key="p" label="Code affiché par la page" inputMode="numeric" autoComplete="off" maxLength={7} inputClass="code"
+          value={code} onChange={(e) => setCode(e.target.value.replace(/[^\d ]/g, ''))} autoFocus />
+        <Alert kind="error">{s.error}</Alert>
+        <Submit busy={s.busy}>Terminer</Submit>
+        <button type="button" className="link small" style={{ alignSelf: 'flex-start' }} onClick={() => { setTicket(null); setCode('') }}>Recommencer</button>
+      </form>
+    )
+  }
   if (waiting) {
     return (
       <div className="auth-form" data-testid="passkey-wait">
@@ -321,7 +353,11 @@ function MfaForm({ onSubmit, onPasskey, onBack }: {
         setWaiting(true)
         s.run(async () => {
           try {
-            await onPasskey(() => cancel.current)
+            const t = await onPasskey(() => cancel.current)
+            if (t) {
+              setCode('')
+              setTicket(t)
+            }
           } finally {
             setWaiting(false)
           }

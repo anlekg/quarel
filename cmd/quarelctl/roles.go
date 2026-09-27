@@ -33,6 +33,7 @@ const permissionHelp = `Permissions (noms à utiliser dans les commandes) :
   manage_messages    supprimer les messages des autres           (salon)
   mention_everyone   @everyone et mentionner tous les rôles      (salon)
   manage_channels    créer, modifier, supprimer des salons       (salon)
+  manage_webhooks    créer, supprimer les webhooks d'un salon    (salon)
   connect, speak     rejoindre un salon vocal / y parler         (salon, jalon 4)
   create_invite      créer des invitations
   manage_roles       gérer les rôles inférieurs, les rôles des membres, les droits par salon

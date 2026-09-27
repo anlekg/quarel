@@ -3,9 +3,15 @@ package identity
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"database/sql"
 	"embed"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io/fs"
+	"math/big"
 	"net"
 	"net/http"
 	"strings"
@@ -23,13 +29,24 @@ import (
 // runs on a page of this service (/passkey/), opened in the browser with a
 // single-use ticket in its fragment (never sent in a URL to any server).
 //
-//   - Adding one: POST /v1/me/passkeys {password, name} → {ticket, url}.
+//   - Adding one: POST /v1/me/passkeys {password, name} → {ticket, url}; an
+//     email tells the owner (removing one needs the password, and tells too).
 //   - Signing in: POST /v1/auth/login {…, passkey: true} → 202 {passkey_ticket, url}
 //     once the password is right; the app then polls POST /v1/auth/login/passkey
 //     {ticket} until the page has verified the key.
-//   - The page: POST /v1/passkeys/options {ticket} then /v1/passkeys/finish {ticket, credential}.
+//   - The page: POST /v1/passkeys/options {ticket} (it shows the device, time and
+//     address of the sign-in) then /v1/passkeys/finish {ticket, credential}.
+//
+// Signing in, the page then shows a 6-digit code that the person types in the
+// app (POST /v1/auth/login/passkey {ticket, code}; 5 tries). Without it, whoever
+// knows the password could send the page's link to the account's owner and get
+// the session once they touch their key: the key would no longer protect
+// against phishing. With it, the owner would also have to send the code back.
 
-const passkeyTicketTTL = 5 * time.Minute
+const (
+	passkeyTicketTTL = 5 * time.Minute
+	passkeyCodeTries = 5
+)
 
 //go:embed passkeypage
 var passkeyPage embed.FS
@@ -40,9 +57,13 @@ type passkeyTicket struct {
 	name       string // register: the key's name
 	deviceName string // login: the session to open
 	deviceKey  string
+	ip         string    // login: where the sign-in comes from (shown on the page)
+	requested  time.Time // login: when
 	expires    time.Time
 	session    *webauthn.SessionData
 	done       bool
+	code       string // login: shown by the page once the key is verified, typed in the app
+	tries      int
 }
 
 type passkeyTickets struct {
@@ -214,16 +235,35 @@ func (s *Server) handleAddPasskey(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"ticket": ticket, "url": s.passkeyURL(ticket)})
 }
 
+// handleDeletePasskey: DELETE /v1/me/passkeys/{id} {password}.
 func (s *Server) handleDeletePasskey(w http.ResponseWriter, r *http.Request) {
-	res, err := s.db.ExecContext(r.Context(), `DELETE FROM webauthn_credentials WHERE id = ? AND user_id = ?`, r.PathValue("id"), sessionFrom(r).UserID)
+	var req struct{ Password string }
+	if err := decode(r, &req); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	u, err := s.currentUser(r)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	if n, _ := res.RowsAffected(); n != 1 {
+	if err := s.requirePassword(r, u, req.Password); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	var name string
+	err = s.db.QueryRowContext(r.Context(), `DELETE FROM webauthn_credentials WHERE id = ? AND user_id = ? RETURNING name`, r.PathValue("id"), u.ID).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, r, errf(http.StatusNotFound, "not_found", "no such passkey"))
 		return
 	}
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	s.mailer.Send(u.Email, "Quarel — clé d'accès retirée", fmt.Sprintf(
+		"Bonjour %s,\n\nLa clé d'accès « %s » a été retirée de votre compte Quarel.\n"+
+			"Si ce n'est pas vous, changez votre mot de passe.\n", u.Pseudo, name))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -274,7 +314,11 @@ func (s *Server) handlePasskeyOptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.passkeys.update(req.Ticket, func(t *passkeyTicket) { t.session = session })
-	writeJSON(w, http.StatusOK, map[string]any{"kind": pt.kind, "name": u.Pseudo, "options": options})
+	out := map[string]any{"kind": pt.kind, "name": u.Pseudo, "options": options}
+	if pt.kind == "login" { // for the person to recognise their own sign-in
+		out["device"], out["ip"], out["requested_at"] = pt.deviceName, pt.ip, pt.requested.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handlePasskeyFinish: POST /v1/passkeys/finish {ticket, credential}.
@@ -328,6 +372,9 @@ func (s *Server) handlePasskeyFinish(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.passkeys.drop(req.Ticket)
+		s.mailer.Send(u.Email, "Quarel — clé d'accès ajoutée", fmt.Sprintf(
+			"Bonjour %s,\n\nUne clé d'accès (« %s ») vient d'être ajoutée à votre compte Quarel.\n"+
+				"Si ce n'est pas vous, changez votre mot de passe et retirez cette clé (Paramètres › Sécurité).\n", u.Pseudo, pt.name))
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -345,25 +392,56 @@ func (s *Server) handlePasskeyFinish(w http.ResponseWriter, r *http.Request) {
 	data, _ := json.Marshal(cred)
 	s.db.ExecContext(ctx, `UPDATE webauthn_credentials SET data = ?, last_used_at = ? WHERE id = ? AND user_id = ?`,
 		string(data), s.now().Unix(), b64url.EncodeToString(cred.ID), u.ID)
-	s.passkeys.update(req.Ticket, func(t *passkeyTicket) { t.done = true })
-	w.WriteHeader(http.StatusNoContent)
+	code, err := digits6()
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	s.passkeys.update(req.Ticket, func(t *passkeyTicket) { t.done, t.code = true, code })
+	writeJSON(w, http.StatusOK, map[string]string{"code": code})
 }
 
-// handlePasskeyLogin: POST /v1/auth/login/passkey {ticket} → 202 while the
-// key is not verified, then the session (once).
+func digits6() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
+}
+
+// handlePasskeyLogin: POST /v1/auth/login/passkey {ticket, code?} → 202
+// {status: pending} while the key is not verified, 202 {status: code_required}
+// once it is, then the session (once) with the code the page showed.
 func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Ticket string }
+	var req struct{ Ticket, Code string }
 	if err := decode(r, &req); err != nil {
 		writeErr(w, r, err)
 		return
 	}
+	expired := errf(http.StatusNotFound, "ticket_expired", "the passkey check expired or failed: sign in again")
 	pt, ok := s.passkeys.get(s.now(), req.Ticket)
 	if !ok || pt.kind != "login" {
-		writeErr(w, r, errf(http.StatusNotFound, "ticket_expired", "the passkey check expired or failed: sign in again"))
+		writeErr(w, r, expired)
 		return
 	}
 	if !pt.done {
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "pending"})
+		return
+	}
+	code := strings.Join(strings.Fields(req.Code), "")
+	if code == "" {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "code_required"})
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(code), []byte(pt.code)) != 1 {
+		tries := 0
+		s.passkeys.update(req.Ticket, func(t *passkeyTicket) { t.tries++; tries = t.tries })
+		if tries >= passkeyCodeTries {
+			s.passkeys.drop(req.Ticket)
+			writeErr(w, r, expired)
+			return
+		}
+		writeErr(w, r, errf(http.StatusUnauthorized, "invalid_passkey_code", "this is not the code shown by the page"))
 		return
 	}
 	s.passkeys.drop(req.Ticket)

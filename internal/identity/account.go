@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/anlekg/quarel/pkg/idtoken"
 )
 
 // Account management: forgotten password, changes of password, email and
@@ -405,8 +407,23 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	// Foreign keys cascade to every table holding the user's data.
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, u.ID); err != nil {
+	// Foreign keys cascade to every table holding the user's data. The
+	// account's hash is published: community servers anonymise its member.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, u.ID); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO deleted_accounts (hash, deleted_at) VALUES (?, ?)`, idtoken.AccountHash(u.ID), s.now().Unix()); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
 		writeErr(w, r, err)
 		return
 	}

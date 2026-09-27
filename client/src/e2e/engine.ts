@@ -1026,7 +1026,7 @@ export class E2E {
       this.forgetKeys(this.st.user_id)
       await this.sendSecret([certified], 'device_approval', { master_seed: this.st.master_seed, backup_key: this.st.backup_key ?? '' })
       const inbound = this.exportedInbound()
-      const h = { history: this.st.history, inbound: {} as Record<string, Omit<InboundState, 'pickle'>>, keys: {} as Record<string, string>, servers: this.st.servers ?? {} }
+      const h = { history: this.durableHistory(), inbound: {} as Record<string, Omit<InboundState, 'pickle'>>, keys: {} as Record<string, string>, servers: this.st.servers ?? {} }
       for (const [sid, info] of Object.entries(inbound)) {
         h.inbound[sid] = { sender_user: info.sender_user, sender_device: info.sender_device, dm_id: info.dm_id }
         h.keys[sid] = info.pickle
@@ -1042,8 +1042,28 @@ export class E2E {
     return !!this.st.backup_key
   }
 
+  // This device's copy of the private conversations, readable, for the
+  // person's export of their data (ephemeral messages left out).
+  exportHistory() {
+    const out: Record<string, { from: string; at: string; text: string; file?: string; edited?: boolean }[]> = {}
+    for (const [dm, list] of Object.entries(this.durableHistory())) {
+      out[dm] = list.filter((h) => h.text || h.file).map((h) => ({
+        from: this.name(h.from), at: h.at, text: h.text, ...(h.file ? { file: h.file.name } : {}), ...(h.edited ? { edited: true } : {}),
+      }))
+    }
+    return out
+  }
+
+  // The history without its ephemeral messages: they never leave this device
+  // (encrypted backup, history sent to a new device), as cmd/quarelctl does.
+  private durableHistory(): Record<string, HistMsg[]> {
+    const out: Record<string, HistMsg[]> = {}
+    for (const [dm, list] of Object.entries(this.st.history)) out[dm] = list.filter((h) => !h.expires)
+    return out
+  }
+
   private digest() {
-    const data = JSON.stringify([this.st.history, Object.keys(this.st.inbound).sort(), this.st.pinned, !!this.st.master_seed, this.st.servers ?? {}])
+    const data = JSON.stringify([this.durableHistory(), Object.keys(this.st.inbound).sort(), this.st.pinned, !!this.st.master_seed, this.st.servers ?? {}])
     return b64(sha256(new TextEncoder().encode(data)))
   }
 
@@ -1068,7 +1088,7 @@ export class E2E {
     const key = unb64(this.st.backup_key)
     for (let attempt = 0; attempt < 3; attempt++) {
       const p: BackupPayload = {
-        format: 1, master_seed: this.st.master_seed, history: this.st.history, inbound: this.exportedInbound(),
+        format: 1, master_seed: this.st.master_seed, history: this.durableHistory(), inbound: this.exportedInbound(),
         pinned: this.st.pinned, names: this.st.names, servers: this.st.servers ?? {}, created_at: new Date().toISOString(),
       }
       const data = padded(sealBackup(key, this.st.user_id, new TextEncoder().encode(JSON.stringify(p))))

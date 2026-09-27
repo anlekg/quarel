@@ -126,5 +126,23 @@ test('channels: search, pins, threads, notifications', async () => {
   ctl.run('alice', 'send', 'général', '@bob encore toi ?')
   await page.waitForTimeout(800)
   expect((await notes()).length).toBe(before)
+
+  // The owner renames the thread from its header, then deletes it from the channel list
+  // (asked in the app); the view goes back to its channel.
+  await page.getByRole('button', { name: 'Modifier Organisation' }).first().click()
+  const edit = page.getByRole('dialog', { name: 'Fil Organisation' })
+  await expect(edit.getByLabel('Catégorie')).toHaveCount(0) // a thread stays in its channel
+  await edit.getByLabel('Nom').fill('Sortie du samedi')
+  await edit.getByRole('button', { name: 'Enregistrer' }).click()
+  await expect(page.locator('.channel-head .title')).toHaveText('Sortie du samedi')
+  await expect.poll(() => ctl.run('alice', 'channels'), { timeout: 15_000 }).toContain('Sortie du samedi')
+  const channels = page.getByRole('navigation', { name: 'Salons' })
+  await channels.locator('button.ch', { hasText: 'Sortie du samedi' }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Supprimer le fil…' }).click()
+  const ask = page.getByRole('dialog', { name: 'Supprimer le fil « Sortie du samedi » ?' })
+  await ask.getByRole('button', { name: 'Supprimer' }).click()
+  await expect(channels.locator('button.ch', { hasText: 'Sortie du samedi' })).toHaveCount(0)
+  await expect(page.locator('.channel-head .title')).toHaveText('général')
+  await expect.poll(() => ctl.run('alice', 'channels'), { timeout: 15_000 }).not.toContain('Sortie du samedi')
   await app.close()
 })

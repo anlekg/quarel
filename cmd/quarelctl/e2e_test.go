@@ -48,6 +48,10 @@ func TestEphemeralMessages(t *testing.T) {
 	if n := len(e.st.History["g"]); n != 4 { // timer, durable, éphémère, du futur
 		t.Fatalf("history = %+v", e.st.History["g"])
 	}
+	// Never in the backup nor in the history sent to a new device.
+	if d := durableHistory(e.st.History)["g"]; len(d) != 2 || d[1].Text != "durable" {
+		t.Fatalf("durable history = %+v", d)
+	}
 	e.purgeExpired(now.Add(3 * time.Minute))
 	if n := len(e.st.History["g"]); n != 4 {
 		t.Fatalf("purged too early: %+v", e.st.History["g"])

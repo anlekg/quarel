@@ -100,6 +100,17 @@ func TestWebPush(t *testing.T) {
 	var key struct{ Key string }
 	e.expect(200, "", e.call("GET", "/v1/push/key", "", nil, &key))
 	e.expect(400, "invalid_endpoint", e.call("PUT", "/v1/me/push", bob.SessionToken, map[string]string{"endpoint": "http://push.example/x"}, nil))
+	// Only the browsers' push services (port 443), or those the operator adds:
+	// an endpoint cannot make this service call anything else.
+	for _, bad := range []string{"https://evil.example/x", "https://fcm.googleapis.com.evil.example/x", "https://fcm.googleapis.com:8443/x", ps.URL + "/push/bob"} {
+		e.expect(400, "invalid_endpoint", e.call("PUT", "/v1/me/push", bob.SessionToken, map[string]string{"endpoint": bad}, nil))
+	}
+	for _, ok := range []string{"https://fcm.googleapis.com/fcm/send/abc", "https://updates.push.services.mozilla.com/wpush/v2/abc", "https://web.push.apple.com/abc"} {
+		if !e.srv.pushEndpointOK(ok) {
+			t.Fatalf("%s refused", ok)
+		}
+	}
+	e.srv.cfg.PushHosts = []string{"127.0.0.1"} // the fake service of this test
 	e.expect(204, "", e.call("PUT", "/v1/me/push", bob.SessionToken, map[string]string{"endpoint": ps.URL + "/push/bob"}, nil))
 
 	send := func(payload string) {
@@ -115,7 +126,13 @@ func TestWebPush(t *testing.T) {
 			t.Fatalf("%d pushes, want %d", push.count(), n)
 		}
 	}
-	// Something arrives for bob's offline device: an empty push, signed.
+	// What bob's own devices send (history, list of servers…) wakes nothing.
+	bob2 := e.login2("bob@example.com", "mot-de-passe-bob", "Téléphone")
+	own := map[string]any{"messages": []map[string]string{{"device_id": bob.SessionID, "payload": "sync"}}}
+	e.expect(204, "", e.call("POST", "/v1/to-device", bob2.SessionToken, own, nil))
+	time.Sleep(100 * time.Millisecond)
+	waitFor(0)
+	// Something arrives from alice for bob's offline device: an empty push, signed.
 	send("secret-olm-message")
 	waitFor(1)
 	push.mu.Lock()

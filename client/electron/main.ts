@@ -365,6 +365,9 @@ ipcMain.handle('tls:check', async (e, host, port, sid) => {
   if (!validHost(host) || typeof port !== 'number' || !validSID(sid)) throw new Error('invalid check')
   host = normHost(host)
   const res = await checkServer(host, port, sid)
+  // Another self-signed server already has this host: it keeps it (rebinding
+  // would lock that one out). The UI releases a host no server uses (tls:forget).
+  if (res === 'binding' && pins.bindings[host] && pins.bindings[host] !== sid) return 'taken'
   if (res === 'binding' && pins.bindings[host] !== sid) {
     bind(host, sid)
     session.defaultSession.closeAllConnections() // no connection set up under the previous rule is reused

@@ -5,7 +5,9 @@ import type { Channel, ForumPost, Ready } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { Alert, BackButton, Dialog } from '../components/ui'
 import { Forum, Plus } from '../components/icons'
-import { canPost, memberAvatar } from '../lib/community'
+import { can, canPost, memberAvatar } from '../lib/community'
+import { menuRun, showMenu } from '../components/ContextMenu'
+import { askDeleteChannel, ChannelDialog } from './ServerSettings'
 import { errorMessage } from '../lib/errors'
 import { formatFull, formatStamp } from '../lib/format'
 import type { ServerConn, ServerState } from '../state/servers'
@@ -22,12 +24,21 @@ export function ForumView({ conn, ready, state, channel, onOpenChannel }: {
   const [writing, setWriting] = useState(false)
   // Reload when a post appears or gets an answer.
   const activity = useMemo(() => ready.channels.filter((c) => c.type === 'thread' && c.parent_id === channel.id)
-    .map((c) => c.id + ':' + (state.reads[c.id]?.last_message_id ?? 0)).join(','), [ready.channels, state.reads, channel.id])
+    .map((c) => c.id + ':' + c.name + ':' + (state.reads[c.id]?.last_message_id ?? 0)).join(','), [ready.channels, state.reads, channel.id])
   useEffect(() => {
     conn.api((c) => c.posts(channel.id)).then(setPosts, (e) => setError(errorMessage(e)))
   }, [conn, channel.id, activity])
   const post = canPost(ready, channel)
   const member = (id: string) => ready.members.find((m) => m.id === id)
+  const manage = can(ready, channel.id, 'manage_channels')
+  const [editing, setEditing] = useState<Channel | null>(null)
+  const postMenu = (c: Channel) => (e: React.MouseEvent) => showMenu(e, [
+    { title: c.name },
+    { label: 'Ouvrir', onClick: () => { if (c.archived_at) conn.keepArchived(c); onOpenChannel(c.id) } },
+    manage && { label: 'Renommer le post', onClick: () => setEditing(c) },
+    manage && { separator: true },
+    manage && { label: 'Supprimer le post…', danger: true, onClick: () => menuRun(askDeleteChannel(conn, ready, c)) },
+  ])
 
   return (
     <div className="channel-body">
@@ -49,10 +60,14 @@ export function ForumView({ conn, ready, state, channel, onOpenChannel }: {
             const rs = state.reads[p.channel.id]
             const unread = !!rs && rs.last_message_id > rs.last_read
             return (
-              <button key={p.channel.id} role="listitem" className={'forum-post' + (unread ? ' unread' : '')} onClick={() => onOpenChannel(p.channel.id)}>
+              <button key={p.channel.id} role="listitem" className={'forum-post' + (unread ? ' unread' : '')} onClick={() => {
+                if (p.channel.archived_at) conn.keepArchived(p.channel) // not in the lists: opened from here
+                onOpenChannel(p.channel.id)
+              }}
+                onContextMenu={postMenu(ready.channels.find((c) => c.id === p.channel.id) ?? p.channel)}>
                 {m ? <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={36} /> : <Avatar id={p.author_id} name="?" size={36} />}
                 <span className="grow">
-                  <b className="forum-title">{p.channel.name}</b>
+                  <b className="forum-title">{p.channel.name}{p.channel.archived_at && <span className="archived-tag">Archivé</span>}</b>
                   <span className="forum-excerpt">{m?.display_name ?? 'Ancien membre'} : {p.excerpt}</span>
                 </span>
                 <span className="forum-meta" title={'Dernier message ' + formatFull(p.last_message_at)}>
@@ -64,6 +79,7 @@ export function ForumView({ conn, ready, state, channel, onOpenChannel }: {
           })}
         </div>
       </div>
+      {editing && <ChannelDialog conn={conn} ready={ready} channel={editing} onClose={() => setEditing(null)} />}
       {writing && <NewPost conn={conn} forum={channel} onClose={() => setWriting(false)} onCreated={(id) => {
         setWriting(false)
         onOpenChannel(id)

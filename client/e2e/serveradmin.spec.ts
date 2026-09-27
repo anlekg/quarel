@@ -246,5 +246,25 @@ test('server administration: overview, invites, roles, channel permissions, mode
   } finally {
     bot.kill()
   }
+
+  // Deleting a channel asks in the app (never a system box: the desktop app could
+  // lose keyboard focus after one), then typing in another channel works.
+  const channels = page.getByRole('navigation', { name: 'Salons' })
+  await channels.getByRole('button', { name: 'annonces', exact: true }).hover() // the gear shows on hover
+  await channels.getByRole('button', { name: 'Modifier annonces' }).click()
+  await page.getByRole('dialog', { name: 'Salon annonces' }).getByRole('button', { name: 'Supprimer' }).click()
+  const ask = page.getByRole('dialog', { name: 'Supprimer le salon « annonces » ?' })
+  await expect(ask).toContainText('Tous ses messages et ses fils seront supprimés.')
+  await ask.getByRole('button', { name: 'Annuler' }).click()
+  await expect(ask).toBeHidden()
+  await expect(page.getByRole('dialog', { name: 'Salon annonces' })).toBeVisible() // cancelled: still there
+  await page.getByRole('dialog', { name: 'Salon annonces' }).getByRole('button', { name: 'Supprimer' }).click()
+  await ask.getByRole('button', { name: 'Supprimer' }).click()
+  await expect(channels.getByRole('button', { name: 'annonces', exact: true })).toHaveCount(0)
+  await channels.getByRole('button', { name: 'général', exact: true }).click()
+  await page.getByLabel('Message pour #général').fill('') // the refused "/echo" is still there
+  await page.getByLabel('Message pour #général').click()
+  await page.keyboard.type('toujours là')
+  await expect(page.getByLabel('Message pour #général')).toHaveValue('toujours là')
   await app.close()
 })

@@ -32,6 +32,7 @@ import { prefs, showWindow } from '../platform'
 import { applyVolume, effectiveVolume, onVolumeChange, personKey, releaseVolume } from '../lib/volume'
 import { currentAccount } from './account'
 import { engine, identityAPI, onEngineEvent, socialState } from './social'
+import { directOK, relayMode } from './netprivacy'
 import { leaveVoice } from './voice'
 
 const RING_TIMEOUT = 30_000
@@ -104,7 +105,7 @@ interface Link {
 interface Call {
   snap: Omit<CallSnapshot, 'peers' | 'remoteMuted' | 'remoteCamera' | 'remoteScreen' | 'path' | 'rtt' | 'received' | 'remoteStream' | 'remoteScreenStream'>
   links: Map<string, Link>
-  config: Promise<RTCConfiguration>
+  config: Promise<IceBase>
   devices?: DeviceInfo[] // one to one, outgoing: the friend's devices that ring
   invite?: CallSignal // one to one, incoming: the offer
   inviter?: DeviceInfo // one to one, incoming: the device that rang
@@ -186,8 +187,8 @@ export function useGroupCall(convId: string): { id: string; count: number } | nu
 
 // --- settings ---
 
-export const relayAllowed = () => prefs.get('call-relay', true)
-export const setRelayAllowed = (on: boolean) => prefs.set('call-relay', on)
+// The relay: see state/netprivacy.ts (who may learn this device's address).
+export const relayAllowed = () => relayMode() !== 'never'
 
 // --- helpers ---
 
@@ -195,12 +196,23 @@ function newId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function rtcConfig(): Promise<RTCConfiguration> {
+interface IceBase {
+  servers: RTCIceServer[]
+  relay: boolean // the identity service offers a relay (and it is not refused)
+}
+
+async function rtcConfig(): Promise<IceBase> {
   const r = await identityAPI()!.iceServers().catch(() => ({ ice_servers: [], relay: false }))
   const relay = relayAllowed()
-  return {
-    iceServers: r.ice_servers.filter((s) => relay || !s.urls.some((u) => u.startsWith('turn'))).map((s) => ({ urls: s.urls, username: s.username, credential: s.credential })),
-  }
+  const servers = r.ice_servers.filter((s) => relay || !s.urls.some((u) => u.startsWith('turn'))).map((s) => ({ urls: s.urls, username: s.username, credential: s.credential }))
+  return { servers, relay: relay && servers.some((s) => [s.urls].flat().some((u) => u.startsWith('turn'))) }
+}
+
+// Only through the relay with someone who may not learn this device's
+// address (not a friend, by default; everyone in "always" mode).
+function linkConfig(base: IceBase, userId: string): RTCConfiguration {
+  const hide = !directOK(userId) && (base.relay || relayMode() === 'always')
+  return { iceServers: base.servers, ...(hide ? { iceTransportPolicy: 'relay' as const } : {}) }
 }
 
 async function gather(pc: RTCPeerConnection, desc: RTCSessionDescriptionInit): Promise<string> {
@@ -215,7 +227,7 @@ async function gather(pc: RTCPeerConnection, desc: RTCSessionDescriptionInit): P
 
 const isFriend = (userId: string) => socialState().friends.friends.find((f) => f.id === userId)
 const me = () => engine()?.userId ?? ''
-const noPath = () => 'aucun chemin réseau' + (relayAllowed() ? '' : ' (relais refusé dans vos paramètres)')
+const noPath = () => 'aucun chemin réseau' + ({ never: ' (relais refusé dans vos paramètres)', always: ' (relais obligatoire dans vos paramètres)', auto: '' } as const)[relayMode()]
 
 async function signal(devs: DeviceInfo[], s: Omit<CallSignal, 'from_user' | 'from_device' | 'at'>) {
   if (devs.length) await engine()?.sendCallSignal(devs, s).catch(() => {})
@@ -352,7 +364,7 @@ function output() {
 // A connection with one device. The caller of a one to one call and, in a
 // group, the device already in the call make the offer.
 async function newLink(c: Call, key: string, user: PublicUser, device: DeviceInfo | null, polite: boolean): Promise<Link> {
-  const pc = new RTCPeerConnection(await c.config)
+  const pc = new RTCPeerConnection(linkConfig(await c.config, user.id))
   const l: Link = {
     key, device, pc, dc: null, polite, makingOffer: false, needOffer: false, audio: output(), screenAudio: output(),
     snap: { device: device?.device_id ?? '', user, connected: false, muted: false, camera: false, screen: false, canScreen: false, received: 0, stream: null, screenStream: null },

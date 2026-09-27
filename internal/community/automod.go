@@ -22,7 +22,13 @@ import (
 // (automod_block: rule and channel, never the text). After automodStrikes
 // refusals within automodWindow, the member can be timed out automatically.
 // Word matching ignores case and accents and compares whole words ("mot*":
-// words starting with "mot"; several words: that sequence).
+// words starting with "mot"; several words: that sequence). Invisible
+// characters (zero-width spaces, soft hyphens…) are dropped and lookalike
+// letters folded (full-width and mathematical letters, Cyrillic and Greek
+// letters that look Latin): "cr\u200bétin" or "сrétin" (Cyrillic с) match
+// "crétin". Thread names, forum post titles and nicknames are checked too
+// (banned words and links). A member's refusals are logged once per rule and
+// minute (automodLogEvery).
 
 const (
 	automodMaxWords    = 200
@@ -31,6 +37,7 @@ const (
 	automodWindow      = 10 * time.Minute
 	automodDupWindow   = 30 * time.Second
 	automodDupMax      = 2 // the same message a third time within automodDupWindow is refused
+	automodLogEvery    = time.Minute
 	auditAutomodBlock  = "automod_block"
 	automodSettingsKey = "automod"
 )
@@ -48,6 +55,7 @@ type autoModState struct {
 	mu      sync.Mutex
 	recent  map[string][]recentMsg
 	strikes map[string][]time.Time
+	logged  map[string]time.Time // member|rule → last audit entry
 }
 
 type recentMsg struct {
@@ -130,11 +138,22 @@ func (s *Server) handleAutoMod(w http.ResponseWriter, r *http.Request) {
 // keep their "*").
 func wordTokens(s string) []string { return tokens(s, false) }
 
+// lookalikes are Cyrillic and Greek letters drawn like Latin ones (after lowercasing).
+var lookalikes = map[rune]rune{
+	'а': 'a', 'в': 'b', 'е': 'e', 'к': 'k', 'м': 'm', 'н': 'h', 'о': 'o', 'р': 'p', 'с': 'c', 'т': 't', 'у': 'y', 'х': 'x',
+	'і': 'i', 'ј': 'j', 'ѕ': 's', 'ԁ': 'd', 'һ': 'h', 'ӏ': 'l', 'ԛ': 'q', 'ԝ': 'w',
+	'α': 'a', 'β': 'b', 'ε': 'e', 'η': 'n', 'ι': 'i', 'κ': 'k', 'ν': 'v', 'ο': 'o', 'ρ': 'p', 'τ': 't', 'υ': 'u', 'χ': 'x',
+}
+
 func tokens(s string, pattern bool) []string {
 	var b strings.Builder
-	for _, r := range norm.NFD.String(strings.ToLower(s)) {
+	// NFKD: compatibility forms (full-width, mathematical letters, ligatures) and accents apart.
+	for _, r := range norm.NFKD.String(strings.ToLower(s)) {
+		if l, ok := lookalikes[unicode.ToLower(r)]; ok {
+			r = l
+		}
 		switch {
-		case unicode.Is(unicode.Mn, r):
+		case unicode.Is(unicode.Mn, r), unicode.Is(unicode.Cf, r): // accents; invisible characters
 		case unicode.IsLetter(r) || unicode.IsDigit(r) || (pattern && r == '*'):
 			b.WriteRune(r)
 		default:
@@ -207,8 +226,27 @@ func (s *Server) checkAutoMod(ctx context.Context, ps *permSnapshot, member stri
 	if rule == "" {
 		return nil
 	}
-	s.audit(ctx, s.db, "", auditAutomodBlock, member, "", map[string]any{"rule": rule, "channel_id": channelID})
-	s.strike(ctx, ps, member, c.Timeout)
+	return s.autoModRefuse(ctx, ps, member, channelID, rule, c.Timeout)
+}
+
+// autoModRefuse logs a refusal (once per member, rule and automodLogEvery),
+// counts it towards the automatic timeout and returns the error to send.
+func (s *Server) autoModRefuse(ctx context.Context, ps *permSnapshot, member string, channelID int64, rule string, timeout int64) error {
+	now := s.now()
+	s.automod.mu.Lock()
+	if s.automod.logged == nil || len(s.automod.logged) > 10000 {
+		s.automod.logged = map[string]time.Time{}
+	}
+	key := member + "|" + rule
+	log := now.Sub(s.automod.logged[key]) >= automodLogEvery
+	if log {
+		s.automod.logged[key] = now
+	}
+	s.automod.mu.Unlock()
+	if log {
+		s.audit(ctx, s.db, "", auditAutomodBlock, member, "", map[string]any{"rule": rule, "channel_id": channelID})
+	}
+	s.strike(ctx, ps, member, timeout)
 	msg := map[string]string{
 		"word":      "this message contains a word banned on this server",
 		"link":      "links are not allowed on this server",
@@ -288,4 +326,27 @@ func (s *Server) strike(ctx context.Context, ps *permSnapshot, member string, ti
 	}
 	s.syncPermissions(ctx)
 	time.AfterFunc(d+time.Second, func() { s.syncPermissions(context.Background()) })
+}
+
+// checkAutoModName applies the banned words and links to a name: a thread's,
+// a nickname (channelID 0: exempt with manage_messages on the server).
+func (s *Server) checkAutoModName(ctx context.Context, ps *permSnapshot, member string, channelID int64, name string) error {
+	p := ps.base(member)
+	if channelID != 0 {
+		p = ps.inChannel(member, channelID)
+	}
+	if p&permManageMessages != 0 {
+		return nil
+	}
+	c, err := s.autoModConfig(ctx)
+	if err != nil {
+		return err
+	}
+	switch {
+	case len(c.Words) > 0 && bannedWord(c.Words, name):
+		return s.autoModRefuse(ctx, ps, member, channelID, "word", c.Timeout)
+	case c.BlockLinks && linkRe.MatchString(name):
+		return s.autoModRefuse(ctx, ps, member, channelID, "link", c.Timeout)
+	}
+	return nil
 }

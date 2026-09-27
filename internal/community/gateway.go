@@ -77,7 +77,7 @@ func (s *Server) readyPayload(ctx context.Context, m *member) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
-	readStates, err := s.readStates(ctx, m, messagingChannels(ps, m.ID))
+	readStates, err := s.readStates(ctx, m, messagingChannels(ps, m.ID, false))
 	if err != nil {
 		return nil, err
 	}

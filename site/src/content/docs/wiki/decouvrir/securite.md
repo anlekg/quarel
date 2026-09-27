@@ -13,6 +13,8 @@ Quarel n’invente pas sa cryptographie : il s’appuie sur des bibliothèques �
 - Blocage automatique après des échecs répétés (par compte et par adresse IP), sans révéler si un compte existe. Un appareil que vous avez déjà utilisé pour vous connecter n'est pas bloqué par des échecs venus d'ailleurs : personne ne peut vous tenir dehors en tapant de faux mots de passe.
 - L'inscription ne révèle pas non plus si une adresse email a déjà un compte (la personne concernée est prévenue par email).
 - Mot de passe oublié : un code par email, **et la double authentification reste exigée**. Toutes les sessions sont alors fermées.
+- **Clés d’accès** (second facteur) : la page de votre service qui vérifie la clé indique quel appareil se connecte, d’où et à quelle heure ; ensuite elle affiche un **code à taper dans l’application**. Quelqu’un qui connaîtrait votre mot de passe et vous enverrait le lien de cette page n’obtiendrait donc rien en vous faisant toucher votre clé. Ajouter ou retirer une clé vous est signalé par email (le retrait demande le mot de passe).
+- **Vos données** : Paramètres › Confidentialité › « Télécharger mes données » (ce que votre service garde sur vous, et l’historique de vos messages privés gardé sur l’appareil) ; pour un serveur : menu du serveur › « Mes données sur ce serveur ». Si vous supprimez votre compte, les serveurs que vous aviez rejoints remplacent votre nom par « Ancien compte ».
 - Une session inutilisée pendant 90 jours se termine. Quand une session se termine (déconnexion, appareil retiré, changement de mot de passe), les serveurs communautaires en sont informés et ferment celles de cet appareil sous 10 minutes.
 
 ## Messages privés et fichiers
@@ -23,10 +25,15 @@ Quarel n’invente pas sa cryptographie : il s’appuie sur des bibliothèques �
 - Les **fichiers** envoyés en privé sont chiffrés sur votre appareil, transmis de préférence directement aux appareils en ligne (pair à pair), sinon déposés chiffrés sur le service, puis effacés dès réception (7 jours au plus).
 - Le contact avec chaque personne est **épinglé** au premier échange : si ses clés changent, l’application refuse d’envoyer et vous prévient. Un **code de sécurité**, le même des deux côtés, permet de vérifier hors ligne que personne (pas même votre service d’identité) n’a substitué ses clés.
 - Dans un **groupe**, l’application ne chiffre que pour les membres annoncés par un membre (chiffré) : un service compromis ne peut pas glisser quelqu’un dans une conversation pour lire les messages suivants.
+- Les **messages éphémères** ne quittent jamais les appareils qui les ont reçus : ni la sauvegarde chiffrée, ni l’historique envoyé à un nouvel appareil ne les contiennent, et les notifications n’en montrent pas le texte.
 
 ## Appels
 
-Les appels entre amis sont **pair à pair** et chiffrés (DTLS-SRTP). La mise en relation elle-même voyage dans des messages chiffrés : le service ne voit ni vos adresses IP ni les paramètres de l’appel. Si aucun chemin direct n’existe, le relais de votre service d’identité transmet le flux sans pouvoir le lire ; vous pouvez le refuser (Paramètres › Voix et vidéo).
+Les appels entre amis sont **pair à pair** et chiffrés (DTLS-SRTP). La mise en relation elle-même voyage dans des messages chiffrés : le service ne voit ni vos adresses IP ni les paramètres de l’appel. Si aucun chemin direct n’existe, le relais de votre service d’identité transmet le flux sans pouvoir le lire.
+
+Une connexion directe montre votre adresse IP à l’autre appareil. Par défaut (**« Mes amis seulement »**, Paramètres › Voix et vidéo), seuls vos amis la voient : avec les membres d’un groupe qui ne sont pas vos amis, les appels passent par le relais et les fichiers par la copie chiffrée du service. Vous pouvez aussi toujours passer par le relais, ou ne jamais l’utiliser.
+
+Les **notifications** de l’application web installée sont des réveils vides envoyés par le service de notification de votre navigateur (Google, Mozilla, Apple, Microsoft) : ni contenu, ni expéditeur.
 
 ## Connexion aux serveurs communautaires
 

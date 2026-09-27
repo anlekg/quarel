@@ -60,7 +60,9 @@ test('private conversation files: peer to peer, server copy, later from a holder
   await expect(log).toContainText('le devis')
   await expect.poll(() => listener.out(), { timeout: 15000 }).toContain('fichier reçu en direct')
   listener.stop()
-  let history = ctl.run('alice', 'dm-history', 'bob')
+  // The event carrying the file's key follows the direct transfer: wait for it.
+  let history = ''
+  await expect.poll(() => (history = ctl.run('alice', 'dm-history', 'bob')), { timeout: 15000 }).toContain('devis.bin')
   const n1 = eventNumber(history, 'devis.bin')
   expect(ctl.run('alice', 'dm-download', 'bob', n1, 'devis-alice.bin')).toContain('depuis cet appareil')
   expect(readFileSync(join(ctl.dir, 'devis-alice.bin')).equals(doc)).toBe(true)

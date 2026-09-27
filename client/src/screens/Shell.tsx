@@ -51,11 +51,14 @@ export function Shell({ account }: { account: Account }) {
       select('home')
       setTimeout(() => window.dispatchEvent(new CustomEvent('quarel:open-conversation', { detail: { dmId } })), 0)
     }
+    const gotoServer = (e: Event) => select((e as CustomEvent<{ sid: string }>).detail.sid) // an invite card
     window.addEventListener('quarel:goto-channel', gotoChannel)
     window.addEventListener('quarel:goto-dm', gotoDM)
+    window.addEventListener('quarel:goto-server', gotoServer)
     return () => {
       window.removeEventListener('quarel:goto-channel', gotoChannel)
       window.removeEventListener('quarel:goto-dm', gotoDM)
+      window.removeEventListener('quarel:goto-server', gotoServer)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -80,11 +80,12 @@ type Limits struct {
 	Messages int // messages sent per member per 10 seconds
 	Uploads  int // attachments uploaded per member per minute
 	Phone    int // phone verification codes sent per member per hour
+	Threads  int // threads and forum posts created per member per 10 minutes
 }
 
 // DefaultLimits are the production limits.
 func DefaultLimits() Limits {
-	return Limits{Global: 600, Auth: 30, Messages: 10, Uploads: 10, Phone: 5}
+	return Limits{Global: 600, Auth: 30, Messages: 10, Uploads: 10, Phone: 5, Threads: 5}
 }
 
 // ConfigFromEnv reads the configuration from QUAREL_* environment variables.

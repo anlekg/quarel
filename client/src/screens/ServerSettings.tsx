@@ -13,6 +13,7 @@ import { errorMessage } from '../lib/errors'
 import { roleColor } from '../lib/format'
 import { inviteLink } from '../lib/invite'
 import { useServerState, type ServerConn } from '../state/servers'
+import { confirmAction } from '../components/ConfirmDialog'
 
 type Section = 'overview' | 'roles' | 'channels' | 'members' | 'invites' | 'bans' | 'automod' | 'emojis' | 'audit' | 'bots'
 
@@ -255,8 +256,8 @@ function RoleEditor({ conn, ready, role, editable, roles, onDeleted }: {
           <>
             <button type="button" className="btn btn-ghost btn-sm" disabled={!above || above.position >= top} onClick={() => move(above.position)}>Monter</button>
             <button type="button" className="btn btn-ghost btn-sm" disabled={!below || below.id === 1} onClick={() => move(below.position)}>Descendre</button>
-            <button type="button" className="btn btn-danger btn-sm" onClick={() => {
-              if (confirm('Supprimer le rôle « ' + role.name + ' » ? Ses membres le perdent.')) a.run(async () => {
+            <button type="button" className="btn btn-danger btn-sm" onClick={async () => {
+              if (await confirmAction({ title: 'Supprimer le rôle « ' + role.name + ' » ?', message: 'Les membres qui l’ont le perdent.', confirm: 'Supprimer', danger: true })) a.run(async () => {
                 await conn.api((c) => c.deleteRole(role.id))
                 onDeleted()
               })
@@ -304,6 +305,26 @@ function Channels({ conn, ready }: { conn: ServerConn; ready: Ready }) {
   )
 }
 
+// What a channel is, for titles: "Salon", "Catégorie", "Fil" or "Post" (a thread of a forum).
+export function channelKind(ready: Ready, c: Channel) {
+  if (c.type === 'category') return 'Catégorie'
+  if (c.type !== 'thread') return 'Salon'
+  return ready.channels.find((p) => p.id === c.parent_id)?.type === 'forum' ? 'Post' : 'Fil'
+}
+
+// Asks (in the app), then deletes a channel, a category, a thread or a forum post.
+export async function askDeleteChannel(conn: ServerConn, ready: Ready, c: Channel): Promise<boolean> {
+  const kind = channelKind(ready, c)
+  const title = 'Supprimer ' + ({ Catégorie: 'la catégorie', Salon: 'le salon', Fil: 'le fil', Post: 'le post' } as Record<string, string>)[kind] + ' « ' + c.name + ' » ?'
+  const message = c.type === 'category' ? 'Ses salons remontent à la racine.'
+    : c.type === 'forum' ? 'Tous ses posts et leurs messages seront supprimés.'
+      : c.type === 'thread' ? 'Tous ses messages seront supprimés.'
+        : c.type === 'voice' ? 'Les personnes présentes seront déconnectées.' : 'Tous ses messages et ses fils seront supprimés.'
+  if (!(await confirmAction({ title, message, confirm: 'Supprimer', danger: true }))) return false
+  await conn.api((cl) => cl.deleteChannel(c.id))
+  return true
+}
+
 export function ChannelDialog({ conn, ready, channel, onClose, parent }: {
   conn: ServerConn; ready: Ready; channel: Channel | null; onClose: () => void; parent?: number | null
 }) {
@@ -317,10 +338,12 @@ export function ChannelDialog({ conn, ready, channel, onClose, parent }: {
   const categories = ready.channels.filter((c) => c.type === 'category')
   const canManage = canServer(ready, 'manage_channels') || (channel ? ready.permissions.channels[String(channel.id)]?.includes('manage_channels') : false)
   const canPerms = canServer(ready, 'manage_roles')
-  const canHooks = !!channel && canManage && (channel.type === 'text' || channel.type === 'announcement')
+  const canHooks = !!channel && (canServer(ready, 'manage_webhooks') || !!ready.permissions.channels[String(channel.id)]?.includes('manage_webhooks')) &&
+    (channel.type === 'text' || channel.type === 'announcement')
+  const thread = channel?.type === 'thread' // a thread or a forum post: its name only (its rights are its channel's)
   return (
-    <Dialog title={channel ? (channel.type === 'category' ? 'Catégorie ' : 'Salon ') + channel.name : 'Créer un salon'} onClose={onClose}>
-      {channel && (canPerms || canHooks) && (
+    <Dialog title={channel ? channelKind(ready, channel) + ' ' + channel.name : 'Créer un salon'} onClose={onClose}>
+      {channel && !thread && (canPerms || canHooks) && (
         <div className="tabs" role="tablist">
           <button role="tab" aria-selected={tab === 'general'} className={tab === 'general' ? 'active' : ''} onClick={() => setTab('general')}>Général</button>
           {canPerms && <button role="tab" aria-selected={tab === 'perms'} className={tab === 'perms' ? 'active' : ''} onClick={() => setTab('perms')}>Permissions</button>}
@@ -335,7 +358,8 @@ export function ChannelDialog({ conn, ready, channel, onClose, parent }: {
         <form style={{ display: 'flex', flexDirection: 'column', gap: 14 }} onSubmit={(e) => {
           e.preventDefault()
           a.run(async () => {
-            if (channel) await conn.api((c) => c.updateChannel(channel.id, { name: name.trim(), topic, ...(channel.type !== 'category' ? { parent_id: parentId } : {}), ...(channel.type === 'voice' ? { stage } : {}) }))
+            if (channel && thread) await conn.api((c) => c.updateChannel(channel.id, { name: name.trim() }))
+            else if (channel) await conn.api((c) => c.updateChannel(channel.id, { name: name.trim(), topic, ...(channel.type !== 'category' ? { parent_id: parentId } : {}), ...(channel.type === 'voice' ? { stage } : {}) }))
             else await conn.api((c) => c.createChannel({ type, name: name.trim(), topic, parent_id: type === 'category' ? null : parentId, ...(type === 'voice' ? { stage } : {}) }))
             onClose()
           })
@@ -353,10 +377,10 @@ export function ChannelDialog({ conn, ready, channel, onClose, parent }: {
             </div>
           )}
           <Field label="Nom" value={name} maxLength={100} autoFocus disabled={!canManage} onChange={(e) => setName(e.target.value)} />
-          {type !== 'category' && type !== 'voice' && (
+          {type !== 'category' && type !== 'voice' && type !== 'thread' && (
             <Field label="Sujet (facultatif)" value={topic} maxLength={1024} disabled={!canManage} onChange={(e) => setTopic(e.target.value)} />
           )}
-          {type !== 'category' && (
+          {type !== 'category' && type !== 'thread' && (
             <div className="field">
               <label htmlFor="ch-parent">Catégorie</label>
               <select id="ch-parent" className="input" value={parentId ?? ''} disabled={!canManage} onChange={(e) => setParentId(e.target.value ? Number(e.target.value) : null)}>
@@ -374,11 +398,9 @@ export function ChannelDialog({ conn, ready, channel, onClose, parent }: {
           <Alert kind="error">{a.error}</Alert>
           <div className="dialog-actions">
             {channel && canManage && (
-              <button type="button" className="btn btn-danger btn-sm" style={{ marginRight: 'auto' }} onClick={() => {
-                const what = channel.type === 'category' ? 'la catégorie « ' + channel.name + ' » (ses salons remontent à la racine)' : 'le salon « ' + channel.name + ' » et tous ses messages'
-                if (confirm('Supprimer ' + what + ' ?')) a.run(async () => {
-                  await conn.api((c) => c.deleteChannel(channel.id))
-                  onClose()
+              <button type="button" className="btn btn-danger btn-sm" style={{ marginRight: 'auto' }} onClick={async () => {
+                a.run(async () => {
+                  if (await askDeleteChannel(conn, ready, channel)) onClose()
                 })
               }}>Supprimer</button>
             )}
@@ -577,8 +599,8 @@ export function MemberDialog({ conn, ready, member, onClose }: { conn: ServerCon
               </span>
             ))}
             {canServer(ready, 'kick_members') && (
-              <button className="btn btn-ghost btn-sm danger-text" disabled={a.busy} onClick={() => {
-                if (confirm('Expulser ' + m.display_name + ' ? Il ou elle pourra revenir avec une invitation.')) a.run(async () => {
+              <button className="btn btn-ghost btn-sm danger-text" disabled={a.busy} onClick={async () => {
+                if (await confirmAction({ title: 'Expulser ' + m.display_name + ' ?', message: 'Cette personne pourra revenir avec une invitation.', confirm: 'Expulser', danger: true })) a.run(async () => {
                   await conn.api((c) => c.kick(m.id, reason || undefined))
                   onClose()
                 })
@@ -633,8 +655,8 @@ export function MemberDialog({ conn, ready, member, onClose }: { conn: ServerCon
         <div className="field">
           <label>Propriété du serveur</label>
           <div className="mod-actions">
-            <button className="btn btn-ghost btn-sm danger-text" disabled={a.busy} onClick={() => {
-              if (confirm('Transmettre la propriété du serveur à ' + m.display_name + ' ? Vous resterez membre, sans droits particuliers : seule cette personne pourra vous la rendre.')) a.run(async () => {
+            <button className="btn btn-ghost btn-sm danger-text" disabled={a.busy} onClick={async () => {
+              if (await confirmAction({ title: 'Transmettre la propriété à ' + m.display_name + ' ?', message: 'Vous resterez membre, sans droits particuliers : seule cette personne pourra vous la rendre.', confirm: 'Transférer', danger: true })) a.run(async () => {
                 await conn.api((c) => c.transferOwnership(m.id))
                 return m.display_name + ' est maintenant propriétaire du serveur.'
               })
@@ -1032,14 +1054,14 @@ function Bots({ conn, ready }: { conn: ServerConn; ready: Ready }) {
             <div className="card-row" key={b.id}>
               <Avatar id={b.id} name={b.display_name} size={32} />
               <div className="grow"><span className="title">{b.display_name} <span className="bot-tag">BOT</span></span><span className="sub">Créé le {dateTime.format(new Date(b.joined_at))}</span></div>
-              <button className="btn btn-ghost btn-sm" disabled={!outranks(ready, b)} onClick={() => {
-                if (confirm('Nouveau jeton pour ' + b.display_name + ' ? L’ancien cesse de marcher.')) a.run(async () => {
+              <button className="btn btn-ghost btn-sm" disabled={!outranks(ready, b)} onClick={async () => {
+                if (await confirmAction({ title: 'Nouveau jeton pour ' + b.display_name + ' ?', message: 'L’ancien cesse de marcher : le bot devra utiliser le nouveau.', confirm: 'Renouveler', danger: true })) a.run(async () => {
                   const r = await conn.api((c) => c.resetBotToken(b.id))
                   setToken({ name: b.display_name, token: r.token })
                 })
               }}>Nouveau jeton</button>
-              <button className="btn btn-ghost btn-sm danger-text" disabled={!outranks(ready, b)} onClick={() => {
-                if (confirm('Supprimer le bot ' + b.display_name + ' ?')) a.run(async () => {
+              <button className="btn btn-ghost btn-sm danger-text" disabled={!outranks(ready, b)} onClick={async () => {
+                if (await confirmAction({ title: 'Supprimer le bot ' + b.display_name + ' ?', message: 'Son jeton cesse de marcher ; ses messages restent.', confirm: 'Supprimer', danger: true })) a.run(async () => {
                   await conn.api((c) => c.deleteBot(b.id))
                   load()
                 })

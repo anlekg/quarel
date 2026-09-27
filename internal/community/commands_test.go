@@ -127,6 +127,11 @@ func TestSlashCommands(t *testing.T) {
 	if last := hist[len(hist)-1]; last.Content != "🎲 17" {
 		t.Fatalf("ephemeral reply stored: %+v", last)
 	}
+	// At most maxReplies answers to one interaction (ephemeral ones too).
+	for i := 1; i < maxReplies; i++ {
+		c.expect(204, "", c.call("POST", "/v1/interactions/"+it.ID+"/reply", bot.Token, map[string]any{"content": "encore", "ephemeral": true}, nil))
+	}
+	c.expect(429, "too_many_replies", c.call("POST", "/v1/interactions/"+it.ID+"/reply", bot.Token, map[string]any{"content": "encore", "ephemeral": true}, nil))
 	// Too late.
 	c.clock = c.clock.Add(16 * time.Minute)
 	c.expect(404, "not_found", c.call("POST", "/v1/interactions/"+it.ID+"/reply", bot.Token, map[string]any{"content": "trop tard"}, nil))

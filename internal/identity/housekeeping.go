@@ -7,6 +7,10 @@ import (
 )
 
 // Housekeeping runs the periodic cleanups every hour until ctx ends.
+// deletedAccountsKept: how long deleted accounts stay on the public list (a
+// community server offline that long keeps the former member's name).
+const deletedAccountsKept = 400 * 24 * time.Hour
+
 func (s *Server) Housekeeping(ctx context.Context) {
 	for {
 		s.cleanup(ctx)
@@ -30,6 +34,7 @@ func (s *Server) cleanup(ctx context.Context) {
 	// (revoked_at comes from SQLite's clock: see the sessions_ended trigger).
 	s.db.ExecContext(ctx, `DELETE FROM revoked_devices WHERE revoked_at <= CAST(strftime('%s', 'now') AS INTEGER) - ?`, int64((s.cfg.TokenTTL + time.Hour).Seconds()))
 	s.db.ExecContext(ctx, `DELETE FROM known_devices WHERE last_login <= ?`, now.Add(-knownDeviceTTL).Unix())
+	s.db.ExecContext(ctx, `DELETE FROM deleted_accounts WHERE deleted_at <= ?`, now.Add(-deletedAccountsKept).Unix())
 	// A device away longer than this misses what waited for it (its other
 	// devices keep the history, and the recovery backup too).
 	if res, err := s.db.ExecContext(ctx, `DELETE FROM inbox WHERE created_at <= ?`, now.Add(-s.cfg.InboxTTL).Unix()); err == nil {

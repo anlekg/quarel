@@ -29,6 +29,7 @@ const (
 	maxCommandsPerBot = 50
 	maxCommandOptions = 10
 	interactionTTL    = 15 * time.Minute
+	maxReplies        = 5 // answers (and follow-ups) to one interaction
 )
 
 var commandNameRe = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
@@ -58,6 +59,7 @@ type interaction struct {
 	bot, member, name string
 	channel           int64
 	expires           time.Time
+	replies           int
 }
 
 type interactions struct {
@@ -331,12 +333,27 @@ func (s *Server) handleInteractionReply(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	id := r.PathValue("id")
+	bot := memberFrom(r).ID
 	s.cmds.mu.Lock()
 	it, ok := s.cmds.byID[id]
+	ok = ok && it.bot == bot && !s.now().After(it.expires)
+	tooMany := ok && it.replies >= maxReplies
+	if ok && !tooMany {
+		it.replies++
+		s.cmds.byID[id] = it
+	}
 	s.cmds.mu.Unlock()
-	bot := memberFrom(r).ID
-	if !ok || it.bot != bot || s.now().After(it.expires) {
+	if !ok {
 		writeErr(w, r, errf(http.StatusNotFound, "not_found", "no such interaction (or answered too late)"))
+		return
+	}
+	if tooMany {
+		writeErr(w, r, errf(http.StatusTooManyRequests, "too_many_replies", "at most %d replies to one interaction", maxReplies))
+		return
+	}
+	// Ephemeral or not, replies count as the bot's messages (no flooding a member).
+	if err := s.limit.messages.Check(bot); err != nil {
+		writeErr(w, r, err)
 		return
 	}
 	content, err := validContent(req.Content, false)
@@ -363,10 +380,6 @@ func (s *Server) handleInteractionReply(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := requirePost(ps, bot, c, 0); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	if err := s.limit.messages.Check(bot); err != nil {
 		writeErr(w, r, err)
 		return
 	}

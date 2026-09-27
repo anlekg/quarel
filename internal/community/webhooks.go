@@ -14,7 +14,10 @@ import (
 
 // Incoming webhooks (P2): an address with a secret that posts messages to
 // one channel, for services that cannot hold a bot connection (monitoring,
-// CI, forms…). Managed with manage_channels in that channel. Each webhook
+// CI, forms…). Managed with manage_webhooks in that channel; creating one also
+// needs the right to post there (send_messages, and manage_messages in an
+// announcement channel): a webhook must not let its creator post where they
+// could not. Each webhook
 // posts as its own member (issuer "#webhook", bot, marked as having left
 // when created: never listed, cannot sign in); messages carry
 // {webhook: {id, name}} so clients show its name. Its messages cannot
@@ -46,22 +49,23 @@ type webhookRef struct {
 }
 
 // webhookChannel loads the {id} channel for managing its webhooks.
-func (s *Server) webhookChannel(r *http.Request) (*channel, error) {
+func (s *Server) webhookChannel(r *http.Request) (*channel, *permSnapshot, error) {
 	c, err := s.pathChannel(r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if _, err := s.requireChannelPerm(r, c, permManageChannels); err != nil {
-		return nil, err
+	ps, err := s.requireChannelPerm(r, c, permManageWebhooks)
+	if err != nil {
+		return nil, nil, err
 	}
 	if c.Type != chanText && c.Type != chanAnnouncement {
-		return nil, errf(http.StatusBadRequest, "not_text_channel", "webhooks post in text and announcement channels")
+		return nil, nil, errf(http.StatusBadRequest, "not_text_channel", "webhooks post in text and announcement channels")
 	}
-	return c, nil
+	return c, ps, nil
 }
 
 func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request) {
-	c, err := s.webhookChannel(r)
+	c, _, err := s.webhookChannel(r)
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -110,8 +114,12 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	c, err := s.webhookChannel(r)
+	c, ps, err := s.webhookChannel(r)
 	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if err := requirePost(ps, memberFrom(r).ID, c, 0); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -167,7 +175,7 @@ func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	if _, err := s.requireChannelPerm(r, c, permManageChannels); err != nil {
+	if _, err := s.requireChannelPerm(r, c, permManageWebhooks); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -234,6 +242,7 @@ func (s *Server) handleWebhookPost(w http.ResponseWriter, r *http.Request) {
 // extra runs inside the transaction, with the new message's ID.
 func (s *Server) storeMessage(ctx context.Context, ps *permSnapshot, c *channel, author, content string, p perm, extra func(tx *sql.Tx, id int64) error) (*message, error) {
 	msg := &message{ChannelID: c.ID, AuthorID: author, Content: content}
+	s.revive(ctx, c)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err

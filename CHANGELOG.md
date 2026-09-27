@@ -2,6 +2,31 @@
 
 Quarel est en **version de test** : les versions `0.x` peuvent encore changer en profondeur.
 
+## Prochaine version (non publiée)
+
+Corrections du deuxième audit (sécurité et vie privée) et demandes de test.
+
+> **À mettre à jour ensemble.** Serveurs communautaires (schéma 13) et services d'identité (schéma 13) d'abord, application ensuite : la connexion par clé d'accès et l'export des données demandent les deux côtés à jour.
+
+### Corrections demandées
+- Toutes les confirmations (supprimer un salon, expulser, quitter un groupe…) s'ouvrent **dans l'application** : sous Windows, après une boîte du système, l'application de bureau ne prenait plus le clavier (impossible d'écrire après avoir supprimé un salon).
+- Les **fils** et les **posts de forum** se renomment et se suppriment (roue dentée, clic droit, en-tête du fil).
+- **Inviter ses amis** depuis « Inviter sur… » : une invitation personnelle envoyée en message privé ; un lien d'invitation dans un message s'affiche en carte **Rejoindre** / **Ouvrir**.
+- Rejoindre un second serveur auto-signé à la même adresse coupait le premier : c'est maintenant refusé avec une explication.
+
+### Sécurité
+- **Webhooks** : nouvelle permission « Gérer les webhooks », et il faut pouvoir écrire dans le salon pour en créer un (un webhook permettait d'écrire dans un salon d'annonces sans en avoir le droit). Les rôles qui géraient les salons la reçoivent.
+- **Clés d'accès** : la page de connexion indique l'appareil, l'adresse et l'heure, puis un **code à taper dans l'application** ; email à l'ajout et au retrait d'une clé (le retrait demande le mot de passe).
+- **Fils et posts** : 5 créations par 10 minutes et par membre ; **archivés** après une semaine sans message (hors de la liste des salons, toujours lisibles ; un message les rouvre).
+- **Notifications web** envoyées seulement aux services des navigateurs.
+- **Modération automatique** : plus trompée par les caractères invisibles ni les lettres imitées (cyrillique, grec, pleine chasse) ; s'applique aussi aux noms de fils et aux surnoms.
+
+### Vie privée
+- **Qui voit votre adresse IP** (Paramètres › Voix et vidéo) : par défaut, seulement vos amis ; avec les autres membres d'un groupe, appels par le relais et fichiers par la copie chiffrée.
+- **Messages éphémères** jamais sauvegardés ni transmis à un nouvel appareil ; notifications sans leur texte ni celui des divulgâcheurs ; pas d'aperçu pour un lien caché.
+- **Compte supprimé** : son nom devient « Ancien compte » sur les serveurs rejoints.
+- **Télécharger mes données** (Paramètres › Confidentialité, et « Mes données sur ce serveur » dans le menu d'un serveur).
+
 ## 0.4.0 — 2026-09-27
 
 La plus grosse mise à jour depuis le début : toute la liste « plus tard » (P2) du plan, et du confort pour l'application de bureau.
