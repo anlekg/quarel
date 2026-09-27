@@ -202,7 +202,7 @@ func (s *Server) handleReaction(w http.ResponseWriter, r *http.Request) {
 	if other := r.PathValue("member"); other != "" {
 		target = other
 	}
-	if !validEmoji(emoji) {
+	if !s.validReaction(ctx, emoji) {
 		writeErr(w, r, errf(http.StatusBadRequest, "invalid_emoji", "not a single emoji"))
 		return
 	}

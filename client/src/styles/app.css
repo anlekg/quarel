@@ -678,3 +678,9 @@ code.secret { font-family: ui-monospace, monospace; letter-spacing: .06em; word-
 .timer-select.on { color: var(--accent); }
 .timer-select select { background: transparent; color: inherit; border: 0; font: inherit; font-size: 13px; cursor: pointer; }
 .timer-select select option { background: var(--bg-2); color: var(--text); }
+
+/* Custom emojis of a community server. */
+.md-emoji { width: 22px; height: 22px; object-fit: contain; vertical-align: -5px; }
+.reaction .md-emoji, .emoji-pick .md-emoji { width: 18px; height: 18px; vertical-align: -3px; }
+.md-emoji-name { color: var(--text-2); }
+.cmd-suggest .md-emoji { width: 20px; height: 20px; }

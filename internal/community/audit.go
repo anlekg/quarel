@@ -45,6 +45,8 @@ const (
 	auditVoiceDeafen      = "voice_deafen"
 	auditVoiceMove        = "voice_move"
 	auditVoiceDisconnect  = "voice_disconnect"
+	auditEmojiCreate      = "emoji_create"
+	auditEmojiDelete      = "emoji_delete"
 )
 
 type auditEntry struct {

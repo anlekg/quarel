@@ -85,8 +85,12 @@ func (s *Server) readyPayload(ctx context.Context, m *member) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
+	emojis, err := s.emojis(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ready := s.memberState(ps, m.ID)
 	ready["member"], ready["server"], ready["members"], ready["roles"] = me, info, members, roles
-	ready["read_states"], ready["notification_settings"] = readStates, notifications
+	ready["read_states"], ready["notification_settings"], ready["emojis"] = readStates, notifications, emojis
 	return ready, nil
 }

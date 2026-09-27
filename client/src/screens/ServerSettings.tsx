@@ -2,10 +2,11 @@
 // channels (and their permissions), members (roles, moderation), invites,
 // bans, audit log, bots. Each section shows only with its permission; the
 // server checks everything again (hierarchy included).
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AuditEntry, AutoMod, Ban, Channel, Invite, Member, Ready, Role, Webhook } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { Alert, Dialog, Field, Submit } from '../components/ui'
+import { CustomEmoji } from '../components/MessageContent'
 import { Close } from '../components/icons'
 import { can, canServer, channelPerms, channelTree, isAdmin, mayGrant, memberAvatar, memberColor, myTop, outranks, permGroups } from '../lib/community'
 import { errorMessage } from '../lib/errors'
@@ -13,7 +14,7 @@ import { roleColor } from '../lib/format'
 import { inviteLink } from '../lib/invite'
 import { useServerState, type ServerConn } from '../state/servers'
 
-type Section = 'overview' | 'roles' | 'channels' | 'members' | 'invites' | 'bans' | 'automod' | 'audit' | 'bots'
+type Section = 'overview' | 'roles' | 'channels' | 'members' | 'invites' | 'bans' | 'automod' | 'emojis' | 'audit' | 'bots'
 
 const dateTime = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -47,7 +48,7 @@ export function sectionsFor(r: Ready): Section[] {
   if (['manage_roles', 'kick_members', 'ban_members', 'moderate_members'].some((p) => canServer(r, p))) out.push('members')
   if (canServer(r, 'create_invite') || canServer(r, 'manage_server')) out.push('invites')
   if (canServer(r, 'ban_members')) out.push('bans')
-  if (canServer(r, 'manage_server')) out.push('automod')
+  if (canServer(r, 'manage_server')) out.push('automod', 'emojis')
   if (canServer(r, 'view_audit_log')) out.push('audit')
   if (canServer(r, 'manage_server')) out.push('bots')
   return out
@@ -55,7 +56,7 @@ export function sectionsFor(r: Ready): Section[] {
 
 const labels: Record<Section, string> = {
   overview: 'Vue d’ensemble', roles: 'Rôles', channels: 'Salons', members: 'Membres', invites: 'Invitations', bans: 'Bannissements',
-  automod: 'Modération automatique', audit: 'Journal de modération', bots: 'Bots',
+  automod: 'Modération automatique', emojis: 'Emojis', audit: 'Journal de modération', bots: 'Bots',
 }
 
 export function ServerSettings({ conn, onClose, initial }: { conn: ServerConn; onClose: () => void; initial?: Section }) {
@@ -87,6 +88,7 @@ export function ServerSettings({ conn, onClose, initial }: { conn: ServerConn; o
         {section === 'invites' && <Invites conn={conn} ready={r} />}
         {section === 'bans' && <Bans conn={conn} ready={r} />}
         {section === 'automod' && <AutoModSection conn={conn} />}
+        {section === 'emojis' && <EmojisSection conn={conn} ready={r} />}
         {section === 'audit' && <Audit conn={conn} ready={r} />}
         {section === 'bots' && <Bots conn={conn} ready={r} />}
       </main>
@@ -806,6 +808,60 @@ function WebhooksEditor({ conn, channel }: { conn: ServerConn; channel: Channel 
   )
 }
 
+// --- custom emojis ---
+
+function EmojisSection({ conn, ready }: { conn: ServerConn; ready: Ready }) {
+  const [name, setName] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const input = useRef<HTMLInputElement>(null)
+  const a = useAction()
+  const list = ready.emojis ?? []
+  const names = { emoji: (id: string) => conn.emojiURL(id) }
+  return (
+    <>
+      <h2>Emojis</h2>
+      <p className="muted" style={{ lineHeight: 1.5 }}>
+        Des images à utiliser dans les messages (<code>:nom:</code>) et les réactions. PNG, GIF ou WebP, 256 Ko au plus, 100 emojis par serveur ;
+        noms de 2 à 32 caractères (a-z, 0-9, _).
+      </p>
+      <Alert kind="error">{a.error}</Alert>
+      <form className="copy-row" onSubmit={(e) => {
+        e.preventDefault()
+        if (!file || !name) return
+        a.run(async () => {
+          await conn.api((c) => c.uploadEmoji(name, file))
+          setName('')
+          setFile(null)
+          if (input.current) input.current.value = ''
+        })
+      }}>
+        <input className="input" aria-label="Nom de l'emoji" placeholder="nom" maxLength={32} value={name}
+          onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))} />
+        <input ref={input} className="input" type="file" accept="image/png,image/gif,image/webp" aria-label="Image de l'emoji"
+          onChange={(e) => {
+            const f = e.target.files?.[0] ?? null
+            setFile(f)
+            if (f && !name) setName(f.name.replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 32))
+          }} />
+        <button className="btn btn-ghost btn-sm" style={{ height: 44 }} type="submit" disabled={a.busy || !file || name.length < 2}>Ajouter</button>
+      </form>
+      {list.length > 0 ? (
+        <div className="card" data-testid="emojis">
+          {list.map((e) => (
+            <div className="card-row" key={e.id}>
+              <CustomEmoji code={'<:' + e.name + ':' + e.id + '>'} names={names} />
+              <span className="grow title">:{e.name}:</span>
+              <button className="btn btn-ghost btn-sm" aria-label={'Supprimer :' + e.name + ':'} onClick={() => a.run(async () => {
+                await conn.api((c) => c.deleteEmoji(e.id))
+              })}>Supprimer</button>
+            </div>
+          ))}
+        </div>
+      ) : <p className="muted small">Aucun emoji pour l&apos;instant.</p>}
+    </>
+  )
+}
+
 // --- automatic moderation ---
 
 const ruleLabels: Record<string, string> = { word: 'mot interdit', link: 'lien', mentions: 'trop de mentions', duplicate: 'message répété' }
@@ -883,7 +939,7 @@ const actions: Record<string, string> = {
   server_update: 'a modifié le serveur', invite_delete: 'a révoqué une invitation', bot_create: 'a créé un bot', bot_delete: 'a supprimé un bot',
   bot_token_reset: 'a renouvelé le jeton d’un bot', voice_mute: 'a coupé le micro de', voice_deafen: 'a mis en sourdine',
   voice_move: 'a déplacé', voice_disconnect: 'a déconnecté du vocal',
-  automod_block: 'a refusé un message de', webhook_create: 'a créé un webhook', webhook_delete: 'a supprimé un webhook', owner_transfer: 'a transmis la propriété du serveur à', owner_reset: 'a retiré le propriétaire (nouveau lien propriétaire créé)',
+  automod_block: 'a refusé un message de', emoji_create: 'a ajouté un emoji', emoji_delete: 'a supprimé un emoji', webhook_create: 'a créé un webhook', webhook_delete: 'a supprimé un webhook', owner_transfer: 'a transmis la propriété du serveur à', owner_reset: 'a retiré le propriétaire (nouveau lien propriétaire créé)',
 }
 
 function Audit({ conn, ready }: { conn: ServerConn; ready: Ready }) {
@@ -900,7 +956,7 @@ function Audit({ conn, ready }: { conn: ServerConn; ready: Ready }) {
   const who = (id: string | null, fallback?: string, e?: AuditEntry) => (id ? ready.members.find((m) => m.id === id)?.display_name ?? (fallback || 'ancien membre')
     : e && (e.action === 'automod_block' || e.reason === 'Modération automatique') ? 'Modération automatique' : 'L’hébergeur')
   const target = (e: AuditEntry) => {
-    if (e.action.startsWith('webhook_')) return '« ' + String(e.details?.name ?? '') + ' »'
+    if (e.action.startsWith('webhook_') || e.action.startsWith('emoji_')) return '« ' + String(e.details?.name ?? '') + ' »'
     if (!e.target_id) return ''
     if (e.action === 'member_role_add' || e.action === 'member_role_remove') return who(e.target_id, e.target_name) + ' (« ' + String(e.details?.role ?? '') + ' »)'
     if (e.action === 'automod_block') return who(e.target_id, e.target_name) + ' (' + (ruleLabels[String(e.details?.rule)] ?? String(e.details?.rule ?? '')) + ')'

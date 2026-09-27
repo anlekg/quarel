@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { fetchBlob } from '../api/http'
 import type { Attachment, Channel, Message, Ready } from '../api/community'
 import { Avatar } from '../components/Avatar'
-import { encodeMentions, MessageContent, type MentionNames } from '../components/MessageContent'
+import { CustomEmoji, encodeEmojis, encodeMentions, MessageContent, type MentionNames } from '../components/MessageContent'
 import { parseCommand, suggestCommands, usage } from '../lib/commands'
 import { Alert, BackButton, Dialog } from '../components/ui'
 import { Bell, BellOff, Close, Download, FileIcon, Hash, Megaphone, Paperclip, Pencil, Pin, Reply, Search, Send, Smile, Thread, Trash, Users } from '../components/icons'
@@ -52,7 +52,8 @@ export function ChannelView({ conn, ready, state, channel, members, showMembers,
       return r && { name: r.name, color: roleColor(r.color) }
     },
     me: ready.member.id,
-  }), [ready.members, ready.roles, ready.member.id])
+    emoji: (id) => conn.emojiURL(id),
+  }), [ready.members, ready.roles, ready.member.id, conn, state]) // state: an emoji image arrived
 
   const typing = conn.typingIn(channel.id).map((id) => names.member(id) ?? '…')
 
@@ -329,7 +330,7 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
             {m.reactions.map((r) => (
               <button key={r.emoji} className={'reaction' + (r.me ? ' me' : '')} disabled={!canReact && !r.me}
                 onClick={() => toggle(r.emoji, !r.me)} aria-pressed={r.me} aria-label={`${r.emoji} ${r.count}`}>
-                <span>{r.emoji}</span><span>{r.count}</span>
+                <span>{r.emoji.startsWith('<:') ? <CustomEmoji code={r.emoji} names={names} /> : r.emoji}</span><span>{r.count}</span>
               </button>
             ))}
           </div>
@@ -354,12 +355,12 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
       )}
       {picking && (
         <div className="emoji-pick" role="menu" aria-label="Réactions">
-          {QUICK_EMOJIS.map((e) => (
-            <button key={e} role="menuitem" onClick={() => {
+          {[...QUICK_EMOJIS, ...(ready.emojis ?? []).slice(0, 24).map((x) => '<:' + x.name + ':' + x.id + '>')].map((e) => (
+            <button key={e} role="menuitem" aria-label={e.startsWith('<:') ? ':' + e.split(':')[1] + ':' : e} onClick={() => {
               setPicking(false)
               const mineAlready = m.reactions.some((r) => r.emoji === e && r.me)
               toggle(e, !mineAlready)
-            }}>{e}</button>
+            }}>{e.startsWith('<:') ? <CustomEmoji code={e} names={names} /> : e}</button>
           ))}
         </div>
       )}
@@ -517,6 +518,12 @@ function Composer({ conn, ready, channel, replyTo, onCancelReply, names }: {
 
   const commands = conn.state.commands
   const suggestions = suggestCommands(text, commands)
+  const emojiPrefix = /(?:^|\s):([a-z0-9_]{2,32})$/.exec(text)?.[1]
+  const emojiMatches = emojiPrefix ? (ready.emojis ?? []).filter((e) => e.name.startsWith(emojiPrefix)).slice(0, 8) : []
+  const pickEmoji = (name: string) => {
+    setText(text.slice(0, text.length - emojiPrefix!.length - 1) + ':' + name + ': ')
+    area.current?.querySelector('textarea')?.focus()
+  }
   const botName = (id: string) => ready.members.find((m) => m.id === id)?.display_name ?? 'Bot'
 
   async function runCommand(): Promise<boolean> {
@@ -553,7 +560,7 @@ function Composer({ conn, ready, channel, replyTo, onCancelReply, names }: {
 
   async function send() {
     if (text.trim().startsWith('/') && (await runCommand())) return
-    const content = encodeMentions(text.trim(), ready.members)
+    const content = encodeEmojis(encodeMentions(text.trim(), ready.members), ready.emojis ?? [])
     const ready_ = files.filter((f) => f.id)
     if (files.some((f) => !f.id && !f.error)) return setError('Envoi des fichiers en cours…')
     if (!content && ready_.length === 0) return
@@ -594,6 +601,15 @@ function Composer({ conn, ready, channel, replyTo, onCancelReply, names }: {
         addFiles(e.dataTransfer.files)
       }}>
       {error && <div style={{ marginBottom: 8 }}><Alert kind="error">{error}</Alert></div>}
+      {emojiMatches.length > 0 && (
+        <div className="cmd-suggest" role="listbox" aria-label="Emojis du serveur">
+          {emojiMatches.map((e) => (
+            <button key={e.id} role="option" aria-selected={false} onClick={() => pickEmoji(e.name)}>
+              <CustomEmoji code={'<:' + e.name + ':' + e.id + '>'} names={names} /><b>:{e.name}:</b>
+            </button>
+          ))}
+        </div>
+      )}
       {suggestions.length > 0 && (
         <div className="cmd-suggest" role="listbox" aria-label="Commandes">
           {suggestions.map((c) => (
@@ -643,6 +659,11 @@ function Composer({ conn, ready, channel, replyTo, onCancelReply, names }: {
               }
             }}
             onKeyDown={(e) => {
+              if (e.key === 'Tab' && emojiMatches.length) {
+                e.preventDefault()
+                pickEmoji(emojiMatches[0].name)
+                return
+              }
               if (e.key === 'Tab' && suggestions.length) {
                 e.preventDefault()
                 setText('/' + suggestions[0].name + (suggestions[0].options.length ? ' ' : ''))

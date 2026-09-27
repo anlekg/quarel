@@ -262,6 +262,17 @@ CREATE TABLE message_interactions (
 	member_id  TEXT NOT NULL REFERENCES members(id)
 );
 `,
+	// 9 (P2, 2026-09-27): custom emojis (images in data/emojis).
+	`
+CREATE TABLE emojis (
+	id           TEXT PRIMARY KEY,
+	name         TEXT NOT NULL UNIQUE,
+	content_type TEXT NOT NULL,
+	size         INTEGER NOT NULL,
+	created_by   TEXT REFERENCES members(id) ON DELETE SET NULL,
+	created_at   INTEGER NOT NULL
+);
+`,
 }
 
 // SchemaVersion is the database version this program creates and understands.

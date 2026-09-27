@@ -40,6 +40,8 @@ Vos serveurs vous suivent sur tous vos appareils validés.
 
 Dans les salons comme dans les messages privés : `**gras**`, `*italique*`, `__souligné__`, `~~barré~~`, `` `code` ``, `||divulgâcheur||` (caché jusqu’au clic) ; en début de ligne, `# Titre` (aussi `##`, `###`), `> citation`, `- liste` ou `1. liste numérotée` ; les blocs de code entre trois accents graves, avec le langage après les premiers (` ```js `). Les liens s’affichent toujours avec leur vraie adresse.
 
+**Emojis du serveur** : tapez `:` puis le début de leur nom (Tab ou clic pour choisir) ; ils sont aussi proposés pour réagir. Les gestionnaires du serveur les ajoutent dans Paramètres du serveur › **Emojis**.
+
 ## Ajouter des amis
 
 Messages privés › **Amis** › **Ajouter un ami** : tapez son pseudo. Dès qu’elle accepte, vous pouvez lui écrire et l’appeler. Les amis doivent avoir un compte sur le **même service d’identité** que vous.

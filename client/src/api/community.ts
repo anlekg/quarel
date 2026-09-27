@@ -217,6 +217,13 @@ export interface Ready {
   restriction: Restriction
   permissions: Permissions
   notification_settings?: NotificationSetting[]
+  emojis?: Emoji[]
+}
+
+// A custom emoji of the server, written <:name:id> in messages and reactions.
+export interface Emoji {
+  id: string
+  name: string
 }
 
 export interface LoginResult {
@@ -351,6 +358,18 @@ export class CommunityClient {
 
   updateServer(body: Partial<Pick<ServerInfo, 'name' | 'access' | 'rules' | 'require_phone'>>) {
     return this.call<ServerInfo>('PATCH', '/v1/server', body)
+  }
+
+  emojis() {
+    return this.call<Emoji[]>('GET', '/v1/emojis')
+  }
+
+  uploadEmoji(name: string, image: Blob) {
+    return this.call<Emoji>('POST', '/v1/emojis?name=' + encodeURIComponent(name), image)
+  }
+
+  deleteEmoji(id: string) {
+    return this.call<void>('DELETE', '/v1/emojis/' + id)
   }
 
   commands() {

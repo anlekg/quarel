@@ -33,7 +33,7 @@ const upnpLease = time.Hour
 // backupSpec: what a backup of the data directory contains.
 func backupSpec(dir string) backup.Spec {
 	return backup.Spec{Kind: "quarel-server", DataDir: dir, Database: "server.db", Required: []string{"server.key"},
-		Files: []string{"livekit.keys", settings.FileName}, Dirs: []string{"attachments", "acme"}, Keep: adminui.KeepFiles}
+		Files: []string{"livekit.keys", settings.FileName}, Dirs: []string{"attachments", "emojis", "acme"}, Keep: adminui.KeepFiles}
 }
 
 func serverIdentity(dir string) (string, bool) {

@@ -12,6 +12,7 @@ export interface MentionNames {
   member(id: string): string | undefined
   role(id: number): { name: string; color?: string } | undefined
   me?: string
+  emoji?(id: string): string | undefined // image of a custom emoji (community servers)
 }
 
 export function MessageContent({ text, names }: { text: string; names: MentionNames }) {
@@ -107,6 +108,7 @@ const inlineRe = new RegExp([
   /(<@&\d+>)/, // 8 role
   /(<@[A-Za-z0-9]+>)/, // 9 member
   /(@everyone\b)/, // 10
+  /(<:[a-z0-9_]{2,32}:[a-z0-9]{8,64}>)/, // 11 custom emoji
 ].map((r) => r.source).join('|'), 'g')
 
 function inline(text: string, names: MentionNames, key: string): ReactNode[] {
@@ -116,7 +118,7 @@ function inline(text: string, names: MentionNames, key: string): ReactNode[] {
   for (const m of text.matchAll(inlineRe)) {
     if (m.index! > last) out.push(text.slice(last, m.index))
     const k = key + '-' + n++
-    const [all, code, spoiler, bold, underline, strike, italic, url, role, member, everyone] = m
+    const [all, code, spoiler, bold, underline, strike, italic, url, role, member, everyone, emoji] = m
     if (code) out.push(<code key={k} className="md-code">{code.slice(1, -1)}</code>)
     else if (spoiler) out.push(<Spoiler key={k}>{inline(spoiler.slice(2, -2), names, k)}</Spoiler>)
     else if (bold) out.push(<strong key={k}>{inline(bold.slice(2, -2), names, k)}</strong>)
@@ -134,11 +136,25 @@ function inline(text: string, names: MentionNames, key: string): ReactNode[] {
       const id = member.slice(2, -1)
       out.push(<span key={k} className={'mention' + (id === names.me ? ' me' : '')}>@{names.member(id) ?? 'ancien membre'}</span>)
     } else if (everyone) out.push(<span key={k} className="mention">@everyone</span>)
+    else if (emoji) out.push(<CustomEmoji key={k} code={emoji} names={names} />)
     else out.push(all)
     last = m.index! + all.length
   }
   if (last < text.length) out.push(text.slice(last))
   return out
+}
+
+// A custom emoji <:name:id>: its image, or :name: (loading, deleted, elsewhere).
+export function CustomEmoji({ code, names }: { code: string; names: Pick<MentionNames, 'emoji'> }) {
+  const [, name, id] = /^<:([a-z0-9_]+):([a-z0-9]+)>$/.exec(code) ?? []
+  const url = id ? names.emoji?.(id) : undefined
+  return url ? <img className="md-emoji" src={url} alt={':' + name + ':'} title={':' + name + ':'} /> : <span className="md-emoji-name">:{name}:</span>
+}
+
+// ":name:" typed in the composer → <:name:id> for the server's emojis.
+export function encodeEmojis(text: string, emojis: { id: string; name: string }[]) {
+  const byName = new Map(emojis.map((e) => [e.name, e.id]))
+  return text.replace(/(<[^>]*>)|:([a-z0-9_]{2,32}):/g, (all, tag, name) => (tag ? all : byName.has(name) ? '<:' + name + ':' + byName.get(name) + '>' : all))
 }
 
 function Spoiler({ children }: { children: ReactNode }) {

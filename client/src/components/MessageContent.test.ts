@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { encodeMentions } from './MessageContent'
+import { encodeEmojis, encodeMentions } from './MessageContent'
 
 describe('encodeMentions', () => {
   const members = [
@@ -45,5 +45,13 @@ describe('MessageContent', async () => {
   })
   it('renders mentions and links', () => {
     expect(html('<@m1> https://exemple.org.')).toBe('<span class="mention me">@Léa</span> <a href="https://exemple.org" target="_blank" rel="noreferrer noopener">https://exemple.org</a>.')
+  })
+})
+
+describe('encodeEmojis', () => {
+  it('encodes the server emojis only, never inside mentions', () => {
+    const emojis = [{ id: 'abcdefgh1', name: 'chat_vert' }]
+    expect(encodeEmojis('miaou :chat_vert: :inconnu: <@m1>', emojis)).toBe('miaou <:chat_vert:abcdefgh1> :inconnu: <@m1>')
+    expect(encodeEmojis('<:chat_vert:abcdefgh1>', emojis)).toBe('<:chat_vert:abcdefgh1>')
   })
 })

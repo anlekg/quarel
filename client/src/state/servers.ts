@@ -1,9 +1,9 @@
 // Community servers joined by the signed-in account: sessions (kept in the
 // secret store), real-time connection, and the live state of each server.
 import { useSyncExternalStore } from 'react'
-import { ApiError } from '../api/http'
+import { ApiError, fetchBlob } from '../api/http'
 import {
-  CommunityClient, type BotCommand, type Channel, type EphemeralReply, type LoginResult, type Member, type Message, type ReadState, type Ready,
+  CommunityClient, type BotCommand, type Channel, type Emoji, type EphemeralReply, type LoginResult, type Member, type Message, type ReadState, type Ready,
   type Role, type ServerInfo, type VoiceState,
 } from '../api/community'
 import { toBase64url } from '../lib/base64'
@@ -232,6 +232,23 @@ export class ServerConn {
     this.retryTimer = setTimeout(() => this.connect(), delay)
   }
 
+  // Custom emoji images, downloaded once with the session (blob: URLs);
+  // undefined until loaded (the state changes then).
+  private emojiURLs = new Map<string, string | null>()
+
+  emojiURL(id: string): string | undefined {
+    const u = this.emojiURLs.get(id)
+    if (u) return u
+    if (!this.emojiURLs.has(id)) {
+      this.emojiURLs.set(id, null)
+      fetchBlob(this.saved.base + '/v1/emojis/' + id, this.saved.token).then((b) => {
+        this.emojiURLs.set(id, URL.createObjectURL(b))
+        this.set({})
+      }, () => {})
+    }
+    return undefined
+  }
+
   markRemoved(reason: ServerState['removed'], blockedReason?: string) {
     this.set({ status: 'removed', removed: reason, blockedReason })
     this.stop()
@@ -310,6 +327,8 @@ export class ServerConn {
         return this.set({ ready: { ...r, members: r.members.filter((x) => x.id !== d.id) } })
       case 'ROLES_UPDATE':
         return this.set({ ready: { ...r, roles: d as Role[] } })
+      case 'EMOJIS_UPDATE':
+        return this.set({ ready: { ...r, emojis: d as Emoji[] } })
       case 'ROLE_DELETE':
         return this.set({ ready: { ...r, roles: r.roles.filter((x) => x.id !== d.id) } })
       case 'SERVER_UPDATE':

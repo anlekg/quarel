@@ -164,6 +164,17 @@ test('server administration: overview, invites, roles, channel permissions, mode
   await settings.getByRole('button', { name: 'Fermer les paramètres du serveur' }).click()
   await expect(settings).toBeHidden()
 
+  // A custom emoji: added in the settings, typed :name: in a message, used as a reaction.
+  await open()
+  await nav('Emojis')
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGklEQVR4nGOI37H0PyWYYdSAUQNGDRguBgAASLW7H4dqiRIAAAAASUVORK5CYII=', 'base64') // 16×16, sea green
+  await settings.getByLabel("Image de l'emoji").setInputFiles({ name: 'chat_vert.png', mimeType: 'image/png', buffer: png })
+  await expect(settings.getByLabel("Nom de l'emoji")).toHaveValue('chat_vert')
+  await settings.getByRole('button', { name: 'Ajouter' }).click()
+  await expect(settings.getByTestId('emojis')).toContainText(':chat_vert:')
+  await expect(settings.getByTestId('emojis').locator('img.md-emoji')).toBeVisible()
+  await settings.getByRole('button', { name: 'Fermer les paramètres du serveur' }).click()
+
   // Slash commands: the example bot runs with this token and declares /ping and /echo.
   const bot = spawn(join(repo, 'bin', 'pingbot'), [], {
     env: { ...process.env, QUAREL_URL: `https://localhost:${srv.port}`, QUAREL_BOT_TOKEN: botToken, QUAREL_SERVER_ID: sid }, stdio: 'ignore',
@@ -171,6 +182,17 @@ test('server administration: overview, invites, roles, channel permissions, mode
   try {
     await page.getByRole('navigation', { name: 'Salons' }).getByRole('button', { name: 'général', exact: true }).click()
     const composer = page.getByLabel('Message pour #général')
+    await composer.fill('Miaou :chat')
+    await expect(page.getByRole('listbox', { name: 'Emojis du serveur' })).toContainText(':chat_vert:')
+    await composer.press('Tab')
+    await expect(composer).toHaveValue('Miaou :chat_vert: ')
+    await composer.press('Enter')
+    const withEmoji = page.getByRole('log').locator('.msg').last()
+    await expect(withEmoji.locator('img.md-emoji')).toHaveAttribute('alt', ':chat_vert:')
+    await withEmoji.hover()
+    await withEmoji.getByRole('button', { name: 'Réagir' }).click()
+    await page.getByRole('menuitem', { name: ':chat_vert:' }).click()
+    await expect(withEmoji.locator('.reaction img.md-emoji')).toBeVisible()
     await composer.fill('/p')
     await expect(page.getByRole('listbox', { name: 'Commandes' })).toContainText('/ping', { timeout: 15_000 })
     await composer.press('Tab')
@@ -183,7 +205,7 @@ test('server administration: overview, invites, roles, channel permissions, mode
     await composer.press('Enter')
     await expect(page.getByTestId('ephemeral-reply')).toContainText('un secret pour moi')
     await expect(page.getByTestId('ephemeral-reply')).toContainText('Visible uniquement par vous')
-    expect(ctl.run('alice', 'history', 'général')).not.toContain('un secret pour moi')
+    await expect(page.getByRole('log').locator('.msg:not(.ephemeral)', { hasText: 'un secret pour moi' })).toHaveCount(0) // never stored as a message
     await composer.fill('/echo')
     await composer.press('Enter')
     await expect(page.getByRole('alert')).toContainText('Il manque « texte »')
