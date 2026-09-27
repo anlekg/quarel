@@ -60,7 +60,7 @@ N’importe quel langage fait l’affaire (HTTP + WebSocket). Pour un certificat
 
 Pour **publier** des messages sans rien écouter (alerte de supervision, fin d’une sauvegarde, intégration continue, formulaire), un webhook suffit : pas de programme qui tourne, une simple requête HTTP.
 
-1. Roue dentée du salon › **Webhooks** › nom › **Créer un webhook** (permission « gérer les salons »). Copiez l’adresse : elle n’est affichée qu’une fois.
+1. Roue dentée du salon › **Webhooks** › nom › **Créer un webhook** (permission « gérer les webhooks », et le droit d’écrire dans ce salon). Copiez l’adresse : elle n’est affichée qu’une fois.
 2. Publiez :
 
 ```sh

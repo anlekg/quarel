@@ -33,18 +33,20 @@ const (
 	permMuteMembers     perm = 1 << 17 // mute others in voice channels
 	permDeafenMembers   perm = 1 << 18 // deafen others in voice channels
 	permMoveMembers     perm = 1 << 19 // move or disconnect others in voice channels
+	permManageWebhooks  perm = 1 << 20 // create and delete a channel's incoming webhooks (P2)
 	permAdministrator   perm = 1 << 30 // every permission, ignores channel overrides
 
 	permAll perm = permViewChannel | permSendMessages | permManageMessages | permMentionEveryone |
 		permCreateInvite | permManageChannels | permManageRoles | permKickMembers | permBanMembers |
 		permManageServer | permConnect | permSpeak | permStream | permAddReactions | permAttachFiles |
 		permModerateMembers | permViewAuditLog | permMuteMembers | permDeafenMembers | permMoveMembers |
-		permAdministrator
+		permManageWebhooks | permAdministrator
 
 	// permChannelScoped are the permissions a channel override may allow or deny.
 	permChannelScoped perm = permViewChannel | permSendMessages | permManageMessages |
 		permMentionEveryone | permManageChannels | permConnect | permSpeak | permStream |
-		permAddReactions | permAttachFiles | permMuteMembers | permDeafenMembers | permMoveMembers
+		permAddReactions | permAttachFiles | permMuteMembers | permDeafenMembers | permMoveMembers |
+		permManageWebhooks
 
 	// permEveryoneDefault is granted to the @everyone role on a new server
 	// (migration 2, extended by migration 3).
@@ -87,6 +89,7 @@ var permNames = []struct {
 	{permMuteMembers, "mute_members"},
 	{permDeafenMembers, "deafen_members"},
 	{permMoveMembers, "move_members"},
+	{permManageWebhooks, "manage_webhooks"},
 	{permAdministrator, "administrator"},
 }
 

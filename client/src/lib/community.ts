@@ -74,6 +74,7 @@ export const permGroups: { title: string; perms: [string, string][] }[] = [
     ['manage_server', 'Gérer le serveur (nom, accès, règles, bots)'],
     ['manage_roles', 'Gérer les rôles et les droits des salons'],
     ['manage_channels', 'Gérer les salons'],
+    ['manage_webhooks', 'Gérer les webhooks'],
     ['view_audit_log', 'Voir le journal de modération'],
     ['create_invite', 'Créer des invitations'],
     ['view_channel', 'Voir les salons'],
@@ -102,7 +103,7 @@ export const permGroups: { title: string; perms: [string, string][] }[] = [
 
 // Permissions that channels can override.
 export const channelPerms = new Set(['view_channel', 'send_messages', 'manage_messages', 'mention_everyone', 'manage_channels', 'connect', 'speak',
-  'stream', 'add_reactions', 'attach_files', 'mute_members', 'deafen_members', 'move_members'])
+  'stream', 'add_reactions', 'attach_files', 'mute_members', 'deafen_members', 'move_members', 'manage_webhooks'])
 
 export const isAdmin = (r: Ready) => r.member.owner || r.permissions.server.includes('administrator')
 

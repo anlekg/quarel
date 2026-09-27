@@ -338,7 +338,8 @@ export function ChannelDialog({ conn, ready, channel, onClose, parent }: {
   const categories = ready.channels.filter((c) => c.type === 'category')
   const canManage = canServer(ready, 'manage_channels') || (channel ? ready.permissions.channels[String(channel.id)]?.includes('manage_channels') : false)
   const canPerms = canServer(ready, 'manage_roles')
-  const canHooks = !!channel && canManage && (channel.type === 'text' || channel.type === 'announcement')
+  const canHooks = !!channel && (canServer(ready, 'manage_webhooks') || !!ready.permissions.channels[String(channel.id)]?.includes('manage_webhooks')) &&
+    (channel.type === 'text' || channel.type === 'announcement')
   const thread = channel?.type === 'thread' // a thread or a forum post: its name only (its rights are its channel's)
   return (
     <Dialog title={channel ? channelKind(ready, channel) + ' ' + channel.name : 'Créer un salon'} onClose={onClose}>

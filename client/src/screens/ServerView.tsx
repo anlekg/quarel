@@ -300,7 +300,7 @@ function ChannelList({ conn, ready, state, active, onPick }: {
   }
   // Editing a channel: a gear next to it, for whoever manages channels or their permissions.
   // A thread: its channel's manage_channels (overrides do not apply to threads).
-  const editable = (c: Channel) => can(ready, c.id, 'manage_channels') || (c.type !== 'thread' && canServer(ready, 'manage_roles'))
+  const editable = (c: Channel) => can(ready, c.id, 'manage_channels') || (c.type !== 'thread' && (canServer(ready, 'manage_roles') || can(ready, c.id, 'manage_webhooks')))
   const gear = (c: Channel) => editable(c) && (
     <button className="ch-edit" aria-label={'Modifier ' + c.name} title={'Modifier ' + (c.type === 'thread' ? 'le fil' : c.type === 'category' ? 'la catégorie' : 'le salon')}
       onClick={() => setEditing(c)}><Gear size={14} /></button>
