@@ -2,9 +2,9 @@
 
 Quarel est en **version de test** : les versions `0.x` peuvent encore changer en profondeur.
 
-## Prochaine version (non publiée)
+## 0.4.5 — 2026-09-27
 
-Corrections du deuxième audit (sécurité et vie privée) et demandes de test.
+Corrections du deuxième audit (sécurité et vie privée) et demandes de test. Première mise à jour **invisible** de l'application de bureau : depuis la 0.4.0, « Redémarrer » installe sans fenêtre et rouvre Quarel.
 
 > **À mettre à jour ensemble.** Serveurs communautaires (schéma 13) et services d'identité (schéma 13) d'abord, application ensuite : la connexion par clé d'accès et l'export des données demandent les deux côtés à jour.
 

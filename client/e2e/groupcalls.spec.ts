@@ -6,8 +6,11 @@ import { expect, test, type Page } from '@playwright/test'
 import { Identity, launchApp, tempDir } from './fixtures'
 
 // A relay on the loopback: carol and dave (not friends) talk only through it.
+// Chromium allocates a relay address per network interface and connection
+// (every app gathers relay candidates): a machine with many interfaces
+// (Docker bridges) exhausts a small port range (TURN error 508).
 const id = new Identity(19980, {
-  QUAREL_TURN: 'on', QUAREL_TURN_LISTEN: '127.0.0.1:19979', QUAREL_TURN_PUBLIC_IP: '127.0.0.1', QUAREL_TURN_PORTS: '50160-50199',
+  QUAREL_TURN: 'on', QUAREL_TURN_LISTEN: '127.0.0.1:19979', QUAREL_TURN_PUBLIC_IP: '127.0.0.1', QUAREL_TURN_PORTS: '50200-50599',
   QUAREL_TURN_ALLOW_PRIVATE: '1',
 })
 const password = 'motdepasse-solide'
