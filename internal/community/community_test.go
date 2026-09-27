@@ -274,17 +274,24 @@ func TestLoginSecurity(t *testing.T) {
 		return ch.Nonce
 	}
 	login := func(token, nonce, proof string) result {
-		return e.call("POST", "/v1/auth/login", "", map[string]string{"identity_token": token, "nonce": nonce, "proof": proof}, nil)
+		return e.call("POST", "/v1/auth/login", "", map[string]string{"identity_token": token, "nonce": nonce, "proof": proof, "host": "127.0.0.1", "tls": idtoken.TLSAuthority}, nil)
+	}
+	sign := func(device ed25519.PrivateKey, sid, nonce string) string {
+		return idtoken.SignProofV2(device, sid, nonce, "127.0.0.1", idtoken.TLSAuthority)
 	}
 
-	// A challenge can only be used once.
+	// An app older than 0.3.0 (v1 proof, no host) is told to update.
 	n := challenge()
-	e.expect(200, "", login(bob.token(e.clock, time.Hour), n, idtoken.SignProof(bob.device, e.srv.id, n)))
-	e.expect(401, "invalid_nonce", login(bob.token(e.clock, time.Hour), n, idtoken.SignProof(bob.device, e.srv.id, n)))
+	e.expect(426, "client_outdated", e.call("POST", "/v1/auth/login", "", map[string]string{"identity_token": bob.token(e.clock, time.Hour), "nonce": n, "proof": sign(bob.device, e.srv.id, n)}, nil))
+
+	// A challenge can only be used once.
+	n = challenge()
+	e.expect(200, "", login(bob.token(e.clock, time.Hour), n, sign(bob.device, e.srv.id, n)))
+	e.expect(401, "invalid_nonce", login(bob.token(e.clock, time.Hour), n, sign(bob.device, e.srv.id, n)))
 
 	// A proof made for another server (relay attack) is refused.
 	n = challenge()
-	e.expect(401, "invalid_proof", login(bob.token(e.clock, time.Hour), n, idtoken.SignProof(bob.device, "other-server", n)))
+	e.expect(401, "invalid_proof", login(bob.token(e.clock, time.Hour), n, sign(bob.device, "other-server", n)))
 
 	// v2 proofs name the host the client connected to. A malicious server
 	// with an ordinary certificate for its own name relaying the login here
@@ -313,27 +320,27 @@ func TestLoginSecurity(t *testing.T) {
 	// A stolen token without the device key is useless.
 	_, thief, _ := ed25519.GenerateKey(nil)
 	n = challenge()
-	e.expect(401, "invalid_proof", login(bob.token(e.clock, time.Hour), n, idtoken.SignProof(thief, e.srv.id, n)))
+	e.expect(401, "invalid_proof", login(bob.token(e.clock, time.Hour), n, sign(thief, e.srv.id, n)))
 
 	// Expired challenge.
 	n = challenge()
 	e.clock = e.clock.Add(nonceTTL + time.Second)
-	e.expect(401, "invalid_nonce", login(bob.token(e.clock, time.Hour), n, idtoken.SignProof(bob.device, e.srv.id, n)))
+	e.expect(401, "invalid_nonce", login(bob.token(e.clock, time.Hour), n, sign(bob.device, e.srv.id, n)))
 
 	// Expired identity token.
 	n = challenge()
-	e.expect(401, "invalid_token", login(bob.token(e.clock.Add(-2*time.Hour), time.Hour), n, idtoken.SignProof(bob.device, e.srv.id, n)))
+	e.expect(401, "invalid_token", login(bob.token(e.clock.Add(-2*time.Hour), time.Hour), n, sign(bob.device, e.srv.id, n)))
 
 	// Token from an Identity service this server does not trust.
 	_, otherKey, _ := ed25519.GenerateKey(nil)
 	mallory := &user{sub: "m", handle: "m@evil.test", device: bob.device, signer: idtoken.NewSigner("evil.test", otherKey)}
 	n = challenge()
-	e.expect(403, "untrusted_issuer", login(mallory.token(e.clock, time.Hour), n, idtoken.SignProof(bob.device, e.srv.id, n)))
+	e.expect(403, "untrusted_issuer", login(mallory.token(e.clock, time.Hour), n, sign(bob.device, e.srv.id, n)))
 
 	// Token claiming a trusted issuer but signed with another key.
 	forger := &user{sub: "sub-alice", handle: "alice@" + testIssuer, device: bob.device, signer: idtoken.NewSigner(testIssuer, otherKey)}
 	n = challenge()
-	e.expect(401, "invalid_token", login(forger.token(e.clock, time.Hour), n, idtoken.SignProof(bob.device, e.srv.id, n)))
+	e.expect(401, "invalid_token", login(forger.token(e.clock, time.Hour), n, sign(bob.device, e.srv.id, n)))
 
 	// The server session ends when the identity token expires.
 	sess := e.mustLogin(bob, loginOpts{}).SessionToken

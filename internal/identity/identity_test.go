@@ -315,7 +315,7 @@ func TestIdentityTokenFlow(t *testing.T) {
 	if claims.Subject != lr.User.ID || claims.Handle != "alice@id.test" {
 		t.Fatalf("claims = %+v", claims)
 	}
-	if err := idtoken.VerifyProof(claims, "my-server", "n1", idtoken.SignProof(device, "my-server", "n1")); err != nil {
+	if err := idtoken.VerifyProofV2(claims, "my-server", "n1", "chat.example", idtoken.TLSAuthority, idtoken.SignProofV2(device, "my-server", "n1", "chat.example", idtoken.TLSAuthority)); err != nil {
 		t.Fatal(err)
 	}
 

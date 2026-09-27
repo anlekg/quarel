@@ -101,7 +101,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		IdentityToken string `json:"identity_token"`
 		Nonce         string `json:"nonce"`
 		Proof         string `json:"proof"`  // idtoken.SignProofV2(device, server_id, nonce, host, tls)
-		Host          string `json:"host"`   // the host the client connected to ("" with a legacy v1 proof)
+		Host          string `json:"host"`   // the host the client connected to
 		TLS           string `json:"tls"`    // how the client checked it: "binding" or "authority"
 		Invite        string `json:"invite"` // required to join a private server
 		Claim         string `json:"claim"`  // one-time owner claim code
@@ -182,15 +182,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 //     be one of this server's names. Otherwise another server, holding a
 //     valid certificate for its own name, relayed the login here.
 //
-// Legacy v1 proofs (older clients) are still accepted for now.
+// The v1 proofs of Quarel 0.2.0 (no host) are refused: client_outdated.
 func (s *Server) checkProof(claims *idtoken.Claims, nonce, proof, host, mode string) error {
 	invalid := errf(http.StatusUnauthorized, "invalid_proof", "device proof does not match the identity token")
 	if host == "" && mode == "" {
-		if idtoken.VerifyProof(claims, s.id, nonce, proof) != nil {
-			return invalid
-		}
-		slog.Debug("login with a legacy (v1) proof", "subject", claims.Subject)
-		return nil
+		return errf(http.StatusUpgradeRequired, "client_outdated", "this server needs Quarel 0.3.0 or later: update the app")
 	}
 	if idtoken.VerifyProofV2(claims, s.id, nonce, host, mode, proof) != nil {
 		return invalid

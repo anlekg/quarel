@@ -585,7 +585,8 @@ func (c *cli) simulateJoin(audience string) error {
 	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
 	fmt.Printf("[serveur] envoie un défi (nonce) : %s\n", nonce)
 
-	proof := idtoken.SignProof(c.device(), audience, nonce)
+	const host = "serveur.exemple" // the address the client contacted (named in the proof)
+	proof := idtoken.SignProofV2(c.device(), audience, nonce, host, idtoken.TLSAuthority)
 	fmt.Println("[client]  signe le défi avec la clé privée de l'appareil")
 
 	claims, err := idtoken.Verify(tok, ks, time.Now())
@@ -593,14 +594,14 @@ func (c *cli) simulateJoin(audience string) error {
 		return fmt.Errorf("[serveur] jeton refusé : %w", err)
 	}
 	fmt.Println("[serveur] signature du jeton vérifiée hors ligne ✔ (aucun appel au service Identity)")
-	if err := idtoken.VerifyProof(claims, audience, nonce, proof); err != nil {
+	if err := idtoken.VerifyProofV2(claims, audience, nonce, host, idtoken.TLSAuthority, proof); err != nil {
 		return fmt.Errorf("[serveur] preuve refusée : %w", err)
 	}
 	fmt.Println("[serveur] preuve de l'appareil vérifiée ✔")
 	fmt.Printf("\nAccès accordé à %s\n  identifiant stable : %s@%s  (clé utilisée pour les bans)\n",
 		claims.Handle, claims.Subject, claims.Issuer)
 
-	if idtoken.VerifyProof(claims, "autre-serveur", nonce, proof) != nil {
+	if idtoken.VerifyProofV2(claims, "autre-serveur", nonce, host, idtoken.TLSAuthority, proof) != nil {
 		fmt.Println("\nContrôle : la même preuve rejouée sur « autre-serveur » est bien refusée ✔")
 	}
 	return nil

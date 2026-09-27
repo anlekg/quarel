@@ -36,10 +36,7 @@ import (
 // WellKnownPath is where an Identity service publishes its KeySet.
 const WellKnownPath = "/.well-known/quarel-identity"
 
-const (
-	proofContext = "quarel-auth-v1"
-	clockLeeway  = 30 * time.Second
-)
+const clockLeeway = 30 * time.Second
 
 var b64 = base64.RawURLEncoding
 
@@ -202,10 +199,6 @@ func PeekIssuer(token string) (string, error) {
 	return claims.Issuer, nil
 }
 
-func proofMessage(audience, nonce string) []byte {
-	return []byte(proofContext + "\x00" + audience + "\x00" + nonce)
-}
-
 // How a client made sure it talks to the server it signs a proof for (v2 proofs).
 const (
 	// TLSBinding: every connection presented a certificate bound to the
@@ -232,30 +225,19 @@ func NormalizeHost(h string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.Trim(h, "[]")), ".")
 }
 
-// SignProof signs a server challenge with the device private key (v1, legacy).
-// audience identifies the server being joined; nonce is its fresh challenge.
-//
-// A v1 proof does not say where the client connected: a malicious server with
-// a certificate from a public authority can relay it to the server it names.
-// Clients sign v2 proofs (SignProofV2).
-func SignProof(device ed25519.PrivateKey, audience, nonce string) string {
-	return b64.EncodeToString(ed25519.Sign(device, proofMessage(audience, nonce)))
-}
-
-// SignProofV2 signs a server challenge, also naming the host the client
-// connected to and how it checked that host (TLSBinding or TLSAuthority).
+// SignProofV2 signs a server challenge with the device private key:
+// audience identifies the server being joined, nonce is its fresh challenge,
+// host the host the client connected to and mode how it checked that host
+// (TLSBinding or TLSAuthority). The v1 proofs of Quarel 0.2.0, which did not
+// name the host (a server with an ordinary certificate could relay them to
+// the server it pretended to be), are no longer accepted.
 func SignProofV2(device ed25519.PrivateKey, audience, nonce, host, mode string) string {
 	return b64.EncodeToString(ed25519.Sign(device, proofMessageV2(audience, nonce, NormalizeHost(host), mode)))
 }
 
-// VerifyProof checks that proof (v1) was signed by the device bound to c.
-// The caller must ensure nonce was issued by itself and is used only once.
-func VerifyProof(c *Claims, audience, nonce, proof string) error {
-	return verifyDevice(c, proofMessage(audience, nonce), proof)
-}
-
-// VerifyProofV2 checks a v2 proof. The caller must also check that the host
-// is its own when mode is TLSAuthority.
+// VerifyProofV2 checks that proof was signed by the device bound to c. The
+// caller must ensure nonce was issued by itself and is used only once, and
+// check that the host is its own when mode is TLSAuthority.
 func VerifyProofV2(c *Claims, audience, nonce, host, mode, proof string) error {
 	if mode != TLSBinding && mode != TLSAuthority {
 		return errors.New("idtoken: unknown proof mode")

@@ -37,17 +37,17 @@ func TestIssueVerifyProof(t *testing.T) {
 		t.Fatalf("unexpected claims %+v", c)
 	}
 
-	proof := SignProof(device, "server-a", "nonce-1")
-	if err := VerifyProof(c, "server-a", "nonce-1", proof); err != nil {
+	proof := SignProofV2(device, "server-a", "nonce-1", "a.example", TLSAuthority)
+	if err := VerifyProofV2(c, "server-a", "nonce-1", "a.example", TLSAuthority, proof); err != nil {
 		t.Fatalf("valid proof rejected: %v", err)
 	}
-	if err := VerifyProof(c, "server-b", "nonce-1", proof); err == nil {
+	if err := VerifyProofV2(c, "server-b", "nonce-1", "a.example", TLSAuthority, proof); err == nil {
 		t.Fatal("proof replayed on another audience was accepted")
 	}
-	if err := VerifyProof(c, "server-a", "nonce-2", proof); err == nil {
+	if err := VerifyProofV2(c, "server-a", "nonce-2", "a.example", TLSAuthority, proof); err == nil {
 		t.Fatal("proof with another nonce was accepted")
 	}
-	if err := VerifyProof(c, "server-a", "nonce-1", SignProof(newKey(t), "server-a", "nonce-1")); err == nil {
+	if err := VerifyProofV2(c, "server-a", "nonce-1", "a.example", TLSAuthority, SignProofV2(newKey(t), "server-a", "nonce-1", "a.example", TLSAuthority)); err == nil {
 		t.Fatal("proof from another device was accepted")
 	}
 }
@@ -106,9 +106,6 @@ func TestProofV2(t *testing.T) {
 		if VerifyProofV2(c, bad.aud, bad.nonce, bad.host, bad.mode, proof) == nil {
 			t.Errorf("proof accepted for %+v", bad)
 		}
-	}
-	if VerifyProof(c, "srv", "n1", proof) == nil {
-		t.Error("v2 proof accepted as v1")
 	}
 	for in, want := range map[string]string{"[2001:DB8::1]:443": "2001:db8::1", "Example.ORG.": "example.org", "10.0.0.1:8090": "10.0.0.1"} {
 		if got := NormalizeHost(in); got != want {
