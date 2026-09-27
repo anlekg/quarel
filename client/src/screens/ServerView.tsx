@@ -18,6 +18,8 @@ import { can } from '../lib/community'
 import { showContent } from '../state/mobile'
 import { ChannelDialog, MemberDialog, sectionsFor, ServerSettings } from './ServerSettings'
 import { NotifyMenu } from './NotifyMenu'
+import { memberMenuItems } from './MemberMenu'
+import { menuRun, showMenu } from '../components/ContextMenu'
 import { channelNotify } from '../state/notify'
 import { Gear } from '../components/icons'
 
@@ -31,6 +33,13 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
 
   const channel = r?.channels.find((c) => c.id === channelID && c.type !== 'category')
   const [jump, setJump] = useState<number | null>(null) // message to show once the channel is open
+  // "Profil et modération…" from a message author's right-click menu.
+  const [memberDialog, setMemberDialog] = useState<Member | null>(null)
+  useEffect(() => {
+    const open = (e: Event) => setMemberDialog((e as CustomEvent<Member>).detail)
+    window.addEventListener('quarel:member-dialog', open)
+    return () => window.removeEventListener('quarel:member-dialog', open)
+  }, [])
   const openChannel = (id: number, messageId?: number) => {
     setChannelID(id)
     setJump(messageId ?? null)
@@ -96,6 +105,7 @@ export function ServerView({ conn, userbar }: { conn: ServerConn; userbar: React
           <div className="empty-state"><h2>Aucun salon textuel</h2><p>Vous ne voyez encore aucun salon sur ce serveur.</p></div>
         )}
       </main>
+      {memberDialog && r && <MemberDialog conn={conn} ready={r} member={memberDialog} onClose={() => setMemberDialog(null)} />}
     </>
   )
 }
@@ -237,15 +247,25 @@ function ChannelList({ conn, ready, state, active, onPick }: {
     <button className="ch-edit" aria-label={'Modifier ' + c.name} title="Modifier le salon" onClick={() => setEditing(c)}><Gear size={14} /></button>
   )
   const [editing, setEditing] = useState<Channel | null>(null)
+  const channelMenu = (c: Channel) => (e: React.MouseEvent) => {
+    const rs = state.reads[c.id]
+    showMenu(e, [
+      { title: c.name },
+      c.type === 'voice' && can(ready, c.id, 'connect') && { label: 'Rejoindre le vocal', onClick: () => onPick(c) },
+      c.type !== 'voice' && c.type !== 'category' && { label: 'Ouvrir', onClick: () => onPick(c) },
+      !!rs && rs.last_message_id > rs.last_read && { label: 'Marquer comme lu', onClick: () => menuRun(conn.api((cl) => cl.ack(c.id))) },
+      editable(c) && c.type !== 'thread' && { label: c.type === 'category' ? 'Modifier la catégorie' : 'Modifier le salon', onClick: () => setEditing(c) },
+    ])
+  }
   return (
     <nav aria-label="Salons">
       {tree.map((g) => (
         <div key={g.category?.id ?? 0}>
-          {g.category && <div className="ch-group ch-wrap">{g.category.name}{gear(g.category)}</div>}
+          {g.category && <div className="ch-group ch-wrap" onContextMenu={channelMenu(g.category)}>{g.category.name}{gear(g.category)}</div>}
           {g.items.map((n) => (
             <div key={n.channel.id}>
-              <div className="ch-wrap">{button(n.channel)}{n.channel.type !== 'thread' && gear(n.channel)}</div>
-              {n.threads.map(button)}
+              <div className="ch-wrap" onContextMenu={channelMenu(n.channel)}>{button(n.channel)}{n.channel.type !== 'thread' && gear(n.channel)}</div>
+              {n.threads.map((t) => <div key={t.id} onContextMenu={channelMenu(t)}>{button(t)}</div>)}
             </div>
           ))}
         </div>
@@ -278,7 +298,8 @@ export function MemberList({ ready, conn }: { ready: Ready; conn: ServerConn }) 
           <div className="group">{g.title} — {g.members.length}</div>
           {g.members.map((m) => (
             <div className="member" key={m.id} title={m.handle} role="button" tabIndex={0} aria-label={m.display_name}
-              onClick={() => setOpen(m)} onKeyDown={(e) => e.key === 'Enter' && setOpen(m)}>
+              onClick={() => setOpen(m)} onKeyDown={(e) => e.key === 'Enter' && setOpen(m)}
+              onContextMenu={(e) => showMenu(e, memberMenuItems(conn, ready, m, setOpen))}>
               <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={32} />
               <span className="name" style={{ color: memberColor(ready, m) }}>{m.display_name}</span>
               {m.bot && <span className="bot-tag">BOT</span>}

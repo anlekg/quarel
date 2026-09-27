@@ -8,6 +8,7 @@ import {
 } from 'livekit-client'
 import { ApiError } from '../api/http'
 import type { ServerConn } from './servers'
+import { applyVolume, effectiveVolume, onVolumeChange, personKey, releaseVolume } from '../lib/volume'
 import { applyOutput, chosenDevice, onDeviceChange } from '../lib/media'
 
 export interface VideoTile {
@@ -65,10 +66,11 @@ export function currentVoice() {
 
 const audioEls = new Map<string, HTMLMediaElement>()
 
-function attachAudio(track: RemoteTrack, pub: RemoteTrackPublication) {
+function attachAudio(track: RemoteTrack, pub: RemoteTrackPublication, memberId: string) {
   const el = track.attach()
   el.muted = prefs.deafened
   el.dataset.quarelVoice = pub.trackSid
+  el.dataset.member = memberId
   applyOutput(el)
   document.body.append(el)
   audioEls.set(pub.trackSid, el)
@@ -77,14 +79,21 @@ function attachAudio(track: RemoteTrack, pub: RemoteTrackPublication) {
 function detachAudio(sid: string) {
   const el = audioEls.get(sid)
   if (el) {
+    releaseVolume(el)
     el.remove()
     audioEls.delete(sid)
   }
 }
 
+// Deafened, or each person's own volume (0–200 %, muted for me: see lib/volume.ts).
 function applyDeafen() {
-  for (const el of audioEls.values()) el.muted = prefs.deafened || !snap?.canListen
+  const members = snap?.conn.state.ready?.members ?? []
+  for (const el of audioEls.values()) {
+    const m = members.find((x) => x.id === el.dataset.member)
+    applyVolume(el, m ? effectiveVolume(personKey(m.issuer, m.subject)) : 1, prefs.deafened || !snap?.canListen)
+  }
 }
+onVolumeChange(() => applyDeafen())
 
 // --- state from the room ---
 
@@ -178,8 +187,11 @@ export async function joinVoice(conn: ServerConn, channelId: number) {
     audioOutput: { deviceId: chosenDevice('audiooutput') || undefined },
   })
   room = r
-  r.on(RoomEvent.TrackSubscribed, (track, pub) => {
-    if (track.kind === Track.Kind.Audio) attachAudio(track, pub)
+  r.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+    if (track.kind === Track.Kind.Audio) {
+      attachAudio(track, pub, participant.identity)
+      applyDeafen()
+    }
     refresh()
   })
     .on(RoomEvent.TrackUnsubscribed, (_t, pub) => {

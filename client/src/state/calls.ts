@@ -29,6 +29,8 @@ import type { CallSignal } from '../e2e/engine'
 import { UserError } from '../lib/errors'
 import { applyOutput, audioConstraints, onDeviceChange, videoConstraints } from '../lib/media'
 import { prefs, showWindow } from '../platform'
+import { applyVolume, effectiveVolume, onVolumeChange, personKey, releaseVolume } from '../lib/volume'
+import { currentAccount } from './account'
 import { engine, identityAPI, onEngineEvent, socialState } from './social'
 import { leaveVoice } from './voice'
 
@@ -311,7 +313,19 @@ function drop(c: Call) {
   publish()
 }
 
+// Each person's own volume (lib/volume.ts): their voice and their screen's sound.
+function applyLinkVolume(l: Link) {
+  const issuer = currentAccount()?.issuer ?? ''
+  const v = effectiveVolume(personKey(issuer, l.snap.user.id))
+  for (const el of [l.audio, l.screenAudio]) if (el.srcObject) applyVolume(el, v)
+}
+onVolumeChange(() => {
+  for (const l of call?.links.values() ?? []) applyLinkVolume(l)
+})
+
 function closeLink(l: Link) {
+  releaseVolume(l.audio)
+  releaseVolume(l.screenAudio)
   clearInterval(l.stats)
   clearTimeout(l.timer)
   l.pc.close()
@@ -355,8 +369,10 @@ async function newLink(c: Call, key: string, user: PublicUser, device: DeviceInf
     into.addTrack(ev.track)
     if (ev.track.kind === 'audio') {
       const el = screen ? l.screenAudio : l.audio
+      releaseVolume(el)
       el.srcObject = new MediaStream([ev.track])
       el.play().catch(() => {})
+      applyLinkVolume(l)
     }
     // New objects: React sees the change.
     l.snap.stream = new MediaStream(remote.getTracks())

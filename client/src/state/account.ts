@@ -19,6 +19,9 @@ function emit() {
   for (const l of listeners) l()
 }
 
+// The signed-in account, outside React (null when signed out).
+export const currentAccount = () => current
+
 export function useAccount(): Account | null {
   return useSyncExternalStore(
     (l) => {

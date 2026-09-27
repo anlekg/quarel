@@ -11,6 +11,9 @@ import { ApiError } from '../api/http'
 import { isDesktop, chooseScreenSource } from '../platform'
 import { ScreenPicker } from '../components/ScreenPicker'
 import { SignalBars } from '../components/SignalBars'
+import { showMenu } from '../components/ContextMenu'
+import { memberMenuItems } from './MemberMenu'
+import { MemberDialog } from './ServerSettings'
 import type { ServerConn } from '../state/servers'
 import {
   joinVoice, leaveVoice, toggleCamera, toggleDeafen, toggleMute, toggleScreen, useVoice, type VideoTile,
@@ -32,15 +35,18 @@ function voiceError(code?: string) {
 // Participants shown under a voice channel in the channel list.
 export function VoiceMembers({ ready, channel, conn }: { ready: Ready; channel: Channel; conn: ServerConn }) {
   const v = useVoice()
+  const [dialog, setDialog] = useState<Member | null>(null)
   const inside = ready.voice_states.filter((s) => s.channel_id === channel.id)
   if (!inside.length) return null
   const speaking = v && v.conn === conn ? v.speaking : new Set<string>()
   return (
     <div className="voice-users">
+      {dialog && <MemberDialog conn={conn} ready={ready} member={dialog} onClose={() => setDialog(null)} />}
       {inside.map((s) => {
         const m = ready.members.find((x) => x.id === s.member_id)
         return (
-          <span key={s.member_id} className={'vu' + (speaking.has(s.member_id) ? ' speaking' : '')}>
+          <span key={s.member_id} className={'vu' + (speaking.has(s.member_id) ? ' speaking' : '')}
+            onContextMenu={(e) => m && showMenu(e, memberMenuItems(conn, ready, m, setDialog))}>
             <span className="mini avatar-wrap">{m && <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={20} />}</span>
             <span className="n">{m?.display_name ?? '…'}</span>
             {s.video && <Camera size={13} aria-label="caméra" />}
@@ -122,6 +128,11 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
     p.catch((e) => setStageError(errorMessage(e)))
   }
   const audience = here ? here.participants.filter((id) => !onStage(id)) : []
+  const [dialog, setDialog] = useState<Member | null>(null)
+  const menu = (id: string) => (e: React.MouseEvent) => {
+    const m = name(id)
+    if (m) showMenu(e, memberMenuItems(conn, ready, m, setDialog))
+  }
 
   return (
     <div className="voice-view">
@@ -156,9 +167,9 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
               </div>
             ))}
             {here.participants.filter((id) => onStage(id) && !here.videos.some((t) => t.source === 'camera' && (t.local ? ready.member.id : t.memberId) === id))
-              .map((id) => !stage ? <PersonTile key={id} m={name(id)} state={stateOf(id)} me={id === ready.member.id} speaking={here.speaking.has(id)} /> : (
+              .map((id) => !stage ? <PersonTile key={id} m={name(id)} state={stateOf(id)} me={id === ready.member.id} speaking={here.speaking.has(id)} onMenu={menu(id)} /> : (
                 <div key={id} className="stage-slot">
-                  <PersonTile m={name(id)} state={stateOf(id)} me={id === ready.member.id} speaking={here.speaking.has(id)} />
+                  <PersonTile m={name(id)} state={stateOf(id)} me={id === ready.member.id} speaking={here.speaking.has(id)} onMenu={menu(id)} />
                   {moderator && id !== ready.member.id && stateOf(id)?.speaker && (
                     <button className="btn btn-ghost btn-sm" onClick={() => act(conn.api((c) => c.moderateVoice(id, { speaker: false })))}>Renvoyer dans le public</button>
                   )}
@@ -171,7 +182,7 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
               {audience.map((id) => {
                 const st = stateOf(id)
                 return (
-                  <div key={id} className="stage-listener" data-testid="listener">
+                  <div key={id} className="stage-listener" data-testid="listener" onContextMenu={menu(id)}>
                     <span className="grow">{name(id)?.display_name ?? '…'}{id === ready.member.id ? ' (vous)' : ''}</span>
                     {st?.hand_raised && <Hand size={16} aria-label="main levée" />}
                     {moderator && id !== ready.member.id && (
@@ -207,6 +218,7 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
           </footer>
         </>
       )}
+      {dialog && <MemberDialog conn={conn} ready={ready} member={dialog} onClose={() => setDialog(null)} />}
       {picking && <ScreenPicker onClose={() => setPicking(false)} onPick={async (id) => {
         setPicking(false)
         await chooseScreenSource(id)
@@ -216,9 +228,9 @@ export function VoiceView({ conn, ready, channel }: { conn: ServerConn; ready: R
   )
 }
 
-function PersonTile({ m, state, me, speaking }: { m?: Member; state?: VoiceState; me: boolean; speaking: boolean }) {
+function PersonTile({ m, state, me, speaking, onMenu }: { m?: Member; state?: VoiceState; me: boolean; speaking: boolean; onMenu?: (e: React.MouseEvent) => void }) {
   return (
-    <div className="tile">
+    <div className="tile" onContextMenu={onMenu}>
       <span className={'ring' + (speaking ? ' speaking' : '')}>
         {m ? <Avatar id={m.subject || m.id} name={m.display_name} src={memberAvatar(m)} size={88} /> : <Avatar id="?" name="?" size={88} />}
       </span>

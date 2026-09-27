@@ -94,9 +94,10 @@ test('servers: join, rules, messages, replies, reactions, files, unread, kick', 
   ctl.run('alice', 'typing', 'général')
   await expect(page.getByText('alice écrit…')).toBeVisible()
 
-  // Reply with a mention (typed as @alice).
-  await msg1.hover()
-  await msg1.getByRole('button', { name: 'Répondre' }).click()
+  // Reply with a mention (typed as @alice), from the message's right-click menu.
+  await msg1.click({ button: 'right' })
+  await expect(page.getByRole('menu').getByRole('menuitem', { name: 'Copier le texte' })).toBeVisible()
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Répondre' }).click()
   await expect(page.getByText('Réponse à alice')).toBeVisible()
   await composer.fill('Oui @alice, avec **plaisir** !')
   await composer.press('Enter')

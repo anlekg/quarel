@@ -3,12 +3,14 @@ import { createRoot } from 'react-dom/client'
 import './styles/app.css'
 import { App } from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { ContextMenuHost } from './components/ContextMenu'
 import { isDesktop } from './platform'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <App />
+      <ContextMenuHost />
     </ErrorBoundary>
   </StrictMode>,
 )

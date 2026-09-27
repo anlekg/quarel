@@ -7,6 +7,8 @@ import { Avatar } from '../components/Avatar'
 import { Camera, Hangup, Mic, MicOff, Monitor, Phone } from '../components/icons'
 import { ScreenPicker } from '../components/ScreenPicker'
 import { SignalBars } from '../components/SignalBars'
+import { showMenu, VolumeSlider } from '../components/ContextMenu'
+import { mutedForMe, personKey, setMutedForMe, setVolume, volumeOf } from '../lib/volume'
 import { errorMessage } from '../lib/errors'
 import { chooseScreenSource, isDesktop } from '../platform'
 import {
@@ -164,7 +166,15 @@ export function CallPanel({ account, userId, convId }: { account: Account; userI
       )}
       <div className={'call-stage' + (others.length > 1 ? ' grid' : '')}>
         {others.map((p) => (
-          <div key={p.device || p.user.id} className={'call-tile' + (p.connected || c.kind === 'direct' ? '' : ' waiting')} data-testid="call-peer" data-connected={p.connected}>
+          <div key={p.device || p.user.id} className={'call-tile' + (p.connected || c.kind === 'direct' ? '' : ' waiting')} data-testid="call-peer" data-connected={p.connected}
+            onContextMenu={(e) => {
+              const key = personKey(account.issuer, p.user.id)
+              showMenu(e, [
+                { title: p.user.pseudo },
+                { custom: <VolumeSlider key={key} label="Volume pour moi" value={volumeOf(key)} onChange={(v) => setVolume(key, v)} /> },
+                { label: 'Rendre muet pour moi', checked: mutedForMe(key), onClick: () => setMutedForMe(key, !mutedForMe(key)) },
+              ])
+            }}>
             {p.camera && hasVideo(p.stream) ? <Video stream={p.stream} muted /> : avatar(p.user.id, p.user.pseudo)}
             <span className="call-name">{p.user.pseudo}{p.muted && <MicOff size={14} />}{p.connected && <SignalBars rtt={p.rtt} label={'Ping avec ' + p.user.pseudo} size={12} />}</span>
           </div>

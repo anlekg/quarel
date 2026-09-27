@@ -73,6 +73,25 @@ test('voice: join, hear, mute, camera, moderation, leave', async () => {
   // alice sees bob in the channel.
   await expect(alice.locator('li', { hasText: 'bob' })).toBeVisible()
 
+  // Right click on alice: her volume for bob (150 %: played through Web Audio), muted for him.
+  await grid.locator('.tile', { hasText: 'alice' }).click({ button: 'right' })
+  let menu = page.getByRole('menu')
+  await expect(menu).toContainText('alice')
+  await menu.getByRole('slider', { name: 'Volume pour moi' }).fill('150')
+  await expect(menu).toContainText('150 %')
+  const pref = (k: string) => page.evaluate((k) => Object.keys(localStorage).filter((x) => x.startsWith('quarel.pref.' + k)).map((x) => localStorage.getItem(x)), k)
+  await expect.poll(() => pref('vol:')).toEqual(['1.5'])
+  await expect.poll(() => page.evaluate(() => (document.querySelector('audio[data-quarel-voice]') as HTMLAudioElement).muted)).toBe(true)
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  await grid.locator('.tile', { hasText: 'alice' }).click({ button: 'right' })
+  menu = page.getByRole('menu')
+  await menu.getByRole('menuitemcheckbox', { name: 'Rendre muet pour moi' }).click()
+  await expect.poll(() => pref('mute:')).toEqual(['true'])
+  await grid.locator('.tile', { hasText: 'alice' }).click({ button: 'right' })
+  await expect(page.getByRole('menuitemcheckbox', { name: 'Rendre muet pour moi' })).toHaveAttribute('aria-checked', 'true')
+  await page.getByRole('menuitemcheckbox', { name: 'Rendre muet pour moi' }).click()
+
   // Mute: the server learns it, everybody sees the icon.
   const controls = page.locator('.voice-controls')
   await controls.getByRole('button', { name: 'Couper le micro' }).click()

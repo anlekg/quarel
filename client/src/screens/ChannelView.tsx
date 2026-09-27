@@ -5,6 +5,8 @@ import type { Attachment, Channel, Message, Ready } from '../api/community'
 import { Avatar } from '../components/Avatar'
 import { CustomEmoji, encodeEmojis, encodeMentions, MessageContent, type MentionNames } from '../components/MessageContent'
 import { parseCommand, suggestCommands, usage } from '../lib/commands'
+import { closeMenu, menuToast, showMenu } from '../components/ContextMenu'
+import { memberMenuItems } from './MemberMenu'
 import { Alert, BackButton, Dialog } from '../components/ui'
 import { Bell, BellOff, Close, Download, FileIcon, Hash, Megaphone, Paperclip, Pencil, Pin, Reply, Search, Send, Smile, Thread, Trash, Users } from '../components/icons'
 import { channelNotify, setActive } from '../state/notify'
@@ -276,9 +278,32 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
   const toggle = (emoji: string, on: boolean) =>
     conn.api((c) => c.react(m.channel_id, m.id, emoji, on)).catch((e) => onError(errorMessage(e)))
 
+  // Right click: the message's actions (and its author's menu on the name or avatar).
+  const menu = (e: React.MouseEvent) => {
+    if (editing || (e.target as HTMLElement).closest('a, .md-spoiler:not(.shown)')) return
+    const quick = QUICK_EMOJIS.slice(0, 6)
+    showMenu(e, [
+      canReact && { custom: (
+        <div className="ctx-emojis" role="group" aria-label="Réagir">
+          {quick.map((em) => <button key={em} onClick={() => { closeMenu(); toggle(em, !m.reactions.some((r) => r.emoji === em && r.me)) }}>{em}</button>)}
+        </div>
+      ) },
+      { label: 'Répondre', onClick: onReply },
+      mine && !m.webhook && { label: 'Modifier', onClick: onEdit },
+      canManage && { label: m.pinned_at ? 'Désépingler' : 'Épingler', onClick: () => conn.api((c) => c.pin(m.channel_id, m.id, !m.pinned_at)).catch((err) => onError(errorMessage(err))) },
+      canThread && !m.thread_id && { label: 'Créer un fil', onClick: () => setThreading(true) },
+      !!m.content && { label: 'Copier le texte', onClick: () => navigator.clipboard.writeText(m.content).then(() => menuToast('Texte copié.'), () => {}) },
+      (mine || canManage) && { separator: true },
+      (mine || canManage) && { label: 'Supprimer le message', danger: true, onClick: () => onDelete(false) },
+    ])
+  }
+  const authorMenu = (e: React.MouseEvent) => {
+    if (author && !m.webhook) showMenu(e, memberMenuItems(conn, ready, author, () => window.dispatchEvent(new CustomEvent('quarel:member-dialog', { detail: author }))))
+  }
+
   return (
     <div className={'msg' + (grouped ? '' : ' head') + (mentioned ? ' mentioned' : '') + (flash ? ' flash' : '')} data-mid={m.id}
-      onMouseLeave={() => setPicking(false)}>
+      onMouseLeave={() => setPicking(false)} onContextMenu={menu}>
       <div className="gutter">
         {grouped
           ? <span className="t" title={formatFull(m.created_at)}>{formatTime(m.created_at)}</span>
@@ -298,7 +323,7 @@ function MessageItem({ m, grouped, ready, conn, names, mine, canManage, canReact
         )}
         {!grouped && (
           <div className="meta">
-            <span className="author" style={{ color: memberColor(ready, author) }}>{name}</span>
+            <span className="author" style={{ color: memberColor(ready, author) }} onContextMenu={authorMenu}>{name}</span>
             {m.webhook ? <span className="bot-tag">WEBHOOK</span> : author?.bot && <span className="bot-tag">BOT</span>}
             <span className="when" title={formatFull(m.created_at)}>{formatStamp(m.created_at)}</span>
           </div>

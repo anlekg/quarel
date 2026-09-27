@@ -50,6 +50,14 @@ Dans les salons comme dans les messages privés : `**gras**`, `*italique*`, `__s
 
 **Emojis du serveur** : tapez `:` puis le début de leur nom (Tab ou clic pour choisir) ; ils sont aussi proposés pour réagir. Les gestionnaires du serveur les ajoutent dans Paramètres du serveur › **Emojis**.
 
+## Clic droit
+
+Un **clic droit** ouvre les actions de ce qui est sous le pointeur :
+
+- sur une personne (liste des membres, salon vocal, appel) : son **volume pour vous** (jusqu’à 200 %) ou « Rendre muet pour moi » — gardés sur cet appareil, pour cette personne partout —, message privé, demande d’ami, et la modération que vos droits permettent (micro, son, exclusion, expulsion…) ;
+- sur un message : réagir, répondre, modifier, épingler, créer un fil, copier, supprimer ;
+- sur un salon : marquer comme lu, rejoindre le vocal, modifier.
+
 ## Ajouter des amis
 
 Messages privés › **Amis** › **Ajouter un ami** : tapez son pseudo. Dès qu’elle accepte, vous pouvez lui écrire et l’appeler. Les amis doivent avoir un compte sur le **même service d’identité** que vous.

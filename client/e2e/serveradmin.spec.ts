@@ -146,6 +146,18 @@ test('server administration: overview, invites, roles, channel permissions, mode
   await expect.poll(() => ctl.run('alice', 'send', 'général', 'une Arnaque !')).toMatch(/automod_word|banned/)
   expect(ctl.run('alice', 'send', 'général', 'tout va bien')).toContain('tout va bien')
 
+  // Right click on alice in the member list: a quick timeout, lifted from the same menu.
+  await settings.getByRole('button', { name: 'Fermer les paramètres du serveur' }).click()
+  await page.getByRole('navigation', { name: 'Salons' }).getByRole('button', { name: 'général', exact: true }).click()
+  await page.getByLabel('Membres').getByText('alice').click({ button: 'right' })
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Exclure 10 minutes' }).click()
+  await expect(page.getByRole('status')).toContainText('exclu·e 10 minutes')
+  expect(ctl.run('alice', 'send', 'général', 'toujours là ?')).toMatch(/exclu|timed_out/i)
+  await page.getByLabel('Membres').getByText('alice').click({ button: 'right' })
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Lever l’exclusion temporaire' }).click()
+  await expect.poll(() => ctl.run('alice', 'send', 'général', 'de retour')).toContain('de retour')
+  await open()
+
   // Moderation of alice: timeout, then ban (and unban).
   await nav('Membres')
   await settings.getByRole('button', { name: 'Gérer alice' }).click()
