@@ -5,6 +5,7 @@ go 1.27.1
 require (
 	fyne.io/systray v1.12.2
 	github.com/coder/websocket v1.8.15
+	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/huin/goupnp v1.3.0
@@ -18,13 +19,12 @@ require (
 	golang.org/x/term v0.46.0
 	golang.org/x/text v0.42.0
 	maunium.net/go/mautrix v0.31.0
-	modernc.org/sqlite v1.59.0
+	modernc.org/sqlite v1.60.1
 )
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.4 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
@@ -63,7 +63,7 @@ require (
 	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	modernc.org/libc v1.75.7 // indirect
+	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 	rsc.io/qr v0.2.0 // indirect
